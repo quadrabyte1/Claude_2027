@@ -84,6 +84,36 @@ ENGRAVE_BOLD: bool = True               # bold reads better as a relief
 # (0, 0) keeps the engraving dead-centre on the back face.
 ENGRAVE_OFFSET_XY: tuple = (0.0, 0.0)
 
+# Fringe-only single line "<Course> H<hole>, <serial>" (tasks 544/547).
+LABEL_MAX_WIDTH_MM: float = 56.0        # longer names shrink proportionally (8 pt kept up to here)
+LABEL_NODE_NAME: str = "fringe"         # only this scene node gets the label
+
+
+def label_from_filename(path) -> Optional[str]:
+    """``'/x/Delaveaga (Hole 5f) [1500].3mf'`` -> ``'Delaveaga H5f'``.
+
+    Course name + "H" + the first token inside ``(Hole ...)`` (text before any
+    comma; zero-padding/suffix kept).  ``'Stanford (Hole 8, 5396)'`` ->
+    ``'Stanford H8'`` (the extra token is discarded).  Returns None when there
+    is no name or no ``(Hole N)`` part, so the fringe falls back to serial-only.
+    """
+    import re
+    if not path:
+        return None
+    base = os.path.splitext(os.path.basename(str(path)))[0]
+    base = re.sub(r"\s*\[\d+\]\s*$", "", base).strip()
+    m = re.match(r"^(.+?)\s*\(\s*Hole\s+([^,)\s]+)[^)]*\)$", base, re.IGNORECASE)
+    if not m:
+        return None
+    return f"{m.group(1)} H{m.group(2)}"
+
+
+def fringe_text(serial_number: int, label: Optional[str]) -> str:
+    """Text engraved on the fringe: ``'Delaveaga H5f, 1500'`` or ``'s/n: 1500'``."""
+    if label:
+        return f"{label}, {int(serial_number)}"
+    return f"s/n: {int(serial_number)}"
+
 
 # ── Course path resolution ───────────────────────────────────────────────────
 
@@ -229,29 +259,23 @@ def _build_serial_text_mesh(
     font_pt: float = ENGRAVE_FONT_PT,
     font_family: str = ENGRAVE_FONT_FAMILY,
     bold: bool = ENGRAVE_BOLD,
+    label: Optional[str] = None,
 ) -> trimesh.Trimesh:
-    """Build an extruded text mesh for ``s/n: NNN``.
+    """Build an extruded text mesh: ``s/n: NNN``, or, when ``label`` is given,
+    the single line ``<label>, NNN`` (fringe).
 
-    The text is rendered with cap-height ≈ ``font_pt * PT_TO_MM`` so that 8 pt
-    maps to ~2.82 mm cap-height — matches print-industry expectations for
-    point sizing.
-
-    The returned mesh:
-      • is centred on X=0, Y=0 (via ``render_text_mesh``)
-      • extrudes in +Z from z=0 to z=depth_mm
+    Cap-height ≈ ``font_pt * PT_TO_MM`` (8 pt ≈ 2.82 mm).  The mesh is centred
+    on X=0, Y=0 and extrudes in +Z from z=0 to z=depth_mm.
     """
-    text = f"s/n: {int(serial_number)}"
-    # plate_text.render_text_mesh sizes text by *cap-height* in mm.  Convert
-    # the requested point-size to mm directly.
+    text = fringe_text(serial_number, label)
     height_mm = float(font_pt) * PT_TO_MM
     return _plate_render_text_mesh(
         text=text,
         height_mm=height_mm,
         depth_mm=depth_mm,
-        # Cap the width at something reasonable so the text never overflows
-        # even the smallest trap; render_text_mesh shrinks proportionally if
-        # needed.  40 mm is ~1.6 in — fits comfortably on any of our parts.
-        max_width_mm=40.0,
+        # Plain serial: 40 mm cap (fits any trap).  Fringe line is longer, so
+        # allow more; render_text_mesh shrinks proportionally beyond the cap.
+        max_width_mm=LABEL_MAX_WIDTH_MM if label else 40.0,
         font_family=font_family,
         bold=bold,
         italic=False,
@@ -1003,6 +1027,8 @@ def _build_text_polygons_xy(
     cx: float,
     cy: float,
     mirror_y: bool = True,
+    text: Optional[str] = None,
+    max_width_mm: Optional[float] = None,
 ):
     """Return the 2-D Shapely polygon(s) for ``s/n: NNN`` rendered at the
     given centre, for use by the vertex-push fallback.  Matches the mesh
@@ -1018,7 +1044,8 @@ def _build_text_polygons_xy(
         weight="bold" if ENGRAVE_BOLD else "normal",
         style="normal",
     )
-    text = f"s/n: {int(serial_number)}"
+    if text is None:
+        text = f"s/n: {int(serial_number)}"
     base_size = 100.0
     tp = TextPath((0, 0), text, size=base_size, prop=fp)
     raw = tp.to_polygons()
@@ -1042,6 +1069,11 @@ def _build_text_polygons_xy(
 
     target_cap_mm = float(font_pt) * PT_TO_MM
     scale = target_cap_mm / cap_raw
+    if max_width_mm is not None:
+        _allp = np.concatenate([np.asarray(p) for p in raw if len(p) >= 2])
+        _w = float(_allp[:, 0].max() - _allp[:, 0].min()) * scale
+        if _w > max_width_mm:
+            scale *= max_width_mm / _w
 
     # Centre: text-path bbox midpoint in raw units → shift to (cx, cy) after
     # scaling, with the cap-midpoint at cy.
@@ -1084,8 +1116,10 @@ def engrave_serial_on_mesh(
     depth_mm: float = ENGRAVE_DEPTH_MM,
     font_pt: float = ENGRAVE_FONT_PT,
     offset_xy: tuple = ENGRAVE_OFFSET_XY,
+    label: Optional[str] = None,
 ) -> trimesh.Trimesh:
-    """Return a copy of ``mesh`` with ``s/n: NNN`` cut 1 mm deep into the
+    """Return a copy of ``mesh`` with ``s/n: NNN`` (plus optional ``label``
+    line beneath it) cut 1 mm deep into the
     back (lowest-Z) face.
 
     The text reads *correctly* when looking straight at the back face — i.e.
@@ -1101,6 +1135,7 @@ def engrave_serial_on_mesh(
             serial_number=serial_number,
             depth_mm=depth_mm,
             font_pt=font_pt,
+            label=label,
         )
     except Exception as exc:
         print(f"[serial_engraver] WARNING: text mesh build failed: {exc}")
@@ -1169,6 +1204,8 @@ def engrave_serial_on_mesh(
             cx=tx,
             cy=ty,
             mirror_y=True,
+            text=fringe_text(serial_number, label) if label else None,
+            max_width_mm=(LABEL_MAX_WIDTH_MM if label else None),
         )
         engraved = _engrave_by_plane_surgery(mesh, text_polys_xy, depth_mm)
         if engraved is None:
@@ -1224,7 +1261,8 @@ def _scene_geom_to_node_names(scene: trimesh.Scene) -> dict:
     return out
 
 
-def engrave_scene_geometries(scene: trimesh.Scene, serial_number: int) -> dict:
+def engrave_scene_geometries(scene: trimesh.Scene, serial_number: int,
+                             fringe_label: Optional[str] = None) -> dict:
     """Replace every geometry in ``scene`` with its engraved copy, in place.
 
     Engraves EVERY geometry in the scene — green surface, fringe, every trap,
@@ -1250,7 +1288,8 @@ def engrave_scene_geometries(scene: trimesh.Scene, serial_number: int) -> dict:
         original = scene.geometry[name]
         node_name = node_by_geom.get(name, name)
         try:
-            engraved = engrave_serial_on_mesh(original, serial_number)
+            _lbl = fringe_label if (fringe_label and node_name == LABEL_NODE_NAME) else None
+            engraved = engrave_serial_on_mesh(original, serial_number, label=_lbl)
         except Exception as exc:
             print(f"[serial_engraver]   '{node_name}' ({name}) — "
                   f"engraving raised: {exc}")

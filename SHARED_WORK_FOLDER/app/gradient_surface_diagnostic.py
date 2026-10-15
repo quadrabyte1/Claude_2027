@@ -9785,20 +9785,68 @@ def _inject_bambu_extruder_metadata(path_3mf: str, scene_names: list) -> None:
         f'<metadata name="BambuStudio:3mfVersion">{_BBL_VERSION_STRING}</metadata>'
     )
 
-    def _patch_model_xml_version(xml_str: str) -> str:
-        """Insert BambuStudio:3mfVersion metadata after the <model ...> opening tag
-        if it is not already present (idempotent)."""
-        if "BambuStudio:3mfVersion" in xml_str:
-            return xml_str  # already patched
-        # Find end of the <model ...> opening tag (skip past '>').
-        import re as _re2
-        m = _re2.search(r"<model\b[^>]*>", xml_str)
-        if not m:
-            return xml_str  # unexpected structure; leave unchanged
-        insert_pos = m.end()
-        return xml_str[:insert_pos] + _BBL_VERSION_META + xml_str[insert_pos:]
+    _BBL_APP_META = (
+        f'<metadata name="Application">BambuStudio-{_BBL_VERSION_STRING}</metadata>'
+    )
 
-    patched_model_xml = _patch_model_xml_version(model_xml)
+    def _bed_center_from_settings(settings_bytes) -> tuple:
+        """Centre of the bounding box of printable_area ("XxY" strings) in the
+        project_settings.config template; falls back to (128, 128) (Bambu A1)."""
+        try:
+            import json as _json
+            pts = _json.loads(settings_bytes.decode("utf-8"))["printable_area"]
+            xy = [tuple(float(v) for v in str(q).split("x")) for q in pts]
+            xs = [q[0] for q in xy]
+            ys = [q[1] for q in xy]
+            return ((min(xs) + max(xs)) / 2.0, (min(ys) + max(ys)) / 2.0)
+        except Exception:
+            return (128.0, 128.0)
+
+    def _patch_model_xml_version(xml_str: str, center=(128.0, 128.0),
+                                 skip_oids=frozenset()) -> str:
+        """Idempotently: (1) ensure Application + BambuStudio:3mfVersion metadata
+        (Application first - without it Bambu Studio refuses project_settings.config);
+        (2) move build items still at translation x=y=0 to the bed centre. Items
+        whose objectid is in skip_oids (plate 2) are left untouched."""
+        import re as _re2
+        if 'name="Application"' not in xml_str:
+            if "BambuStudio:3mfVersion" in xml_str:
+                xml_str = xml_str.replace(
+                    '<metadata name="BambuStudio:3mfVersion"',
+                    _BBL_APP_META + '<metadata name="BambuStudio:3mfVersion"', 1)
+            else:
+                m = _re2.search(r"<model\b[^>]*>", xml_str)
+                if m:
+                    xml_str = (xml_str[:m.end()] + _BBL_APP_META + _BBL_VERSION_META
+                               + xml_str[m.end():])
+        elif "BambuStudio:3mfVersion" not in xml_str:
+            xml_str = xml_str.replace(_BBL_APP_META, _BBL_APP_META + _BBL_VERSION_META, 1)
+
+        def _shift(m):
+            tag = m.group(0)
+            om = _re2.search(r'\bobjectid="([^"]*)"', tag)
+            if om and om.group(1) in skip_oids:
+                return tag
+            tm = _re2.search(r'\btransform="([^"]*)"', tag)
+            if not tm:
+                return tag
+            v = tm.group(1).split()
+            if len(v) != 12:
+                return tag
+            try:
+                if abs(float(v[9])) > 1e-9 or abs(float(v[10])) > 1e-9:
+                    return tag  # already placed
+            except ValueError:
+                return tag
+            v[9], v[10] = repr(float(center[0])), repr(float(center[1]))
+            return tag[:tm.start(1)] + " ".join(v) + tag[tm.end(1):]
+
+        return _re2.sub(r"<item\b[^>]*>", _shift, xml_str)
+
+    _bed_center = _bed_center_from_settings(project_settings_bytes) \
+        if project_settings_bytes is not None else (128.0, 128.0)
+    patched_model_xml = _patch_model_xml_version(
+        model_xml, _bed_center, frozenset(oid for oid, _n in _plate2_items))
 
     tmp_path = path_3mf + ".tmp"
     # All files we are replacing/adding — skip their originals in the copy loop.
@@ -10782,7 +10830,9 @@ def run_pipeline(
         print(f"  Plate-2 smooth fringe sample (no grass) added to scene.")
 
     print(f"\n[10b] Engraving serial s/n: {serial_number} on {len(scene_names)} item(s)…")
-    _engrave_scene(scene, serial_number)
+    # Fringe also gets the file name (minus serial/extension) as a 2nd line.
+    from serial_engraver import label_from_filename as _label_from_fname
+    _engrave_scene(scene, serial_number, fringe_label=_label_from_fname(fname_3mf))
 
     # Repair pass: collapse float-ops slivers and dedupe before manifold check.
     for _node_name, _m in scene.geometry.items():
