@@ -1,0 +1,10738 @@
+# v0.24 — 2026-10-13 Sienna — Green/fringe interface normalisation (task 780).
+#         New constant: FRINGE_BLEND_CELLS = 3 (tune the blend band width).
+#         New function: _normalize_green_fringe_interface — cosine-weighted blend
+#           of the TPS fringe surface toward green boundary Z within the blend band.
+#           Called once in build_fringe_mesh after _build_tps_grid_height_field,
+#           before the per-cell Z assignment loop.
+#         APP_VERSION bumped to v5.35.
+# v0.23 — 2026-10-11 Topo — Fix StrackaLine arrow detection (task 760).
+#         build_dark_mask_inside_green: add second detection branch (b) for
+#           StrackaLine's dark-navy arrows (HSV≈(104,255,90), RGB≈(0,50,90)).
+#           Old branch (a) V<50 is kept for legacy GolfLogix near-black arrows.
+#           New branch (b): H=90-135 AND S>150 AND V<105 — catches the saturated
+#           navy that StrackaLine uses without pulling in the blue-green turf
+#           (which has V≈150-190 and is safely above the V<105 ceiling).
+#         detect_arrows: raise max_arrow_area default 600→1200 to cover
+#           StrackaLine arrow blobs measured at 400-1108 px.
+#         save_arrow_vs_output_overlay: new helper — two-panel PNG (arrows on
+#           source image + reconstructed height map) used by verification scripts
+#           and owner_inbox/gen_arrow_overlay.py.
+#         APP_VERSION bumped to v5.27.
+# v0.22 — 2026-10-06 Sienna — Include Fringe Without Grass flip (task 724).
+#         Plate 1: ALWAYS grassy — removed if enable_fringe_grass: guard; grass
+#           is unconditional on the main fringe regardless of checkbox.
+#         Plate 2: smooth (grass-LESS) fringe sample — only built when
+#           include_fringe_without_grass=True. Named "fringe_no_grass_sample"
+#           (renamed from "fringe_grass_sample") → still extruder 2.
+#         run_pipeline parameter: enable_fringe_grass → include_fringe_without_grass
+#           (new semantics: controls plate-2 presence, not plate-1 grass).
+#         _inject_bambu_extruder_metadata: _PLATE2_SCENE_NAME updated to
+#           "fringe_no_grass_sample"; plater_name updated to "Fringe No Grass Sample".
+#         APP_VERSION bumped to v5.13.
+# v0.21 — 2026-10-06 Finn — Two-plate 3MF output (task 718).
+#         Plate 1: unchanged full plaque (green + fringe[checkbox] + traps + water + boulders).
+#         Plate 2: fringe grass sample — fringe mesh with grass UNCONDITIONALLY enabled,
+#           named "fringe_grass_sample" in the scene → extruder 2 (same as fringe).
+#         run_pipeline: builds fringe_grass_sample after main fringe in step 7a-ii;
+#           adds it to scene AFTER all plate-1 objects so its objectid is highest.
+#         _inject_bambu_extruder_metadata: when fringe_grass_sample is in scene_names,
+#           generates TWO <plate> blocks with <model_instance> mappings; injects
+#           plate_2.png / plate_no_light_2.png / top_2.png / pick_2.png (copied from
+#           plate-1 templates as placeholders — Bambu regenerates on first slice).
+#         test_enable_fringe_grass.py T10 updated: with plate-2 always building grass,
+#           enableFringeGrass=False yields exactly 1 grass call (plate-2 only), not 0.
+#         APP_VERSION bumped to v5.08.
+# v0.20 — 2026-10-05 Topo — Trap altitude grid-cell override (task 716).
+#         New rule: if one or more user-set gridCellHeights entries have their
+#         cell CENTRE inside a trap polygon, use mean(values) as the flat trap Z
+#         instead of the default min(fringe boundary Z) - 2 mm rule.
+#         New helper: _trap_grid_override(trap_poly_mm, grid_cell_heights,
+#           cell_side, half) — returns float mean or None (no override).
+#         Only SET cells (entries in gridCellHeights) are tested; absent cells
+#         carry Poisson defaults and must NOT trigger the override.
+#         Shapely .contains() strict interior: cell centres on the polygon
+#         boundary are excluded.
+#         Multiple contained cells → np.mean([values]) (mean policy).
+#         Wired into export_trap_stls flat-mode path immediately after the
+#         fringe-min default is computed; override replaces it when not None.
+#         Curved-mode path (TRAP_SURFACE_CURVED=True) is unchanged.
+#         All other pipelines (rake, fringe, green, water) unchanged.
+#         APP_VERSION bumped to v5.07.
+# v0.19 — 2026-10-04 Topo — Strip sand chunks + floor guard; revert trap to flat+rake (task 708).
+#         TRAP_SURFACE_CURVED flipped back to False (default was True since task 666).
+#         Flat rule: trap_Z = min(fringe boundary Z) + TRAP_FRINGE_OFFSET_MM (-2 mm).
+#         Removed: SAND_CHUNK_HEIGHT_MM, SAND_CHUNK_SIGMA_MM, SAND_CHUNK_DENSITY_PER_100_MM2,
+#           SAND_CHUNK_MAX, SAND_CHUNK_MIN, SAND_CHUNK_UP_FRACTION, SAND_CHUNK_FLOOR_THICKNESS_MM.
+#         Removed: _scatter_sand_chunks() helper function.
+#         Removed: chunk-scatter pass + floor guard from apply_sand_texture().
+#         Kept: TRAP_SURFACE_CURVED flag (False default, True path still reachable).
+#         Kept: rake lines (cosine wave, fixed Y-axis, SAND_RAKE_ALIGN_TO_MAJOR_AXIS=False).
+#         Kept: base_z_map param in apply_sand_texture (API stable for curved path).
+#         APP_VERSION bumped to v5.03.
+# v0.18 — 2026-10-04 Topo — 20×20 grid-cell TPS height field (task 704).
+#         Wires gridCellHeights EGM field into the fringe surface via TPS.
+#         New function _build_tps_grid_height_field():
+#           1. Computes default Z for each of 400 cell centres via nearest-
+#              boundary KDTree lookup on bnd_z (Poisson green boundary Z).
+#           2. Merges user-set values from egm["gridCellHeights"] over defaults.
+#           3. Fits TPS (RBFInterpolator, thin_plate_spline, smoothing=0) over
+#              all 400 (cell_cx, cell_cy, cell_z) constraints.
+#         build_fringe_mesh: replaces task-700 _z_nn_grid (nearest-boundary
+#         extension) with _z_tps_grid from _build_tps_grid_height_field().
+#         Degenerate case (no gridCellHeights): all 400 cells = Poisson default
+#         → TPS is a C²-smooth approximation of the old NN extension.
+#         User-set cells propagate via TPS blend; seam-reseat still overrides
+#         the innermost ring from g_bdry_arr.
+#         _build_tps_base() preserved intact (unused on this path).
+#         APP_VERSION bumped to v5.01.
+# v0.17 — 2026-10-04 Topo — Default fringe Z = nearest green boundary Z (task 700).
+#         Thomas's spec: "the elevation of the fringe should be the same as the
+#         corresponding elevation in the green across that interface and all the
+#         way out to the edge of the frame."
+#         For each fringe cell (x, y), find the nearest point on the green polygon
+#         boundary (gbnd KDTree), look up the Poisson green surface Z at that
+#         boundary point (bnd_z array), and hold that Z constant all the way out
+#         to the frame edge.  No decay toward BASE_THICKNESS_MM.
+#         Result: the fringe becomes a radial "extension" of the green rim.
+#         Tilted green (5 mm one side, 10 mm opposite) → fringe mirrors the tilt
+#         as a pair of plateaus with a smooth Voronoi-split transition at corners.
+#         Replaced: the TPS global-height-field path (_z_tps_grid driven by 16
+#         outer-frame anchors at BASE_THICKNESS_MM) is no longer the source of
+#         green_edge_h.  The TPS primitive _build_tps_base() is KEPT INTACT for
+#         the future grid-cell mechanism (user-set cells override the default
+#         nearest-boundary Z locally via TPS).
+#         _raw_fbh anchors are already embedded in bnd_z (task 658 Approach A),
+#         so user-set fringe boundary heights propagate through the new path
+#         automatically — no change to the anchor override logic.
+#         APP_VERSION bumped to v4.99.
+# v0.16 — 2026-10-03 Topo — Complete strip of Gaussian spike-application code (task 698).
+#         Continued from v0.15 partial: actually deleted _raw_spikes loop,
+#         SPIKE_SIGMA_MM / SPIKE_INFLUENCE_MM / SPIKE_HARD_MAX_MM constants,
+#         _skipped_in_green counter, Gaussian MAX-blend loop, post-filter
+#         FINAL spike-scan with spike-exclusion mask, and _tps_spikes collector.
+#         TPS call site now passes elevation_spikes_mm=[] explicitly.
+#         elevationSpikes in EGM is accepted-but-ignored: deprecation notice
+#         printed by _build_tps_base (parameter stays for API stability).
+#         All SA1-SA7 tests green.
+#         APP_VERSION bumped to v4.98.
+# v0.15 — 2026-10-02 Topo — Strip Gaussian spike-application code; keep TPS (task 698).
+#         Thomas pivot: drop the entire OCR→elevationSpikes→Gaussian-bump pipeline.
+#         Removed:  _raw_spikes loop, SPIKE_SIGMA_MM / SPIKE_INFLUENCE_MM /
+#           SPIKE_HARD_MAX_MM constants, _skipped_in_green counter, Gaussian MAX-blend
+#           loop, post-filter FINAL spike-scan with spike-exclusion mask.
+#         Kept:  _build_tps_base() and its 16-point outer-frame base ring.  With both
+#           fringeBoundaryHeights and elevationSpikes now ignored, the TPS is driven
+#           solely by the 16 frame anchors → flat surface at BASE_THICKNESS_MM.
+#           Thomas's future slope-arrow Poisson green surface + manual fringe-height
+#           mechanism will supply new height constraints via a new argument or source.
+#         elevation_spikes_mm in _build_tps_base is now DEPRECATED / ignored
+#           (same pattern as fringe_boundary_heights_mm in task 690).
+#           Callers that still pass it will see a log notice but no error.
+#         APP_VERSION bumped to v4.98.
+# v0.14 — 2026-10-02 Topo — Strip fringeBoundaryHeights from TPS constraints (task 690).
+#         Thomas's revelation: exterior fringe numbers (10/15/20/25/30) are
+#         *distance-from-pin markers*, NOT altitudes.  The fringeBoundaryHeights
+#         constraint source shipped in v4.81→v4.91 was semantically wrong.
+#         _build_tps_base() now IGNORES fringe_boundary_heights_mm entirely.
+#         Parameter kept for API stability (Sienna removes callers in T2 / task 691).
+#         A deprecation notice is logged when non-empty fbh is passed.
+#         TPS base surface now shaped by: interior elevationSpikes + 16 outer-frame
+#         anchors at BASE_THICKNESS_MM only.  Fringe region interpolates smoothly
+#         between spike-driven green interior Z and base.  No crease, no artifact.
+#         APP_VERSION bumped to v4.93 (Sienna landed v4.92 first on task 691).
+# v0.13 — 2026-10-02 Topo — TPS global height field (task 684).
+#         Replaces fragmented IDW/griddata patchwork base surface with a single
+#         thin-plate-spline fit over all constraints:
+#           • fringe-boundary anchors (snapped to nearest green-boundary vertex)
+#           • interior elevation spikes
+#           • 16 outer-frame anchors at BASE_THICKNESS_MM (prevent blow-up)
+#         TPS is C²-smooth everywhere → no undefined derivative at fringe/green
+#         seam.  Solver: scipy.interpolate.RBFInterpolator(kernel="thin_plate_spline",
+#         smoothing=0.0).  Fallback to flat BASE_THICKNESS_MM when < 5 constraints.
+#         Co-located constraints with conflicting Z are averaged.
+#         All downstream pipelines preserved: trap (curved per-point), rake,
+#         sand chunks, water (flat slab), dip-floor guard, seam-reseat.
+#         Added _build_tps_base() public helper for unit testing.
+#         APP_VERSION bumped to v4.91.
+# v0.12 — 2026-09-30 Topo — curved per-point trap surface is the new default (task 666).
+#         Flip TRAP_SURFACE_CURVED: False → True.
+#         Fix curved path: was using max(fringe Z within band) per ring sample —
+#         now uses nearest-neighbor fringe Z per ring sample point (true per-point).
+#         Old behavior on sloped fringe: low-end boundary picked max fringe (high side),
+#         producing a gap > 2 mm at the low fringe point.  Now gap = 2 mm everywhere.
+#         TRAP_FRINGE_OFFSET_MM = -2.0 unchanged.
+#         TRAP_SURFACE_CURVED=False still restores flat min-2 (task 662 path).
+#         APP_VERSION bumped to v4.84.
+# v0.11 — 2026-09-30 Topo — flat-min trap surface (task 662).
+#         Revert trap surface to flat scalar: Z = min(fringe boundary Z) - 2mm.
+#         TRAP_FRINGE_OFFSET_MM reverted -4.0 → -2.0 (full circle from v0.04).
+#         Sampling changed from max → min of boundary anchor Z values.
+#         Curved-surface implementation preserved behind TRAP_SURFACE_CURVED flag
+#         (default False; same pattern as SAND_RAKE_ALIGN_TO_MAJOR_AXIS).
+#         When TRAP_SURFACE_CURVED=False: _compute_trap_surface_from_fringe
+#         returns a Z-map filled with the scalar min value (caller signature stable).
+#         Floor guard reverts to per-slab scalar (trap_base_z + 0.5mm) since
+#         base_z_map is None on the flat path.  Rake + chunks unaffected.
+#         APP_VERSION bumped to v4.82.
+# v0.10 — 2026-09-29 Sienna — exterior OCR markers become fringe/green boundary
+#         anchors (task 658).  classify_ocr_markers() in app.py splits OCR
+#         markers into interior (elevationMarkers → Gaussian spikes) and exterior
+#         (fringeBoundaryHeights → boundary anchors).  In build_fringe_mesh,
+#         bnd_z entries at the nearest green boundary polyline point are overridden
+#         to the anchor value BEFORE the IDW fringe-Z computation runs (Approach A).
+#         This forces fringe Z and green seam Z to match at the interface, yielding
+#         a continuous fringe/green surface driven by the exterior number.
+#         APP_VERSION bumped to v4.81.
+# v0.09 — 2026-09-28 Topo — curved trap surface tracks fringe topology.
+#         NEW rule: trap_Z(x,y) = fringe_Z(x,y) - 4mm at every boundary point;
+#         interior interpolated via scipy.interpolate.griddata (cubic + linear
+#         fallback).  Added _compute_trap_surface_from_fringe helper.
+#         apply_sand_texture gains base_z_map=(xy,z) kwarg; rake and chunks
+#         applied additive on curved base.  Floor guard now per-vertex on
+#         curved surface (local_base_z + 0.5mm).  Fallback to flat
+#         TRAP_THICKNESS_MM when no adjoining fringe within the 6mm band.
+#         APP_VERSION bumped to v4.80.
+# v0.08 — 2026-09-27 Topo — fix #614: mixed up/down sand chunks + count bump.
+#         SAND_CHUNK_UP_FRACTION=0.5 (50/50 up/down by default).  Sign is drawn
+#         from the seeded RNG so pattern is reproducible per trap.  Floor guard
+#         prevents dimples pushing top vertices below trap_base_z + 0.5 mm.
+#         Count bump: density 0.3→0.5, max 20→30, min 3→4.
+#         APP_VERSION bumped to v4.67.
+# v0.07 — 2026-09-26 Topo — fix #610: two-part trap tweak.
+#         Item 1: rake direction reverted to fixed Y-axis (PCA major-axis logic
+#         from task #606 preserved behind SAND_RAKE_ALIGN_TO_MAJOR_AXIS=False).
+#         Item 2: SAND_CHUNK_SIGMA_MM widened 1.5→3.0 mm (~4× footprint area);
+#         count and height unchanged.  Overlap upper bound updated to 3-chunk.
+#         APP_VERSION bumped to v4.66.
+# v0.06 — 2026-09-26 Topo — fix #608: replace sinusoidal jitter with sparse
+#         sand-chunk scatter.  Remove SAND_JITTER_AMPLITUDE_MM.  Add Gaussian
+#         mound bumps (SAND_CHUNK_HEIGHT_MM=0.6, SAND_CHUNK_SIGMA_MM=1.5,
+#         SAND_CHUNK_DENSITY_PER_100_MM2=0.3, SAND_CHUNK_MAX=20, SAND_CHUNK_MIN=3).
+#         Bumps applied after rake pass; reproducible per-trap hash seed.
+#         APP_VERSION bumped to v4.65.
+# v0.05 — 2026-09-26 Topo — fix #606: four-part trap tweak.
+#         Item 1: rake direction = PCA major axis per trap (SVD on exterior ring
+#         vertices; cosine wave driven by minor-axis projection).
+#         Item 2: spatially-smooth per-trap-seeded jitter on top of rake cosine
+#         (SAND_JITTER_AMPLITUDE_MM=0.08 mm; two-wave sum keyed on centroid hash).
+#         Item 3: BOUNDARY_HEIGHT_CAP_ENABLED=False suspends frame-edge Z cap
+#         (lift still applied; frame outer wall provides vertical cutoff); note
+#         that the frame is a puzzle-base slab — no Boolean clip exists, so
+#         poke-through above 9 mm is possible; left to Thomas's discretion.
+#         Item 4: TRAP_FRINGE_OFFSET_MM -2.0 → -4.0 (trap 4 mm below fringe).
+#         APP_VERSION bumped to v4.64.
+# v0.04 — 2026-09-26 Topo — fix #604: two-part trap geometry fix.
+#         Part 1: trap frame-edge cap now mirrors fringe cap rule — applied
+#         unconditionally (not only on water holes), gated by applyFringeFrameCap
+#         (1 mm hard band + 5 mm taper to BOUNDARY_HEIGHT_CAP_MM=9 mm).
+#         Part 2: trap height = adjoining-fringe-boundary max Z − 2 mm via new
+#         _compute_trap_height_from_fringe helper (TRAP_FRINGE_OFFSET_MM=-2.0).
+#         New constants: TRAP_FRINGE_BOUNDARY_BAND_MM=6.0, TRAP_FRINGE_OFFSET_MM=-2.0.
+#         export_trap_stls gains apply_fringe_frame_cap kwarg; pipeline passes it.
+# v0.03 — 2026-09-26 Topo — fix #600: remove post-texture flatten from
+#         export_trap_stls (was wiping rake-line Z variation); set
+#         WATER_RIPPLE_ENABLED=False and remove post-ripple flatten from
+#         export_water_meshes (ripple was displacing water slab ~0.28 mm low).
+# v0.02 — 2026-09-09 Topo — added apply_grass_texture_v2 (cone/pyramid + Poisson
+#         + amplitude jitter + XY shear); GRASS_ALGORITHM switch on fringe;
+#         FRINGE_GRASS_MIN_SPACING_MM floor to keep Poisson counts sane.
+"""
+gradient_surface_diagnostic.py — Reconstruct golf green height from arrow gradient directions.
+
+Instead of finding contour lines, we use the small chevron arrows in the green image
+as gradient data (each arrow points downhill), then integrate them via the Poisson
+equation to get a height map.
+
+Steps:
+1. Load EGM, get green boundary via Catmull-Rom interpolation
+2. Build dark mask inside green, find arrow blobs with CC analysis
+3. For each blob: PCA to find orientation, half-blob spread to resolve 180° ambiguity
+4. Build IDW-interpolated gradient field on a 100x100 grid
+5. Solve Poisson equation for height Z
+6. Save two diagnostic images to owner_inbox/
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+import json
+import math
+
+# Make app/ importable
+sys.path.insert(0, os.path.dirname(__file__))
+
+import numpy as np
+import cv2
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from scipy.sparse import lil_matrix
+from scipy.sparse.linalg import spsolve
+from scipy.spatial import cKDTree
+from scipy.ndimage import gaussian_filter, uniform_filter, median_filter
+from scipy.interpolate import splprep, splev
+import trimesh
+from shapely.geometry import Polygon as ShapelyPolygon, box as shapely_box, MultiPolygon as ShapelyMultiPolygon
+from skimage import measure
+
+from generate_stl_3mf import interpolate_catmull_rom, course_paths, EGM_BASE
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+
+REPO_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
+OWNER_INBOX = os.path.join(REPO_ROOT, "owner_inbox")
+TEAM_INBOX  = os.path.join(REPO_ROOT, "team_inbox")
+
+# Diagnostic PNGs (arrows, height map, contours, arrows-vs-output) written per Generate.
+SAVE_DIAGNOSTIC_IMAGES = True
+DIAGNOSTICS_DIR = os.path.join(OWNER_INBOX, "diagnostics")
+
+
+# ---------------------------------------------------------------------------
+# Manifold gate
+# ---------------------------------------------------------------------------
+
+def assert_manifold(
+    mesh,
+    label: str = "mesh",
+    *,
+    skip_labels=None,
+    tolerate_boundary_edges: int = 0,
+    tolerate_triple_shared: int = 0,
+) -> None:
+    """Raise ValueError if mesh exceeds the per-component manifold tolerances.
+
+    Always logs boundary-edge and 3+-shared counts so the user sees what's
+    being tolerated. Raises only when either count exceeds its tolerance.
+
+    Parameters
+    ----------
+    skip_labels : iterable of str, optional
+        Geometry names (Scene keys) to skip entirely. Default None means
+        check every component.
+    tolerate_boundary_edges : int
+        Per-component max boundary-edge count before raising.
+    tolerate_triple_shared : int
+        Per-component max 3+-shared-edge count before raising.
+    """
+    skip_set = set(skip_labels) if skip_labels else set()
+
+    if isinstance(mesh, trimesh.Scene):
+        for name, geom in mesh.geometry.items():
+            if name in skip_set:
+                print(f"manifold: {label}/{name} SKIPPED (skip_labels)")
+                continue
+            assert_manifold(
+                geom,
+                label=f"{label}/{name}",
+                skip_labels=skip_labels,
+                tolerate_boundary_edges=tolerate_boundary_edges,
+                tolerate_triple_shared=tolerate_triple_shared,
+            )
+        return
+
+    # Count how many faces share each undirected edge.
+    # Manifold ⇔ every edge shared by exactly 2 faces.
+    from collections import Counter
+    edge_counts = Counter(map(tuple, mesh.edges_sorted.tolist()))
+    n_boundary = sum(1 for c in edge_counts.values() if c == 1)
+    n_excess   = sum(1 for c in edge_counts.values() if c >= 3)
+    print(
+        f"manifold: {label} boundary_edges={n_boundary} "
+        f"triple_shared={n_excess} "
+        f"(tolerate_boundary={tolerate_boundary_edges}, "
+        f"tolerate_triple={tolerate_triple_shared}) "
+        f"watertight={mesh.is_watertight} "
+        f"winding_consistent={mesh.is_winding_consistent}"
+    )
+    if n_boundary > tolerate_boundary_edges or n_excess > tolerate_triple_shared:
+        raise ValueError(
+            f"{label} exceeds manifold tolerance: "
+            f"{n_boundary} boundary edges (tol={tolerate_boundary_edges}), "
+            f"{n_excess} edges shared by 3+ faces (tol={tolerate_triple_shared}), "
+            f"watertight={mesh.is_watertight}, "
+            f"winding_consistent={mesh.is_winding_consistent}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Heightmap extreme-limiter (post-Poisson)
+#
+# The Poisson solve can produce spurious local extremes where noisy arrow
+# detections inject high-curvature spikes into the gradient field. Those
+# spikes become near-degenerate triangles in the resulting mesh and trip the
+# manifold gate. ``soften_extremes`` clamps any cell whose deviation from a
+# local baseline exceeds a threshold (in mm-equivalent units), then blends
+# the clamped delta back into its neighbourhood with a small gaussian.
+# Defaults are tuned for the standard 200x200 grid + ~20 mm elevation range.
+# ---------------------------------------------------------------------------
+
+# Peak limit: how many mm a cell may rise above its local baseline before
+# being clamped. ELEVATION_RANGE_MM is ~20 mm; 6 mm represents ~30% of the
+# total band — a generous allowance for legitimate ridges, tight enough to
+# catch spike-shaped artefacts.
+_PEAK_LIMIT_MM: float = 6.0
+
+# Valley limit: how many mm a cell may dip below its local baseline. Greens
+# tend to have shallower valleys than peaks (water won't pool on a bowl);
+# -4 mm catches the deeper crease-style artefacts without flattening real
+# bowls.
+_VALLEY_LIMIT_MM: float = -4.0
+
+# Soften sigma: gaussian sigma applied to the clamped-delta map before adding
+# back. 2 px on a 200x200 grid spreads the correction over ~5 px, smoothing
+# the clamp without bleeding into untouched terrain.
+_SOFTEN_SIGMA_PX: float = 2.0
+
+# Local window radius (in cells) for the local-baseline mean. 11 px window
+# captures the slope context around each cell while staying well below the
+# typical green-feature scale.
+_LOCAL_WINDOW_PX: int = 11
+
+
+# ---------------------------------------------------------------------------
+# No-arrows fallback (topology rule)
+#
+# When the topology-analysis stage detects ZERO slope/elevation arrows on the
+# green image, we have no information to drive a non-flat surface. Per the
+# homeowner's rule (see project_golf_render_rules.md → "No-arrows fallback"),
+# the pipeline must NOT fail or guess — it must produce a flat, horizontal
+# green surface at a known elevation.
+#
+# 0.0 mm matches the Poisson solver's pin-cell baseline, so a fallback Z of 0
+# yields the same "flat at the natural ground level" result that the Poisson
+# path would produce on an all-zero gradient field, just without the wasted
+# sparse solve.
+#
+# Water-aware variant (homeowner refinement, 2026-05-07): when the hole
+# contains one or more water polygons, the flat green is lifted to 5 mm so
+# it sits 3 mm above the 2 mm-thick water slab (per
+# project_golf_render_rules.md → "No-arrows fallback (topology)"). The
+# branch is selected via _hole_has_water(egm_data) inside run_pipeline.
+# ---------------------------------------------------------------------------
+FLAT_FALLBACK_Z_MM: float = 0.0
+FLAT_FALLBACK_Z_WATER_MM: float = 5.0  # 2 mm water + 3 mm clearance
+
+
+# ---------------------------------------------------------------------------
+# Arrow detection — boundary-proximity reject
+#
+# Real slope arrows live in the *interior* of a green. Dark blobs whose
+# centroids cling to the green polygon boundary are almost always something
+# else: yardage labels (e.g. the "78" counters on PGA West Stadium 17),
+# bunker-rim shading bleeding past the trace, or paint annotations from the
+# v-update overlays. Empirically these false-positive blobs sit within
+# ~1–2 px of the polygon edge, so we reject any candidate whose interior
+# distance from the boundary is at or below this tolerance.
+#
+# Diagnostic: see SC 17 post-paint case where 3 boundary-hugging blobs were
+# masquerading as arrows and forcing a non-flat Poisson solve on a hole that
+# should fall through to the flat-at-5 mm water-aware fallback.
+# ---------------------------------------------------------------------------
+ARROW_FULL_GLYPH: bool = True  # False = legacy head/tail from the polygon-clipped blob
+HEIGHT_SOLVER: str = "lsq"  # "lsq" (unpinned least squares) or "poisson_pinned" (legacy)
+BOUNDARY_PROXIMITY_PX: float = 3.0  # arrows must be at least this far inside the green polygon edge
+
+
+def soften_extremes(
+    Z: np.ndarray,
+    mask: np.ndarray,
+    *,
+    peak_limit_mm: float = _PEAK_LIMIT_MM,
+    valley_limit_mm: float = _VALLEY_LIMIT_MM,
+    soften_sigma_px: float = _SOFTEN_SIGMA_PX,
+    local_window_px: int = _LOCAL_WINDOW_PX,
+    elevation_range_mm: float | None = None,
+) -> tuple[np.ndarray, dict]:
+    """Clamp + soften local extremes in a Poisson-integrated heightmap.
+
+    Z is in raw Poisson units. We map the mm-thresholds into raw units by
+    using (current Z range / ELEVATION_RANGE_MM) as the conversion factor,
+    so the limits stay meaningful regardless of solver scaling.
+
+    Returns (Z_softened, stats) where stats is a dict with before/after
+    metrics for diagnostic logging.
+    """
+    if elevation_range_mm is None:
+        elevation_range_mm = ELEVATION_RANGE_MM
+
+    Z_out = np.array(Z, copy=True)
+    valid = mask & np.isfinite(Z_out)
+    if not valid.any():
+        return Z_out, {"touched": 0}
+
+    z_vals = Z_out[valid]
+    z_min, z_max = float(z_vals.min()), float(z_vals.max())
+    z_range_raw = z_max - z_min if z_max != z_min else 1.0
+
+    # Raw-unit equivalents of the mm thresholds.
+    raw_per_mm = z_range_raw / elevation_range_mm
+    peak_limit_raw   = peak_limit_mm   * raw_per_mm
+    valley_limit_raw = valley_limit_mm * raw_per_mm
+
+    # Local baseline: uniform mean over a window. Fill outside-mask with
+    # zeros for the numerator and zeros for the denominator (count of valid
+    # cells), then divide. This avoids NaNs leaking into the baseline near
+    # the green boundary.
+    Z_filled = np.where(valid, Z_out, 0.0)
+    weight   = valid.astype(np.float64)
+    win_size = max(3, int(local_window_px) | 1)  # ensure odd
+    num = uniform_filter(Z_filled, size=win_size, mode="reflect")
+    den = uniform_filter(weight,   size=win_size, mode="reflect")
+    with np.errstate(invalid="ignore", divide="ignore"):
+        baseline = np.where(den > 0, num / np.maximum(den, 1e-9), 0.0)
+
+    # Compute delta only inside the valid region; zero elsewhere so that
+    # the subsequent gaussian smoothing of the correction doesn't bleed
+    # NaNs from outside the green into valid cells.
+    delta = np.where(valid, Z_out - baseline, 0.0)
+
+    # Stats BEFORE clamping (only on the green mask).
+    delta_v = delta[valid]
+    n_peaks_before   = int(np.sum(delta_v >  peak_limit_raw))
+    n_valleys_before = int(np.sum(delta_v <  valley_limit_raw))
+    max_peak_delta_mm   = float(delta_v.max() / raw_per_mm) if delta_v.size else 0.0
+    min_valley_delta_mm = float(delta_v.min() / raw_per_mm) if delta_v.size else 0.0
+    z_max_mm_before = float((z_max - z_min) / raw_per_mm)  # i.e. ELEVATION_RANGE_MM
+    # Per-cell mm-deviation extremes (more useful than full range).
+    max_peak_height_mm = max_peak_delta_mm
+    min_valley_depth_mm = min_valley_delta_mm
+
+    # Clamp the delta and rebuild Z, then smooth the *modification* so the
+    # blend is local rather than abrupt.
+    delta_clamped = np.clip(delta, valley_limit_raw, peak_limit_raw)
+    correction = delta_clamped - delta  # nonzero only where we clipped
+    if soften_sigma_px > 0:
+        correction = gaussian_filter(correction, sigma=float(soften_sigma_px))
+    Z_out = np.where(valid, Z_out + correction, Z_out)
+
+    # Stats AFTER.
+    delta_after = (Z_out - baseline)[valid]
+    n_peaks_after   = int(np.sum(delta_after >  peak_limit_raw))
+    n_valleys_after = int(np.sum(delta_after <  valley_limit_raw))
+    max_peak_after_mm   = float(delta_after.max() / raw_per_mm) if delta_after.size else 0.0
+    min_valley_after_mm = float(delta_after.min() / raw_per_mm) if delta_after.size else 0.0
+
+    stats = {
+        "peak_limit_mm":     peak_limit_mm,
+        "valley_limit_mm":   valley_limit_mm,
+        "soften_sigma_px":   soften_sigma_px,
+        "local_window_px":   win_size,
+        "raw_per_mm":        raw_per_mm,
+        "max_peak_mm_before":   max_peak_height_mm,
+        "min_valley_mm_before": min_valley_depth_mm,
+        "n_peaks_clipped":      n_peaks_before,
+        "n_valleys_clipped":    n_valleys_before,
+        "max_peak_mm_after":    max_peak_after_mm,
+        "min_valley_mm_after":  min_valley_after_mm,
+        "n_peaks_after":        n_peaks_after,
+        "n_valleys_after":      n_valleys_after,
+    }
+    return Z_out, stats
+
+
+# ---------------------------------------------------------------------------
+# Slope limiter — turn peaks into gentle rolling hills
+#
+# This is a grayscale morphological opening with a cone kernel of slope
+# _MAX_SLOPE_DELTA_MM per grid cell. For every cell inside the mask we cap Z
+# at ``min_neighbor + max_delta`` and iterate to convergence. Because the cap
+# is relative to the *lowest* 4-neighbor, the reduction propagates inward
+# from the perimeter of any high region: a mesa collapses layer by layer
+# until the entire feature slopes at ≤ max_delta per cell from its lowest
+# adjacent valley. Single-cell spikes and multi-cell plateaus alike become
+# gently sloped hills.
+#
+# Earlier iteration used ``max_neighbor + max_delta`` — that only reduced
+# isolated single-cell spikes because a mesa's inner cells all share high
+# neighbors. Switched to ``min_neighbor + max_delta`` after a stepped-green
+# render still showed a tall pyramid: the "spike" was actually a small
+# cluster of high cells that the max-neighbor variant refused to touch.
+# ---------------------------------------------------------------------------
+
+_MAX_SLOPE_DELTA_MM: float = 0.20
+# 0.20 mm/cell rise budget. On the 200×200 / ±90 mm fringe grid each cell is
+# ~0.9 mm wide, so 0.20 mm/cell ≈ 22% grade — enough to let natural golf-green
+# undulation show through while still blocking single-cell spike artefacts.
+# The previous value of 0.10 (~11% grade) was too strict: on Delaveaga H5 it
+# crushed a legitimate 14.5 mm elevation range down to ~7.7 mm.  Doubling to
+# 0.20 restores the ~15–16 mm output Thomas expects.
+_MAX_SLOPE_ITERS:    int   = 400   # safety cap on iteration count
+
+
+def limit_max_slope(
+    Z: np.ndarray,
+    mask: np.ndarray,
+    *,
+    max_delta_mm: float = _MAX_SLOPE_DELTA_MM,
+    max_iters:    int   = _MAX_SLOPE_ITERS,
+    elevation_range_mm: float | None = None,
+) -> tuple[np.ndarray, dict]:
+    """Iteratively cap each cell at ``min_neighbor + max_delta_mm`` so no
+    cell rises faster than ``max_delta_mm`` per step from its lowest adjacent
+    valley. Peaks (both isolated spikes and multi-cell mesas) collapse into
+    gentle mounds sloping at the limit; broad low-relief surfaces pass
+    through unchanged.
+
+    Z is in raw Poisson units. As in :func:`soften_extremes`, we translate
+    mm → raw units via (current Z range / ``elevation_range_mm``).
+    """
+    if elevation_range_mm is None:
+        elevation_range_mm = ELEVATION_RANGE_MM
+
+    Z_out = np.array(Z, copy=True)
+    valid = mask & np.isfinite(Z_out)
+    if not valid.any() or max_delta_mm <= 0:
+        return Z_out, {
+            "max_delta_mm":  max_delta_mm,
+            "iters":         0,
+            "cells_reduced": 0,
+            "max_drop_mm":   0.0,
+        }
+
+    z_vals = Z_out[valid]
+    z_range_raw = float(z_vals.max() - z_vals.min()) or 1.0
+    raw_per_mm = z_range_raw / elevation_range_mm
+    max_delta_raw = max_delta_mm * raw_per_mm
+
+    # Out-of-mask cells are set to +inf so they are ignored by the min-neighbor
+    # reduction (a valid cell on the mask boundary must be reduced by its
+    # in-mask neighbours only).
+    Z_pad = np.where(valid, Z_out, np.inf)
+    max_drop_mm_start = 0.0
+    total_reduced = 0
+    it = 0
+
+    for it in range(1, max_iters + 1):
+        up    = np.full_like(Z_pad,  np.inf); up[1:,   :]   = Z_pad[:-1, :]
+        down  = np.full_like(Z_pad,  np.inf); down[:-1, :]  = Z_pad[1:,  :]
+        left  = np.full_like(Z_pad,  np.inf); left[:, 1:]   = Z_pad[:, :-1]
+        right = np.full_like(Z_pad,  np.inf); right[:, :-1] = Z_pad[:, 1:]
+        min_nbr = np.minimum(np.minimum(up, down), np.minimum(left, right))
+        cap = min_nbr + max_delta_raw
+        excess = valid & np.isfinite(min_nbr) & (Z_out > cap)
+        n = int(excess.sum())
+        if n == 0:
+            it -= 1  # last iter was a no-op verification pass
+            break
+        if total_reduced == 0:
+            drops_raw = (Z_out - cap)[excess]
+            if drops_raw.size:
+                max_drop_mm_start = float(drops_raw.max() / raw_per_mm)
+        Z_out = np.where(excess, cap, Z_out)
+        Z_pad = np.where(valid, Z_out, np.inf)
+        total_reduced += n
+
+    return Z_out, {
+        "max_delta_mm":  max_delta_mm,
+        "iters":         it,
+        "cells_reduced": total_reduced,
+        "max_drop_mm":   max_drop_mm_start,
+        "raw_per_mm":    raw_per_mm,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Step 1: Load EGM and image
+# ---------------------------------------------------------------------------
+
+def find_egm(search_term: str = "Moffett") -> str:
+    """Pick an EGM file matching the search term.
+
+    Searches all ItWentIn/GolfCourses/*/EGMs/ directories first,
+    then falls back to owner_inbox/ for backwards compatibility.
+    """
+    # Search new course EGMs/ folders
+    if os.path.isdir(EGM_BASE):
+        for course_dir in sorted(os.listdir(EGM_BASE)):
+            egms_dir = os.path.join(EGM_BASE, course_dir, "EGMs")
+            if not os.path.isdir(egms_dir):
+                continue
+            candidates = [
+                f for f in os.listdir(egms_dir)
+                if f.endswith(".egm") and search_term in f
+            ]
+            if candidates:
+                aa = [c for c in candidates if "AA" in c]
+                chosen = aa[0] if aa else sorted(candidates)[0]
+                return os.path.join(egms_dir, chosen)
+    # Fallback: owner_inbox
+    candidates = [
+        f for f in os.listdir(OWNER_INBOX)
+        if f.endswith(".egm") and search_term in f
+    ]
+    if not candidates:
+        raise FileNotFoundError(
+            f"No EGM matching '{search_term}' found in any EGMs/ folder or owner_inbox/"
+        )
+    aa = [c for c in candidates if "AA" in c]
+    chosen = aa[0] if aa else sorted(candidates)[0]
+    return os.path.join(OWNER_INBOX, chosen)
+
+
+def _spline_smooth_closed(
+    polyline: np.ndarray,
+    smoothing_px: float,
+    resample_spacing_px: float = 1.5,
+) -> np.ndarray:
+    """
+    Cubic periodic B-spline smoothing of a CLOSED 2D polyline.
+
+    Uses `scipy.interpolate.splprep` with `per=1` (periodic) and a smoothing
+    factor `s` that controls how tightly the spline follows the input points.
+    A larger `s` means MORE smoothing — the spline deviates further from the
+    control points to achieve a smoother curve. `s = 0` reproduces exact
+    interpolation (no smoothing).
+
+    After fitting, the spline is resampled at approximately uniform arc-length
+    spacing `resample_spacing_px` in the same pixel space as the input.
+
+    This is a much stronger smoother than Chaikin corner-cutting: it fits a
+    continuous C² curve that dampens noise below the smoothing scale, which is
+    what we need to make the green boundary read as a truly smooth curve
+    rather than a densely-sampled polyline with sub-pixel jitter.
+
+    Parameters
+    ----------
+    polyline           : (N, 2) closed polyline (first ≠ last vertex).
+    smoothing_px       : scipy `s` parameter — RMS pixel deviation the spline
+                         may take from the input to smooth. Set from mm-space
+                         target scale via caller-side px/mm conversion.
+    resample_spacing_px: desired output vertex spacing in pixels.
+
+    Returns
+    -------
+    Smoothed closed polyline (M, 2), first ≠ last vertex, uniformly spaced.
+    Falls back to the input on any splprep failure (degenerate polygon,
+    duplicate vertices, insufficient points).
+    """
+    if polyline.shape[0] < 8:
+        return polyline
+    pts = np.asarray(polyline, dtype=np.float64)
+    # Deduplicate consecutive coincident points (splprep dislikes them)
+    diffs = np.linalg.norm(np.diff(pts, axis=0, append=pts[:1]), axis=1)
+    keep = diffs > 1e-6
+    pts = pts[keep]
+    if pts.shape[0] < 8:
+        return polyline
+    try:
+        # per=1 → periodic (closed) spline; k=3 → cubic
+        tck, _u = splprep([pts[:, 0], pts[:, 1]], s=smoothing_px, per=1, k=3)
+    except Exception:
+        return polyline
+    # Estimate perimeter to choose an output vertex count
+    seg = np.linalg.norm(np.diff(pts, axis=0, append=pts[:1]), axis=1)
+    perimeter = float(seg.sum())
+    n_out = max(64, int(round(perimeter / max(resample_spacing_px, 0.25))))
+    u_new = np.linspace(0.0, 1.0, n_out, endpoint=False)
+    try:
+        xs_new, ys_new = splev(u_new, tck)
+    except Exception:
+        return polyline
+    smoothed = np.column_stack([np.asarray(xs_new), np.asarray(ys_new)]).astype(np.float64)
+    return smoothed
+
+
+def _chaikin_smooth_closed(polyline: np.ndarray, iterations: int) -> np.ndarray:
+    """
+    Chaikin corner-cutting on a CLOSED 2D polyline. Each iteration replaces
+    every corner with two new points at the 1/4 and 3/4 marks along the
+    two incident edges — the polyline doubles in length per pass and
+    converges to a quadratic B-spline in the limit.
+
+    Preserves closure (first vertex ≠ last vertex convention on input and
+    output) and does not require the input to be uniformly spaced.
+
+    Used by `load_egm` on the interpolated green boundary polyline to
+    remove the scallops that read at print scale where fringe meets green.
+    See GREEN_BOUNDARY_SMOOTH_ITERATIONS.
+    """
+    if iterations <= 0 or polyline.shape[0] < 3:
+        return polyline
+    pts = np.asarray(polyline, dtype=np.float64)
+    for _ in range(iterations):
+        n = pts.shape[0]
+        # Vectorised: for each edge i → (i+1)%n, emit Q = 0.75*P_i + 0.25*P_next
+        # and R = 0.25*P_i + 0.75*P_next. Result has 2n points.
+        nxt = np.roll(pts, -1, axis=0)
+        q = 0.75 * pts + 0.25 * nxt
+        r = 0.25 * pts + 0.75 * nxt
+        # Interleave: [Q_0, R_0, Q_1, R_1, ...] preserves loop ordering
+        interleaved = np.empty((2 * n, 2), dtype=np.float64)
+        interleaved[0::2] = q
+        interleaved[1::2] = r
+        pts = interleaved
+    return pts
+
+
+def load_egm(egm_path: str) -> tuple[dict, str, np.ndarray]:
+    """
+    Load EGM file.
+
+    Returns
+    -------
+    (egm_data, image_path, green_boundary_px)
+        image_path: absolute path to the source image
+        green_boundary_px: Nx2 float array in pixel coords
+    """
+    with open(egm_path) as f:
+        data = json.load(f)
+
+    image_filename = data["image"]
+    course = data.get("course", "")
+    # imageCourse records which course folder the image file actually lives in.
+    # This may differ from ``course`` when the user selected an image from a
+    # different course's folder when creating the project.
+    image_course = data.get("imageCourse", "") or course
+
+    # Build search list: imageCourse first, then all other course folders,
+    # then legacy locations.
+    image_path = None
+    search_dirs = []
+    if image_course:
+        search_dirs.append(os.path.abspath(course_paths(image_course)["images"]))
+    # Also try the project's own course folder (in case imageCourse is stale)
+    if course and course != image_course:
+        search_dirs.append(os.path.abspath(course_paths(course)["images"]))
+    # Fallback: scan all other course Images/ dirs to handle cross-course references
+    if os.path.isdir(EGM_BASE):
+        for entry in sorted(os.listdir(EGM_BASE)):
+            if entry in (image_course, course):
+                continue  # already added above
+            candidate_dir = os.path.abspath(os.path.join(EGM_BASE, entry, "Images"))
+            if os.path.isdir(candidate_dir):
+                search_dirs.append(candidate_dir)
+    search_dirs.extend([TEAM_INBOX, OWNER_INBOX])
+
+    for folder in search_dirs:
+        candidate = os.path.join(folder, image_filename)
+        if os.path.exists(candidate):
+            image_path = os.path.abspath(candidate)
+            break
+    if image_path is None:
+        raise FileNotFoundError(
+            f"Image not found: {image_filename!r} — searched: "
+            + ", ".join(search_dirs)
+        )
+
+    # Extract green polygon (first polygon of type 'green')
+    green_poly = None
+    for poly in data["polygons"]:
+        if poly.get("type") == "green":
+            green_poly = poly
+            break
+    if green_poly is None:
+        raise ValueError("No green polygon found in EGM")
+
+    # Green scale: XY-only multiplier applied to the green polygon around its own
+    # centroid, in pixel space. Fringe/traps/water/boulders are unaffected because
+    # only the green polygon's control points are transformed. Default 1.0 = no-op.
+    green_scale = float(data.get("greenScale") or 1.0065)
+    if green_scale != 1.0 and green_poly["points"]:
+        pts = np.array([[p["x"], p["y"]] for p in green_poly["points"]], dtype=np.float64)
+        cx = float(pts[:, 0].mean())
+        cy = float(pts[:, 1].mean())
+        pts[:, 0] = cx + (pts[:, 0] - cx) * green_scale
+        pts[:, 1] = cy + (pts[:, 1] - cy) * green_scale
+        green_poly["points"] = [{"x": float(x), "y": float(y)} for x, y in pts]
+
+    boundary_px = interpolate_catmull_rom(green_poly["points"])
+
+    # Hard spline smoothing (task 679, Topo 2026-08-30). Runs BEFORE the
+    # Chaikin polish and BEFORE any downstream stage sees the boundary.
+    # Fits a cubic periodic B-spline with a smoothing factor that dampens
+    # sub-mm raggedness. This is what makes the 0.5 mm green→fringe gap
+    # actually show up in the print — the prior 0.2 mm gap (task 677) was
+    # invisible because raw Catmull-Rom raggedness swamped it.
+    if GREEN_BOUNDARY_SPLINE_SMOOTHING_PX > 0.0:
+        _n_before_spl = boundary_px.shape[0]
+        boundary_px = _spline_smooth_closed(
+            boundary_px,
+            smoothing_px=GREEN_BOUNDARY_SPLINE_SMOOTHING_PX,
+            resample_spacing_px=GREEN_BOUNDARY_SPLINE_RESAMPLE_PX,
+        )
+        print(f"  Green boundary spline smoothing: "
+              f"{_n_before_spl} → {boundary_px.shape[0]} pts "
+              f"(s={GREEN_BOUNDARY_SPLINE_SMOOTHING_PX} px, "
+              f"resample={GREEN_BOUNDARY_SPLINE_RESAMPLE_PX} px)")
+
+    # Chaikin corner-cutting to polish any residual scallops
+    # (task 677, Topo 2026-08-28). Applied AFTER the spline pass so it
+    # smooths corners that survive resampling. 2 iterations keeps area
+    # change under ~0.5% on typical golf-green shapes.
+    if GREEN_BOUNDARY_SMOOTH_ITERATIONS > 0:
+        _n_before = boundary_px.shape[0]
+        boundary_px = _chaikin_smooth_closed(boundary_px, GREEN_BOUNDARY_SMOOTH_ITERATIONS)
+        print(f"  Green boundary Chaikin smoothing: "
+              f"{_n_before} → {boundary_px.shape[0]} pts "
+              f"({GREEN_BOUNDARY_SMOOTH_ITERATIONS} iters)")
+
+    # ── Trap + water boundary smoothing (task 705, Topo 2026-09-01) ────────
+    # Apply the same spline+Chaikin pipeline used on the green to every trap
+    # and water polygon. The smoothed dense polyline is written back into
+    # `poly["points"]` and the polygon is marked with `_dense_px_points`
+    # so `_poly_to_dense_px` returns the smoothed points directly (no second
+    # Catmull-Rom pass, which would add wiggles between our dense samples).
+    #
+    # This is the trap/water analogue of the green→fringe seam-smoothing fix
+    # (task 683). Downstream stages that build trap/water shapely polygons
+    # (build_fringe_mesh, export_trap_stls, export_water_meshes, and the
+    # grass-texture seam-exclusion path) all read via `_poly_to_dense_px`
+    # (or are updated to do so), so they all see the smoothed outlines.
+    #
+    # Prints `[trap_smooth]` / `[water_smooth]` per-polygon so a future
+    # regression is diagnosable in seconds — same tag pattern as the
+    # `[green_carve]` markers.
+    for _poly in data.get("polygons", []):
+        _ptype = _poly.get("type")
+        if _ptype == "trap":
+            _smooth_px = TRAP_BOUNDARY_SPLINE_SMOOTHING_PX
+            _resample_px = TRAP_BOUNDARY_SPLINE_RESAMPLE_PX
+            _chaikin_iters = TRAP_BOUNDARY_SMOOTH_ITERATIONS
+            _tag = "trap_smooth"
+        elif _ptype == "water":
+            _smooth_px = WATER_BOUNDARY_SPLINE_SMOOTHING_PX
+            _resample_px = WATER_BOUNDARY_SPLINE_RESAMPLE_PX
+            _chaikin_iters = WATER_BOUNDARY_SMOOTH_ITERATIONS
+            _tag = "water_smooth"
+        else:
+            continue
+        _ctrl = _poly.get("points") or []
+        if len(_ctrl) < 3:
+            print(f"  [{_tag}] skipped: only {len(_ctrl)} control pts")
+            continue
+        try:
+            _dense = interpolate_catmull_rom(_ctrl)
+        except Exception as _exc_ir:
+            print(f"  [{_tag}] Catmull-Rom failed ({_exc_ir}) — keeping raw pts")
+            continue
+        _n_raw = _dense.shape[0]
+        # task 723: stash the raw Catmull-Rom polyline (before smoothing) so
+        # build_fringe_mesh can use the un-smoothed outline for its carve-out
+        # exclusion test and snap target. The fringe cutout must reference the
+        # same polygon the slicer sees as the trap's OUTER boundary — the raw
+        # Catmull-Rom — so fringe walls are never placed inside that boundary.
+        # (The smoothed version can be inward of the raw by up to a few tenths
+        # of a mm, which puts fringe walls in the raw/smooth gap zone and causes
+        # slicer "conflicts of gcode paths" between fringe and trap layers.)
+        _poly["_raw_catmull_px"] = _dense.copy()
+        if _smooth_px > 0.0:
+            _dense = _spline_smooth_closed(
+                _dense,
+                smoothing_px=_smooth_px,
+                resample_spacing_px=_resample_px,
+            )
+        _n_spl = _dense.shape[0]
+        if _chaikin_iters > 0:
+            _dense = _chaikin_smooth_closed(_dense, _chaikin_iters)
+        _n_chk = _dense.shape[0]
+        # Simplify the smoothed polyline via Shapely so downstream extrusion
+        # (trimesh.creation.extrude_polygon) doesn't choke on 30k+ near-
+        # collinear points. Tolerance 0.5 px ≈ 0.1 mm at typical golf scale
+        # (well under the printer's XY resolution). This keeps the curve
+        # visually identical while dropping vertex count ~20-40×. Without
+        # this, the trap slab produces thousands of near-degenerate wall
+        # triangles that break as non-manifold during serial engraving.
+        try:
+            from shapely.geometry import LinearRing as _LR
+            _ring = _LR(_dense)
+            _ring_simp = _ring.simplify(0.5, preserve_topology=True)
+            _coords = np.asarray(_ring_simp.coords, dtype=np.float64)
+            # LinearRing repeats the first point at the end — drop the dup
+            if len(_coords) >= 2 and np.allclose(_coords[0], _coords[-1]):
+                _coords = _coords[:-1]
+            if len(_coords) >= 4:
+                _dense = _coords
+        except Exception as _exc_simp:
+            print(f"  [{_tag}] simplify failed ({_exc_simp}) — keeping dense pts")
+        _n_final = _dense.shape[0]
+        # Write smoothed dense polyline back and flag it as pre-densified.
+        _poly["points"] = [{"x": float(x), "y": float(y)} for x, y in _dense]
+        _poly["_dense_px_points"] = True
+        print(f"  [{_tag}] {_n_raw} → {_n_spl} → {_n_chk} → {_n_final} pts "
+              f"(s={_smooth_px} px, resample={_resample_px} px, "
+              f"chaikin={_chaikin_iters}, simplify_tol=0.5 px)")
+
+    return data, image_path, boundary_px
+
+
+# ---------------------------------------------------------------------------
+# Step 2: Detect arrows and determine direction
+# ---------------------------------------------------------------------------
+
+def build_dark_mask_inside_green(
+    img: np.ndarray,
+    green_boundary_px: np.ndarray,
+    dark_threshold: int = 50,
+) -> np.ndarray:
+    """Return a uint8 binary mask: 255 where dark pixels lie inside the green.
+
+    Two-branch detector (task 760, Topo 2026-10-11):
+    (a) V < dark_threshold  — catches legacy GolfLogix near-black arrows and any
+        other dark ink regardless of hue.
+    (b) H ∈ [90, 135] AND S > 150 AND V < 105  — catches StrackaLine's dark-navy
+        arrows (empirical: RGB≈(0,50,90), HSV≈(104,255,90)).  The blue-green
+        turf on StrackaLine images has V≈150-190 so it is NOT captured by (b).
+    The two conditions are OR'd together and then masked to the green polygon.
+    """
+    h, w = img.shape[:2]
+    boundary_i = green_boundary_px.astype(np.int32)
+    green_mask = np.zeros((h, w), dtype=np.uint8)
+    cv2.fillPoly(green_mask, [boundary_i], 255)
+
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    h_ch = hsv[:, :, 0]
+    s_ch = hsv[:, :, 1]
+    v_ch = hsv[:, :, 2]
+
+    # (a) generic dark pixels (covers legacy sources)
+    dark_any = v_ch < dark_threshold
+    # (b) StrackaLine navy: saturated dark blue (arrows are V≈90, S≈255, H≈103-105)
+    dark_navy = (h_ch >= 90) & (h_ch <= 135) & (s_ch > 150) & (v_ch < 105)
+
+    dark_mask = np.zeros((h, w), dtype=np.uint8)
+    dark_mask[((dark_any | dark_navy) & (green_mask == 255))] = 255
+    return dark_mask
+
+
+def pca_orientation(ys: np.ndarray, xs: np.ndarray) -> tuple[float, float, float, float]:
+    """
+    Compute the principal axis of pixel coordinates using PCA.
+
+    Returns
+    -------
+    (cx, cy, dx, dy)
+        centroid (cx, cy) and principal-axis unit vector (dx, dy)
+    """
+    coords = np.stack([xs, ys], axis=1).astype(np.float64)  # (N, 2)
+    centroid = coords.mean(axis=0)
+    centered = coords - centroid
+    cov = centered.T @ centered / max(len(coords) - 1, 1)
+    eigenvalues, eigenvectors = np.linalg.eigh(cov)
+    # Largest eigenvalue → principal axis
+    principal = eigenvectors[:, np.argmax(eigenvalues)]
+    return float(centroid[0]), float(centroid[1]), float(principal[0]), float(principal[1])
+
+
+def resolve_arrow_direction(
+    ys: np.ndarray,
+    xs: np.ndarray,
+    cx: float,
+    cy: float,
+    dx: float,
+    dy: float,
+) -> tuple[float, float]:
+    """
+    Resolve 180° ambiguity of the principal axis.
+
+    StrackaLine (and GolfLogix) slope arrows are classical arrows: a thin stem
+    (tail) with a flared triangular head.  Project pixels onto the principal
+    axis and split into two halves.  The half with the LARGER mean perpendicular
+    distance from the axis is the HEAD (flared / wide); the opposite half with
+    pixels packed close to the axis is the TAIL (thin stem).
+
+    Per [[project-stracka-arrow-semantics]], arrows point downhill — so the
+    HEAD end IS the downhill end.  We return the unit vector pointing toward
+    the HEAD = the downhill direction.
+
+    History: v5.32 used "narrower perp-std = HEAD" (the chevron-tip heuristic).
+    That is backwards for arrow-with-flared-head glyphs: the flared end has
+    MORE pixel spread, not less.  On Delaveaga H11 the inverted logic flipped
+    every detected arrow 180° and collapsed the direction field to the N/NW
+    quadrant (task 770 diagnosis — see owner_inbox/arrow_direction_debug_h11.png
+    and arrow_masks_h11/). Fixed to "wider mean-perp = HEAD" at v5.33.
+
+    Returns (gradient_dx, gradient_dy) as a unit vector pointing downhill.
+    """
+    coords = np.stack([xs - cx, ys - cy], axis=1).astype(np.float64)
+
+    # Project onto principal axis
+    proj_along = coords @ np.array([dx, dy])        # scalar projection
+    # Perpendicular component (vector), then per-pixel perp distance (scalar)
+    perp = coords - np.outer(proj_along, np.array([dx, dy]))
+    perp_dist = np.sqrt((perp ** 2).sum(axis=1))
+
+    # Split: positive vs negative half
+    pos_mask = proj_along >= 0
+    neg_mask = ~pos_mask
+
+    # Need enough pixels on both sides to make a decision; otherwise fall back
+    # to the raw PCA direction (caller normalises).  Returning (0, 0) here
+    # would be filtered out by the mag < 1e-9 guard in detect_arrows.
+    if pos_mask.sum() < 2 or neg_mask.sum() < 2:
+        return dx, dy
+
+    mean_perp_pos = float(perp_dist[pos_mask].mean())
+    mean_perp_neg = float(perp_dist[neg_mask].mean())
+
+    # Head = wider half (larger mean perp distance = flared arrowhead side).
+    # Arrows point downhill, so the head IS the downhill end.
+    if mean_perp_pos >= mean_perp_neg:
+        return dx, dy
+    else:
+        return -dx, -dy
+
+
+def detect_arrows(
+    img: np.ndarray,
+    green_boundary_px: np.ndarray,
+    dark_threshold: int = 50,
+    max_arrow_area: int = 1200,
+) -> list[dict]:
+    """
+    Find all arrow blobs, determine centroid and downhill gradient direction.
+
+    Returns list of dicts with keys: cx, cy, dx, dy (unit gradient vector)
+    """
+    dark_mask = build_dark_mask_inside_green(img, green_boundary_px, dark_threshold)
+
+    n_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
+        dark_mask, connectivity=8
+    )
+
+    # Pre-build the integer polygon contour once for cv2.pointPolygonTest
+    # (used by the boundary-proximity reject below). cv2 returns a SIGNED
+    # distance: > 0 inside, == 0 on edge, < 0 outside.
+    boundary_i = green_boundary_px.astype(np.int32)
+
+    # ── Pre-pass: find decimal-dot centroids ─────────────────────────────────
+    # StrackaLine's interior slope-grade labels ("1.8", "2.9", "0.5"…) all
+    # include a decimal separator rendered as a tiny isolated round blob
+    # (~5–15 px, roughly circular). Arrows never have such a nearby companion.
+    # Thomas's observation 2026-10-12: this is a reliable StrackaLine-only
+    # discriminator because the convention holds across holes/courses.
+    # Any arrow candidate within DOT_PROXIMITY_PX of a dot is almost certainly
+    # a numeric-label digit and gets rejected.
+    DOT_AREA_MIN = 3
+    DOT_AREA_MAX = 20
+    DOT_MAX_BBOX = 6
+    DOT_PROXIMITY_PX = 30.0
+    dot_centroids: list[tuple[float, float]] = []
+    for lbl in range(1, n_labels):
+        area = int(stats[lbl, cv2.CC_STAT_AREA])
+        if area < DOT_AREA_MIN or area > DOT_AREA_MAX:
+            continue
+        w = int(stats[lbl, cv2.CC_STAT_WIDTH])
+        h = int(stats[lbl, cv2.CC_STAT_HEIGHT])
+        if max(w, h) > DOT_MAX_BBOX:
+            continue
+        if max(w, h) / max(min(w, h), 1) > 2:
+            continue  # not round enough — likely a short line fragment
+        dcx = float(stats[lbl, cv2.CC_STAT_LEFT]) + w / 2.0
+        dcy = float(stats[lbl, cv2.CC_STAT_TOP]) + h / 2.0
+        dot_centroids.append((dcx, dcy))
+    if dot_centroids:
+        print(f"  detect_arrows: found {len(dot_centroids)} decimal-dot "
+              f"candidate(s); will reject arrow candidates within "
+              f"{DOT_PROXIMITY_PX:g} px of any of them")
+
+    # Unclipped navy components: edge arrows are cut by the green polygon, which
+    # removes the head; direction must come from the whole glyph (task 799).
+    _hsv_full = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    _navy_full = (((_hsv_full[:, :, 0] >= 90) & (_hsv_full[:, :, 0] <= 135)
+                   & (_hsv_full[:, :, 1] > 150) & (_hsv_full[:, :, 2] < 105))
+                  .astype(np.uint8) * 255)
+    _nf_n, _nf_labels, _nf_stats, _ = cv2.connectedComponentsWithStats(_navy_full, connectivity=8)
+
+    arrows = []
+    n_rejected_boundary = 0
+    n_rejected_decimal = 0
+    n_full_blob = 0
+    for lbl in range(1, n_labels):
+        area = int(stats[lbl, cv2.CC_STAT_AREA])
+        if area > max_arrow_area:
+            continue  # skip large blobs (contour lines)
+        if area < 25:
+            continue  # skip noise + the decimal-dot blobs themselves (≤ 20 px)
+
+        ys, xs = np.where(labels == lbl)
+
+        # Cheap centroid first — needed for the decimal-dot proximity test.
+        cx_cent = float(xs.mean())
+        cy_cent = float(ys.mean())
+
+        # Decimal-dot reject: candidate is near a tiny isolated dot → it's a
+        # digit of a slope-grade number label on a StrackaLine image, not an
+        # arrow.
+        # Navy-ink blobs are real StrackaLine arrows (labels are black/grey), so exempt them.
+        _is_navy = bool((_navy_full[ys, xs] > 0).mean() >= 0.5)
+        if dot_centroids and not _is_navy:
+            near_dot = False
+            for (dcx, dcy) in dot_centroids:
+                if (cx_cent - dcx) ** 2 + (cy_cent - dcy) ** 2 < DOT_PROXIMITY_PX ** 2:
+                    near_dot = True
+                    break
+            if near_dot:
+                n_rejected_decimal += 1
+                continue
+
+        # PCA for orientation
+        cx, cy, dx, dy = pca_orientation(ys, xs)
+
+        # Boundary-proximity reject: yardage labels (e.g. the "78" counters
+        # on PGA West Stadium 17) and other edge-hugging dark glyphs read
+        # as small dark blobs and survive the area filter. Real slope
+        # arrows live in the interior of the green, so we discard any
+        # candidate whose centroid is within BOUNDARY_PROXIMITY_PX of the
+        # polygon edge (signed distance ≤ tol).
+        signed_dist = cv2.pointPolygonTest(
+            boundary_i, (float(cx), float(cy)), measureDist=True
+        )
+        if signed_dist <= BOUNDARY_PROXIMITY_PX and not (_is_navy and ARROW_FULL_GLYPH):
+            n_rejected_boundary += 1
+            continue
+
+        # Resolve ambiguity (use the unclipped navy glyph when the polygon cut it)
+        r_ys, r_xs, r_cx, r_cy, r_dx, r_dy = ys, xs, cx, cy, dx, dy
+        _nl = np.bincount(_nf_labels[ys, xs]); _nl[0] = 0
+        if _nl.max() > 0:
+            _fl = int(_nl.argmax())
+            _fa = int(_nf_stats[_fl, cv2.CC_STAT_AREA])
+            if ARROW_FULL_GLYPH and area * 1.1 < _fa <= max_arrow_area:
+                r_ys, r_xs = np.where(_nf_labels == _fl)
+                r_cx, r_cy, r_dx, r_dy = pca_orientation(r_ys, r_xs)
+                n_full_blob += 1
+        gdx, gdy = resolve_arrow_direction(r_ys, r_xs, r_cx, r_cy, r_dx, r_dy)
+
+        # Normalise
+        mag = math.hypot(gdx, gdy)
+        if mag < 1e-9:
+            continue
+        gdx /= mag
+        gdy /= mag
+
+        arrows.append({"cx": cx, "cy": cy, "dx": gdx, "dy": gdy})
+
+    if n_full_blob:
+        print(f"  detect_arrows: {n_full_blob} edge arrow(s) resolved from the unclipped glyph")
+    if n_rejected_boundary > 0:
+        print(
+            f"  detect_arrows: rejected {n_rejected_boundary} blob(s) within "
+            f"{BOUNDARY_PROXIMITY_PX:g} px of green boundary "
+            f"(yardage-label / edge-glyph false-positive class)"
+        )
+    if n_rejected_decimal > 0:
+        print(
+            f"  detect_arrows: rejected {n_rejected_decimal} blob(s) within "
+            f"{DOT_PROXIMITY_PX:g} px of a decimal-dot companion "
+            f"(StrackaLine slope-grade label false-positive class)"
+        )
+
+    return arrows
+
+
+# ---------------------------------------------------------------------------
+# Step 3: Build gradient field on a grid (IDW)
+# ---------------------------------------------------------------------------
+
+def build_gradient_field(
+    arrows: list[dict],
+    green_boundary_px: np.ndarray,
+    grid_res: int = 100,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Create a regular grid covering the green, compute IDW-interpolated gradient.
+
+    Returns
+    -------
+    (xs_grid, ys_grid, inside_mask, Gx, Gy)
+        xs_grid, ys_grid : 1-D arrays of x and y grid coordinates (pixel space)
+        inside_mask      : (grid_res, grid_res) bool array — True if cell is inside green
+        Gx, Gy           : (grid_res, grid_res) gradient component arrays
+    """
+    bx = green_boundary_px[:, 0]
+    by = green_boundary_px[:, 1]
+    x0, x1 = bx.min(), bx.max()
+    y0, y1 = by.min(), by.max()
+
+    xs_grid = np.linspace(x0, x1, grid_res)
+    ys_grid = np.linspace(y0, y1, grid_res)
+
+    # Build inside mask using OpenCV pointPolygonTest
+    boundary_i = green_boundary_px.astype(np.int32)
+    inside_mask = np.zeros((grid_res, grid_res), dtype=bool)
+    for row in range(grid_res):
+        for col in range(grid_res):
+            pt = (float(xs_grid[col]), float(ys_grid[row]))
+            result = cv2.pointPolygonTest(boundary_i, pt, measureDist=False)
+            inside_mask[row, col] = result >= 0
+
+    print(f"  Grid {grid_res}x{grid_res}, inside cells: {inside_mask.sum()}")
+
+    if not arrows:
+        return xs_grid, ys_grid, inside_mask, np.zeros((grid_res, grid_res)), np.zeros((grid_res, grid_res))
+
+    # IDW interpolation
+    arrow_cx = np.array([a["cx"] for a in arrows])
+    arrow_cy = np.array([a["cy"] for a in arrows])
+    arrow_dx = np.array([a["dx"] for a in arrows])
+    arrow_dy = np.array([a["dy"] for a in arrows])
+
+    Gx = np.zeros((grid_res, grid_res))
+    Gy = np.zeros((grid_res, grid_res))
+    IDW_POWER = 2
+    IDW_EPSILON = 1e-6
+
+    for row in range(grid_res):
+        for col in range(grid_res):
+            if not inside_mask[row, col]:
+                continue
+            gx = xs_grid[col]
+            gy = ys_grid[row]
+            dist2 = (arrow_cx - gx) ** 2 + (arrow_cy - gy) ** 2
+            weights = 1.0 / (dist2 ** (IDW_POWER / 2) + IDW_EPSILON)
+            w_sum = weights.sum()
+            if w_sum < 1e-12:
+                continue
+            # Sign convention fix (Topo-754):
+            # resolve_arrow_direction() returns the DOWNHILL direction (toward
+            # the low side of the slope) because the chevron tip = head = the
+            # end the arrow points toward = the downhill end.  But
+            # solve_poisson_height() integrates G as the elevation gradient
+            # ∇Z, which must point UPHILL (Z increases in G's direction).
+            # Without negation the solver produces an inverted surface — a bowl
+            # becomes a hill and vice versa.  Negate here so Gx/Gy = -arrow =
+            # uphill direction = true ∇Z.
+            Gx[row, col] = -(weights * arrow_dx).sum() / w_sum
+            Gy[row, col] = -(weights * arrow_dy).sum() / w_sum
+
+    return xs_grid, ys_grid, inside_mask, Gx, Gy
+
+
+# ---------------------------------------------------------------------------
+# Step 4: Solve Poisson equation for height
+# ---------------------------------------------------------------------------
+
+def solve_poisson_height_pinned(
+    inside_mask: np.ndarray,
+    Gx: np.ndarray,
+    Gy: np.ndarray,
+) -> np.ndarray:
+    """
+    Legacy pinned Poisson solve (kept for comparison). Solve ∇²Z = div(G) = ∂Gx/∂x + ∂Gy/∂y inside the green mask.
+
+    Uses finite differences on a regular grid with Dirichlet BC at boundary
+    (first interior cell fixed to 0 to remove the constant offset).
+
+    Returns Z: (grid_res, grid_res) height array (NaN outside green).
+    """
+    rows, cols = inside_mask.shape
+
+    # Index mapping: interior cells get a unique index
+    idx = np.full((rows, cols), -1, dtype=int)
+    n_cells = 0
+    for r in range(rows):
+        for c in range(cols):
+            if inside_mask[r, c]:
+                idx[r, c] = n_cells
+                n_cells += 1
+
+    print(f"  Poisson solve: {n_cells} unknowns")
+
+    # Compute divergence of G (RHS)
+    # Use central differences where neighbours exist, one-sided otherwise
+    div = np.zeros((rows, cols))
+    for r in range(rows):
+        for c in range(cols):
+            if not inside_mask[r, c]:
+                continue
+            # ∂Gx/∂x (column direction)
+            if c > 0 and c < cols - 1:
+                dGx_dx = (Gx[r, c+1] - Gx[r, c-1]) / 2.0
+            elif c < cols - 1:
+                dGx_dx = Gx[r, c+1] - Gx[r, c]
+            else:
+                dGx_dx = Gx[r, c] - Gx[r, c-1]
+            # ∂Gy/∂y (row direction)
+            if r > 0 and r < rows - 1:
+                dGy_dy = (Gy[r+1, c] - Gy[r-1, c]) / 2.0
+            elif r < rows - 1:
+                dGy_dy = Gy[r+1, c] - Gy[r, c]
+            else:
+                dGy_dy = Gy[r, c] - Gy[r-1, c]
+            div[r, c] = dGx_dx + dGy_dy
+
+    # Build sparse Laplacian matrix A and RHS vector b
+    A = lil_matrix((n_cells, n_cells))
+    b = np.zeros(n_cells)
+
+    # Find first interior cell for pinning (Dirichlet BC)
+    pin_cell = -1
+    for r in range(rows):
+        for c in range(cols):
+            if inside_mask[r, c]:
+                pin_cell = idx[r, c]
+                break
+        if pin_cell >= 0:
+            break
+
+    for r in range(rows):
+        for c in range(cols):
+            if not inside_mask[r, c]:
+                continue
+            i = idx[r, c]
+
+            if i == pin_cell:
+                # Pin this cell to 0
+                A[i, i] = 1.0
+                b[i] = 0.0
+                continue
+
+            # 5-point Laplacian stencil
+            n_neighbours = 0
+            neighbours = [
+                (r-1, c), (r+1, c), (r, c-1), (r, c+1)
+            ]
+            for nr, nc in neighbours:
+                if 0 <= nr < rows and 0 <= nc < cols and inside_mask[nr, nc]:
+                    j = idx[nr, nc]
+                    A[i, j] = 1.0
+                    n_neighbours += 1
+
+            A[i, i] = -max(n_neighbours, 1)
+            b[i] = div[r, c]
+
+    print("  Solving sparse system…")
+    A_csr = A.tocsr()
+    z_vals = spsolve(A_csr, b)
+
+    # Map solution back to 2D
+    Z = np.full((rows, cols), np.nan)
+    for r in range(rows):
+        for c in range(cols):
+            if inside_mask[r, c]:
+                Z[r, c] = z_vals[idx[r, c]]
+
+    return Z
+
+
+def solve_lsq_height(
+    inside_mask: np.ndarray,
+    Gx: np.ndarray,
+    Gy: np.ndarray,
+) -> np.ndarray:
+    """Unpinned least-squares fit of Z to the gradient field (min anchored to 0; NaN outside)."""
+    from scipy.sparse import csr_matrix
+    from scipy.sparse.linalg import lsqr
+    rows, cols = inside_mask.shape
+    idx = np.full((rows, cols), -1, dtype=np.int64)
+    idx[inside_mask] = np.arange(int(inside_mask.sum()))
+    n = int(inside_mask.sum())
+    eq_r, eq_c, eq_v, rhs = [], [], [], []
+    k = 0
+    for (a_m, b_m, a_i, b_i, G) in (
+        (inside_mask[:, :-1], inside_mask[:, 1:], idx[:, :-1], idx[:, 1:], 0.5 * (Gx[:, :-1] + Gx[:, 1:])),
+        (inside_mask[:-1, :], inside_mask[1:, :], idx[:-1, :], idx[1:, :], 0.5 * (Gy[:-1, :] + Gy[1:, :])),
+    ):
+        ok = a_m & b_m
+        m = int(ok.sum())
+        e = np.arange(k, k + m)
+        eq_r += [e, e]; eq_c += [b_i[ok], a_i[ok]]; eq_v += [np.ones(m), -np.ones(m)]
+        rhs.append(G[ok]); k += m
+    A = csr_matrix((np.concatenate(eq_v), (np.concatenate(eq_r), np.concatenate(eq_c))), shape=(k, n))
+    z = lsqr(A, np.concatenate(rhs), atol=1e-10, btol=1e-10, iter_lim=20000)[0]
+    Z = np.full((rows, cols), np.nan)
+    Z[inside_mask] = z - z.min()
+    print(f"  LSQ gradient fit: {n} unknowns, {k} equations")
+    return Z
+
+
+def solve_poisson_height(
+    inside_mask: np.ndarray,
+    Gx: np.ndarray,
+    Gy: np.ndarray,
+) -> np.ndarray:
+    """Height solve dispatcher (HEIGHT_SOLVER flag): unpinned LSQ by default."""
+    if HEIGHT_SOLVER == "poisson_pinned":
+        return solve_poisson_height_pinned(inside_mask, Gx, Gy)
+    return solve_lsq_height(inside_mask, Gx, Gy)
+
+
+# ---------------------------------------------------------------------------
+# Step 5: Save diagnostic images
+# ---------------------------------------------------------------------------
+
+def save_arrow_directions(
+    img: np.ndarray,
+    arrows: list[dict],
+    green_boundary_px: np.ndarray,
+    out_path: str,
+) -> None:
+    """Draw arrows as colored lines on the source image, save PNG."""
+    vis = img.copy()
+
+    # Draw green boundary
+    boundary_i = green_boundary_px.astype(np.int32)
+    cv2.polylines(vis, [boundary_i], isClosed=True, color=(0, 220, 0), thickness=2)
+
+    # Draw each arrow: color = direction angle
+    for a in arrows:
+        cx, cy = int(round(a["cx"])), int(round(a["cy"]))
+        dx, dy = a["dx"], a["dy"]
+        angle = math.atan2(dy, dx)                  # -π .. π
+        # Map angle to hue (0-179 in OpenCV HSV)
+        hue = int(((angle + math.pi) / (2 * math.pi)) * 179)
+        # HSV → BGR
+        hsv_pixel = np.array([[[hue, 255, 255]]], dtype=np.uint8)
+        bgr = cv2.cvtColor(hsv_pixel, cv2.COLOR_HSV2BGR)[0, 0].tolist()
+
+        length = 15
+        ex = int(round(cx + dx * length))
+        ey = int(round(cy + dy * length))
+        cv2.arrowedLine(vis, (cx, cy), (ex, ey), color=bgr, thickness=2, tipLength=0.4)
+
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    cv2.imwrite(out_path, vis)
+    print(f"  Saved: {out_path}")
+
+
+def save_height_map(
+    Z: np.ndarray,
+    xs_grid: np.ndarray,
+    ys_grid: np.ndarray,
+    green_boundary_px: np.ndarray,
+    out_path: str,
+) -> None:
+    """Save height map as a colored terrain plot with green boundary overlay."""
+    valid = Z[~np.isnan(Z)]
+    if valid.size == 0:
+        print("  Warning: no valid height values to plot")
+        return
+
+    z_min, z_max = valid.min(), valid.max()
+    print(f"  Height range: {z_min:.4f} .. {z_max:.4f}")
+
+    fig, ax = plt.subplots(figsize=(10, 9))
+
+    # imshow: rows=y, cols=x, origin at top-left to match image coords
+    extent = [xs_grid[0], xs_grid[-1], ys_grid[-1], ys_grid[0]]
+    im = ax.imshow(
+        Z,
+        cmap="terrain",
+        extent=extent,
+        origin="upper",
+        vmin=z_min,
+        vmax=z_max,
+        aspect="equal",
+    )
+
+    plt.colorbar(im, ax=ax, label="Relative height (arbitrary units)", fraction=0.046, pad=0.04)
+
+    # Green boundary
+    bx = np.append(green_boundary_px[:, 0], green_boundary_px[0, 0])
+    by = np.append(green_boundary_px[:, 1], green_boundary_px[0, 1])
+    ax.plot(bx, by, "g-", linewidth=2, label="Green boundary")
+
+    # Label min/max
+    min_pos = np.unravel_index(np.nanargmin(Z), Z.shape)
+    max_pos = np.unravel_index(np.nanargmax(Z), Z.shape)
+    ax.plot(xs_grid[min_pos[1]], ys_grid[min_pos[0]], "bv", markersize=10, label=f"Min = {z_min:.3f}")
+    ax.plot(xs_grid[max_pos[1]], ys_grid[max_pos[0]], "r^", markersize=10, label=f"Max = {z_max:.3f}")
+
+    ax.set_title("Reconstructed Green Height Map (Poisson Integration of Arrow Gradients)", fontsize=12)
+    ax.set_xlabel("Image X (px)")
+    ax.set_ylabel("Image Y (px)")
+    ax.legend(loc="upper right", fontsize=9)
+
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    plt.savefig(out_path, dpi=150)
+    plt.close(fig)
+    print(f"  Saved: {out_path}")
+
+
+def save_arrow_vs_output_overlay(
+    img: np.ndarray,
+    arrows: list[dict],
+    Z: np.ndarray,
+    xs_grid: np.ndarray,
+    ys_grid: np.ndarray,
+    green_boundary_px: np.ndarray,
+    out_path: str,
+) -> None:
+    """Save a two-panel PNG: left = arrows on source image, right = height map.
+
+    Used by owner_inbox/gen_arrow_overlay.py and verification scripts to
+    visually confirm arrow detection quality after threshold changes.
+    """
+    import matplotlib.gridspec as gridspec
+
+    fig = plt.figure(figsize=(18, 9))
+    gs = gridspec.GridSpec(1, 2, figure=fig)
+
+    # ── Left panel: arrow directions on source image ─────────────────────────
+    ax_img = fig.add_subplot(gs[0, 0])
+    vis = cv2.cvtColor(img.copy(), cv2.COLOR_BGR2RGB)
+    ax_img.imshow(vis)
+
+    boundary_i = green_boundary_px.astype(np.int32)
+    bx = np.append(green_boundary_px[:, 0], green_boundary_px[0, 0])
+    by = np.append(green_boundary_px[:, 1], green_boundary_px[0, 1])
+    ax_img.plot(bx, by, "g-", linewidth=2, label="Green boundary")
+
+    for a in arrows:
+        cx, cy = a["cx"], a["cy"]
+        dx, dy = a["dx"], a["dy"]
+        angle = math.atan2(dy, dx)
+        hue = int(((angle + math.pi) / (2 * math.pi)) * 179)
+        hsv_pixel = np.array([[[hue, 255, 255]]], dtype=np.uint8)
+        rgb = cv2.cvtColor(hsv_pixel, cv2.COLOR_HSV2RGB)[0, 0] / 255.0
+        length = 15
+        # Cosmetic-only fix (Topo-771): matplotlib `arrowstyle="->"` puts the
+        # head at `xy`.  Empirically on Delaveaga H11 v5.33 the marker arrows
+        # appeared to point OPPOSITE to the dark StrackaLine arrows underneath,
+        # which confused the reader.  Put the marker head at the centroid and
+        # extend the tail backward along -(dx,dy) so the visible arrowhead
+        # lines up with the dark arrow's head.  Pipeline (dx, dy) values are
+        # untouched — this is overlay-render-only.
+        ax_img.annotate(
+            "",
+            xy=(cx, cy),
+            xytext=(cx - dx * length, cy - dy * length),
+            arrowprops=dict(arrowstyle="->", color=rgb, lw=1.5),
+        )
+
+    ax_img.set_title(f"Detected arrows: {len(arrows)}", fontsize=12)
+    ax_img.set_xlim(0, img.shape[1])
+    ax_img.set_ylim(img.shape[0], 0)
+    ax_img.axis("off")
+
+    # ── Right panel: reconstructed height map ────────────────────────────────
+    # Shift Z so the min is 0 and the max is positive. The Poisson solver pins
+    # one cell to Z=0 (Dirichlet BC); without the shift the range reads as
+    # e.g. −178..0, which is confusing — Thomas misread blue=low as blue=high
+    # on the earlier output. After the shift, 0=lowest, positive=higher, which
+    # matches homeowner intuition for elevation.
+    ax_hm = fig.add_subplot(gs[0, 1])
+    valid_raw = Z[~np.isnan(Z)]
+    z_raw_min = float(valid_raw.min()) if valid_raw.size > 0 else 0.0
+    z_raw_max = float(valid_raw.max()) if valid_raw.size > 0 else 1.0
+    Z_disp = Z - z_raw_min  # low points → 0; high points → positive
+    valid = Z_disp[~np.isnan(Z_disp)]
+    z_min = 0.0
+    z_max = (z_raw_max - z_raw_min) if valid.size > 0 else 1.0
+    extent = [xs_grid[0], xs_grid[-1], ys_grid[-1], ys_grid[0]]
+    im = ax_hm.imshow(
+        Z_disp, cmap="terrain", extent=extent, origin="upper",
+        vmin=z_min, vmax=z_max, aspect="equal",
+    )
+    cbar = plt.colorbar(im, ax=ax_hm, label="Relative elevation (0 = lowest point)",
+                        fraction=0.046, pad=0.04)
+    cbar.ax.text(0.5, 1.02, "HIGH", transform=cbar.ax.transAxes,
+                 ha="center", va="bottom", fontsize=9, fontweight="bold")
+    cbar.ax.text(0.5, -0.02, "LOW", transform=cbar.ax.transAxes,
+                 ha="center", va="top", fontsize=9, fontweight="bold")
+    ax_hm.plot(bx, by, "g-", linewidth=2)
+    if valid.size > 0:
+        min_pos = np.unravel_index(np.nanargmin(Z_disp), Z_disp.shape)
+        max_pos = np.unravel_index(np.nanargmax(Z_disp), Z_disp.shape)
+        ax_hm.plot(xs_grid[min_pos[1]], ys_grid[min_pos[0]], "bv",
+                   markersize=10, label=f"LOW (shifted 0.000)")
+        ax_hm.plot(xs_grid[max_pos[1]], ys_grid[max_pos[0]], "r^",
+                   markersize=10, label=f"HIGH ({z_max:.3f})")
+        ax_hm.legend(loc="upper right", fontsize=9)
+    ax_hm.set_title("Reconstructed height map (Poisson, blue=low, brown=high)",
+                    fontsize=11)
+
+    plt.suptitle(os.path.basename(out_path), fontsize=10)
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    plt.savefig(out_path, dpi=150)
+    plt.close(fig)
+    print(f"  Saved: {out_path}")
+
+
+# ---------------------------------------------------------------------------
+# Step 6: Build STL meshes from height map
+# ---------------------------------------------------------------------------
+
+# Physical print constants (matching generate_stl_3mf.py)
+PRINT_SIZE_MM: float = 171.45   # max bounding-box dimension (6.75 in)
+ELEVATION_RANGE_MM: float = 20.09  # total elevation variation on top surface (0.85in = 21.59mm total - 1.5mm base)
+BASE_THICKNESS_MM: float = 1.5    # flat base below lowest point
+# NOTE: FRINGE_EDGE_HEIGHT_MM and the `fringeEdgeHeight` EGM key were removed
+# from the fringe Z math (task 483) — the fringe now holds green-edge Z flat
+# all the way to the frame instead of ramping to a per-hole rectangle-edge
+# target. The EGM key is intentionally preserved on-disk for backward
+# compatibility with existing .egm / serial.json files.
+N_CONTOUR_LEVELS: int = 27        # steps for quantized surface
+
+# Signed XY offset applied to the fringe outer bbox.
+# Positive = grow; negative = shrink.
+# FRINGE_XY_EXPANSION_MM is the TOTAL signed offset per axis (i.e. the final printed
+# fringe will be offset by this many mm in X and in Y relative to the nominal
+# PRINT_SIZE_MM square).  Internally the half-value (offset / 2) is added to each
+# edge.  Tune this constant without touching any other code.
+# Only the OUTER rectangle moves; the inner green/trap cutouts stay at world origin
+# so they still mate with the un-shrunk green and trap meshes.
+# Value = prior -0.2 mm inset + 0.5% shrink of PRINT_SIZE_MM (0.005 * 171.45 = 0.857 mm)
+# = -1.057 mm total.  v3.16 (Topo, 2026-04-23).
+FRINGE_XY_EXPANSION_MM: float = -1.057  # signed total XY offset per axis (negative = shrink); -1.057 mm = prior 0.2mm inset + 0.5% shrink
+
+# Designed structural wall thickness for printed features that need a guaranteed
+# solid wall regardless of slicer interpretation (e.g. the upper-left mounting-
+# bore "pipe" that hosts the optional ball stand). 4 perimeters × 0.4 mm nozzle =
+# 1.6 mm, which is the standard FDM-perimeter-derived wall in this project.
+# Distinct from BASE_THICKNESS_MM (build-plate slab thickness) and
+# TRAP_THICKNESS_MM (trap slab thickness). Topo, task #335 (2026-04-28).
+WALL_THICKNESS_MM: float = 1.6
+
+# Upper-left mounting-bore pipe geometry (task #335 — restored from #318 with an
+# explicit annular wall instead of a bare void through the fringe).
+# Inner bore = 3/16" = 4.7625 mm; outer = inner + 2 × WALL_THICKNESS_MM.
+MOUNT_BORE_INNER_DIAMETER_MM: float = 4.7625      # 3/16 inch
+MOUNT_BORE_INNER_RADIUS_MM: float = MOUNT_BORE_INNER_DIAMETER_MM / 2.0
+MOUNT_BORE_OUTER_RADIUS_MM: float = MOUNT_BORE_INNER_RADIUS_MM + WALL_THICKNESS_MM
+MOUNT_BORE_INSET_MM: float = 20.0                 # distance from print rect corner
+
+# Master enable/disable for the upper-left T-mounting bore. When False:
+#   - no fringe hole is reserved at the corner,
+#   - no pipe mesh is built or merged into the fringe,
+#   - `pipe_circle` is left as None so trap/water/boulders subtractions are no-ops,
+#   - all `_subtract_pipe_from_polygon` / `build_mount_pipe_mesh` helpers stay
+#     defined but unused so a future re-enable is a one-line flip back to True.
+# Topo, task #459 (2026-05-23) — Thomas: "Drop the T-mounting hole in the upper
+# left corner of the frame. It's just causing too much trouble."
+ENABLE_MOUNT_BORE: bool = False
+
+# ---------------------------------------------------------------------------
+# Tee hole (Topo, task 692 — 2026-09-01). A 2 mm through-hole punched into
+# the fringe so Thomas can slot a golf tee into the finished plaque. The
+# location is user-picked in the Boundary Editor (Sienna, task 691) and
+# persisted to the EGM as:
+#
+#     "tee_hole": {"x_mm": <float>, "y_mm": <float>}
+#
+# Coordinates are millimetres measured from the top-left corner of the print
+# bounds (NOT the image, NOT the green boundary). The fringe outer bbox lives
+# at ±(PRINT_SIZE_MM/2 + FRINGE_XY_EXPANSION_MM/2) in world coords, so the
+# conversion is:
+#     mesh_cx = -half + x_mm
+#     mesh_cy = +half - y_mm          (top-left = +Y max)
+#
+# A reinforcing collar (annular sleeve) is unioned in to give the tee lateral
+# support even where the fringe is thin. The collar's outer diameter and
+# above-fringe protrusion are geometry constants — do NOT store in the EGM.
+# The 7.56 mm OD leaves the 9 mm frame-edge cap rule (project_golf_render_rules)
+# untouched: the collar radius is 3.78 mm, so as long as the tee-hole XY sits at
+# least ~3.8 mm inside the frame perimeter, the collar stays outside the 1 mm
+# frame-cap band. The editor UI should enforce that inset (5 mm clamp is fine).
+TEE_HOLE_DIAMETER_MM: float = 5.55625    # 7/32 inch = 7 * 25.4 / 32 mm (real golf tee shaft ⌀)
+TEE_HOLE_COLLAR_OD_MM: float = 7.55625   # hole + 1 mm wall each side (5.55625 + 2 * 1.0)
+TEE_HOLE_COLLAR_PROTRUDE_MM: float = 0.0 # flush with fringe top; no protrusion (collar must not rise above the fringe)
+
+
+class _MountBoreDisabled(Exception):
+    """Sentinel raised inside the pipe-build try-block when ENABLE_MOUNT_BORE
+    is False, so the existing except machinery cleanly short-circuits without
+    re-indenting the entire mount-bore body. Caught and silently logged as a
+    SKIP message — not an error.
+    """
+    pass
+
+# ---------------------------------------------------------------------------
+# Water-containing-hole rule (Topo, 2026-05-01) — task per Thomas/Larry.
+#
+# When an EGM contains one or more polygons of type "water", the printable
+# pieces — green, fringe, sand traps — are LIFTED by WATER_HOLE_LIFT_MM so a
+# 2 mm filament base sits underneath each. The original terrain shape on top
+# is preserved (just sitting 2 mm higher). Water polygons themselves are NOT
+# lifted (water sits at the bottom of the basin).
+#
+# In addition, any green / fringe / sand-trap element that touches the frame
+# at the boundary of the hole is CAPPED at BOUNDARY_HEIGHT_CAP_MM total
+# height (including the 2 mm base). Two cap modes:
+#   - "hard"     : clip Z values above cap flat to cap exactly (default).
+#   - "compress" : linearly squash terrain Z so max = cap (proportional).
+#
+# Boundary-touching = polygon has any vertex within BOUNDARY_TOUCH_TOL_MM of
+# the fringe rectangle perimeter (±_half = ±(PRINT_SIZE/2 + FRINGE_XY_EXP/2)).
+# The fringe itself ALWAYS touches by construction. The green is interior to
+# the fringe and never touches the frame.
+WATER_HOLE_LIFT_ENABLED: bool  = True
+WATER_HOLE_LIFT_MM:      float = 2.0     # base-slab thickness inserted under lifted pieces
+BOUNDARY_HEIGHT_CAP_MM:  float = 9.0     # absolute Z ceiling for boundary-touching pieces
+BOUNDARY_HEIGHT_CAP_MODE: str  = "hard"  # one of: "hard", "compress"
+BOUNDARY_TOUCH_TOL_MM:   float = 0.5     # XY tolerance for "vertex touches frame edge"
+# Task #606 (Topo, 2026-09-26): Thomas suspended the frame-edge height cap.
+# When False (default now), _apply_lift_and_cap still applies the water-hole
+# lift but skips the cap step regardless of the cap_mm argument.  The frame's
+# outer wall provides a vertical cutoff for any mesh that exceeds 9 mm near
+# the edge.  Flip to True to restore the previous tapered-cap behaviour.
+BOUNDARY_HEIGHT_CAP_ENABLED: bool = False
+# Edge-band cap (Topo, 2026-05-05): in "hard" mode, the 9 mm cap applies only
+# to top-surface vertices within BOUNDARY_CAP_BAND_MM (XY distance) of the
+# plaque frame perimeter. Interior vertices keep their natural relief, even if
+# it exceeds BOUNDARY_HEIGHT_CAP_MM. The cap exists only to keep the picture
+# frame edge clean — interior height was never the problem.
+BOUNDARY_CAP_BAND_MM:    float = 1.0     # XY width of edge band where cap is at FULL strength
+# Task #488 (fringe wall wrinkle): the hard band cap creates a visible cliff
+# where a water/trap polygon reaches the outer edge — cells inside the 1 mm
+# band get clipped to 9 mm while cells 1 mm further in keep natural Z up to
+# ~13 mm. To keep the picture-frame edge tidy without producing that cliff,
+# we linearly taper the clip amount over BOUNDARY_CAP_TAPER_MM: full clip at
+# the outer edge, zero clip at (BAND + TAPER) mm inward. Interior geometry
+# past the taper zone is untouched.
+BOUNDARY_CAP_TAPER_MM:   float = 5.0     # XY width of the taper zone past the full-strength band
+
+# Task #506 (fringe plateau cliff, FantasyGolfCourse H11 [152]): when the
+# green has significant relief the current design ("fringe holds green-edge Z
+# flat all the way to the frame", task 483) projects the green's edge Z
+# radially outward — creating a plateau at up to (BASE + elevation_range) mm
+# that surrounds carve-outs (traps / water) with tall vertical walls. On the
+# steep side of a green (e.g. right side of H11 where green edge Z ≈ 23 mm),
+# this reads as an unnatural cliff at every interior carve-out boundary.
+#
+# Fix: once a fringe cell is more than FRINGE_GREEN_EDGE_TAPER_MM (horizontal
+# XY distance) from the green polygon, its Z is tapered from green_edge_h
+# toward min(green_edge_h, BOUNDARY_HEIGHT_CAP_MM). This preserves the
+# seam-matching behaviour right at the green boundary (weight=0 there) and
+# for gentle greens (green_edge_h <= cap → target == source → no change),
+# but pulls tall plateaus down to the cap over a natural distance so
+# interior carve-out walls stay short and printable. The frame-edge boundary
+# cap (band + taper above) still runs on top of this for any residual
+# excess right at the picture-frame perimeter.
+FRINGE_GREEN_EDGE_TAPER_MM: float = 15.0  # XY distance over which fringe Z tapers from green_edge_h → cap
+
+# ---------------------------------------------------------------------------
+# Green boundary XY smoothing (Topo, 2026-08-28 per Thomas — task 677)
+#
+# The green polygon's outer edge is Catmull-Rom interpolated (16 segments per
+# control-edge) but still reads as SCALLOPED at print scale: each Catmull-Rom
+# segment is a straight line between spline vertices, and when the polygon is
+# rasterized onto the 200×200 fringe/green grids the boundary shows visible
+# cell-scale stair-steps where green and fringe meet. Thomas wants the mating
+# edge to read as a smooth curve.
+#
+# Fix: run 2 passes of **Chaikin's corner-cutting** on the interpolated
+# boundary polyline BEFORE it is used by any downstream stage (green mesh,
+# fringe carve, seam-reseat KD-trees). Chaikin replaces every corner with two
+# points at the 1/4 and 3/4 marks of the incident edges — no parametric fit,
+# preserves overall shape, converges to a quadratic B-spline in the limit.
+# 2 iterations is enough to eliminate visible scallops at typical print scale
+# without meaningful area shrinkage (~0.5% at 2 iters on convex loops).
+#
+# The smoothing is applied to the DENSE polyline returned by
+# `interpolate_catmull_rom`, so control-point count and editor behaviour are
+# untouched. Existing EGM files render smoother without re-drawing.
+GREEN_BOUNDARY_SMOOTH_ITERATIONS: int = 5  # Chaikin passes on the interpolated green polyline — bumped 4 → 5 on 2026-08-31 (task 687) per Thomas: extra corner-cutting on top of the 3× spline `s` bump. Note: each Chaikin pass roughly DOUBLES vertex count (2^N density gain), so 6 iters + 1657 spline pts → 106k pts pushed regen to 94s. 5 iters × the coarser resample below keeps final N ~53k and wall-clock < 60s while still visibly rounding any residual scallops the spline missed.
+
+
+# Hard-spline smoothing pass (Topo, 2026-08-30 per Thomas — task 679).
+#
+# Thomas's diagnosis: the prior GREEN_FRINGE_GAP_MM=0.2 tweak (task 677) had
+# NO visible effect because the raw Catmull-Rom polyline is still sub-pixel
+# ragged. A 0.2 mm gap gets swamped by the raggedness plus the fringe grid
+# quantization (~0.88 mm per cell), so the printed pieces still touched.
+#
+# Fix: BEFORE any downstream stage sees the green boundary, run a **cubic
+# periodic B-spline** smoothing pass with a smoothing factor tuned to
+# eliminate sub-mm noise. This runs AHEAD of the Chaikin pass — the spline
+# fit removes the underlying raggedness, then Chaikin (if still enabled)
+# just polishes corners. The result is a genuinely smooth curve that lets
+# the small gap actually show up in the print.
+#
+# `s` (splprep smoothing factor) is the maximum RMS pixel deviation the
+# spline may take from the input control polyline. At typical golf-image
+# scale (~500 px green boundary), s = 4.0 pushes noise below ~0.5 mm while
+# keeping the overall polygon shape within a fraction of a mm of the intent.
+GREEN_BOUNDARY_SPLINE_SMOOTHING_PX: float = 48.0  # scipy splprep `s` parameter — 3× bump 2026-08-31 (task 687) per Thomas: 16.0 still read as scalloped at print scale. s scales roughly quadratically with the tolerable RMS deviation, so 3× s ≈ √3 ≈ 1.7× physical smoothing radius. Fringe inner edge is `green_shapely_exclusion = green_shapely` (identity, GREEN_FRINGE_GAP_MM=0), so this bump directly softens the printed green↔fringe seam.
+GREEN_BOUNDARY_SPLINE_RESAMPLE_PX:  float = 1.5   # resample spacing after spline fit
+
+# ---------------------------------------------------------------------------
+# Green → fringe XY gap (Topo, 2026-08-28 per Thomas — task 677;
+# raised to 0.5 mm 2026-08-30, task 679)
+#
+# BEFORE 677: there was NO explicit code-side gap between the green's outer
+# edge and the fringe's inner edge. `build_fringe_mesh` tests each fringe
+# grid cell with `green_shapely.contains(sp)` and skips cells that fall
+# inside the green polygon. The green mesh and fringe mesh therefore
+# shared the same nominal boundary. Effective physical gap = grid-
+# quantization noise only. Fringe grid cell ≈ 0.86 mm, so mean unpredictable
+# gap ran ~0.43 mm, worst-case ~0.86 mm.
+#
+# 677 (2026-08-28): added `green_shapely.buffer(+0.2).contains(sp)` to leave
+# a deterministic 0.2 mm slit. This had NO visible effect on prints
+# because the raw ragged boundary swamped the small tolerance (see the
+# GREEN_BOUNDARY_SPLINE_SMOOTHING_PX block above).
+#
+# 679 (2026-08-30): with the new spline smoothing pass in place, the green
+# boundary is now genuinely smooth, so a 0.5 mm gap can actually show up in
+# the print. Target 0.5 mm gap — half of the ~1 mm slop the eye tolerates
+# on the plaque, big enough to survive one fringe-grid step (~0.88 mm) of
+# quantization.
+GREEN_FRINGE_GAP_MM: float = 0.125  # bumped 0.5 → 1.0 on 2026-09-04 per Thomas (task 732): 0.5 mm gap didn't stop the slicer's "conflict of gcode paths at layer 30" warning even when measured trap gap was 0.57 mm. Going 2.5× nozzle diameter to rule out path-proximity as the cause. Routes through the `if GREEN_FRINGE_GAP_MM > 0` branch at ~2672 so `green_shapely_exclusion` = `green_shapely.buffer(+GREEN_FRINGE_GAP_MM)`. Halved 2026-09-11 per Thomas — accepts slicer-warning risk to try tighter fit. Halved again 2026-09-12 per Thomas (task 508) — round-2 gap tightening from 0.5 → 0.25 mm. Halved again 2026-09-13 per Thomas (task 513) — round-3 sub-nozzle tightening 0.25 → 0.125 mm; Thomas explicitly accepts print-fit / slicer-warning risk.
+
+
+# ---------------------------------------------------------------------------
+# Trap / water boundary smoothing (Topo, 2026-09-01 per Thomas — task 705)
+#
+# Same recipe as the green boundary (splprep + Chaikin), applied per-polygon
+# in `load_egm` to every polygon of type 'trap' and 'water'. The smoothed
+# dense polyline is written BACK into `polygon["points"]` and the polygon is
+# tagged with `"_dense_px_points": True` so `_poly_to_dense_px` returns it
+# raw (skipping a second Catmull-Rom pass that would re-introduce wiggles).
+#
+# Separate constants per feature so future tuning is independent (e.g. traps
+# might tolerate more aggressive smoothing than water without changing what
+# the green does). Defaults intentionally mirror the green so day-1 behaviour
+# is the direct trap/water analogue of the green→fringe fix from task 683.
+#
+# The corresponding *_FRINGE_GAP_MM constants leave a deterministic slit
+# between the trap/water outer edge and the fringe cutout inner edge, exactly
+# like GREEN_FRINGE_GAP_MM. Default is 0.25 mm as of 2026-09-02 (task 707):
+# a standard FDM print-fit slop so the physical pieces mate cleanly instead
+# of jamming. The smoothed boundary is continuous enough that a quarter-mm
+# gap reads as a clean seam rather than a visible scallop; drop back toward
+# zero only if a specific printer + filament combo prints looser than nominal.
+TRAP_BOUNDARY_SPLINE_SMOOTHING_PX: float = 48.0  # splprep `s` — same as green
+TRAP_BOUNDARY_SPLINE_RESAMPLE_PX:  float = 1.5   # resample spacing after spline fit
+TRAP_BOUNDARY_SMOOTH_ITERATIONS:   int   = 5     # Chaikin passes after spline
+TRAP_FRINGE_GAP_MM:                float = 0.125  # bumped 0.5 → 1.0 on 2026-09-04 per Thomas (task 732) — 0.5 mm didn't stop the layer-30 slicer conflict warning; halved 2026-09-11 per Thomas — accepts slicer-warning risk to try tighter fit; halved again 2026-09-12 per Thomas (task 508) — round-2 gap tightening from 0.5 → 0.25 mm; halved again 2026-09-13 per Thomas (task 513) — round-3 sub-nozzle tightening 0.25 → 0.125 mm; Thomas explicitly accepts print-fit / slicer-warning risk
+WATER_BOUNDARY_SPLINE_SMOOTHING_PX: float = 48.0
+WATER_BOUNDARY_SPLINE_RESAMPLE_PX:  float = 1.5
+WATER_BOUNDARY_SMOOTH_ITERATIONS:   int   = 5
+WATER_FRINGE_GAP_MM:                float = 0.125  # bumped 0.5 → 1.0 on 2026-09-04 per Thomas (task 732) — 0.5 mm didn't stop the layer-30 slicer conflict warning; halved 2026-09-11 per Thomas — accepts slicer-warning risk to try tighter fit; halved again 2026-09-12 per Thomas (task 508) — round-2 gap tightening from 0.5 → 0.25 mm; halved again 2026-09-13 per Thomas (task 513) — round-3 sub-nozzle tightening 0.25 → 0.125 mm; Thomas explicitly accepts print-fit / slicer-warning risk
+
+# ── Fringe grass texturing knobs (task 500, Topo 2026-09-09) ─────────────────
+# Root cause of "grass looks like coarse spikes, not grass": the fringe
+# watertight-rewrite (task 742) extrudes the polygon at `triangle_args="pq30a25"`
+# → max triangle area 25 mm² → ~5 mm effective spacing on the top surface. Then
+# `apply_grass_texture` applies per-vertex paraboloid bumps at grassSpacing
+# ~1-2.4 mm — well below the vertex spacing → 1 vertex per bump → a spike per
+# vertex, not a lawn. Simultaneously the seam-exclude radius (2.0 mm) freezes
+# EVERY vertex within 2 mm of any cutout boundary polyline. Because the boundary
+# polylines are Chaikin-densified (sub-mm points), that annular band swallows
+# ~96% of top-surface verts, leaving only 4% to be grass-textured. Combined:
+# the fringe is 96% flat + 4% spikes.
+#
+# Fix:
+#   1. Reduce max triangle area from 25 → 1 mm² so the interior gets ~5× more
+#      Steiner points (from ~5000 free verts to ~17-20K free verts on Firefly).
+#      Vertex count grows ~10% (147K → 160K); extrude time unchanged (0.3s).
+#   2. Reduce seam-exclude radius from 2.0 → 1.2 mm. The mesh boundary is
+#      buffered outward by GREEN/TRAP/WATER_FRINGE_GAP_MM (1.0 mm), so the seam
+#      polyline (which is the raw, unbuffered boundary) sits 1.0 mm INSIDE the
+#      mesh boundary. r=1.2 still catches the mesh boundary verts (dist ≈ 1.0
+#      to polyline) with a 0.2 mm safety margin, but frees up ~2× more interior
+#      verts than r=2.0.
+FRINGE_TOP_MAX_TRIANGLE_AREA_MM2: float = 1.0   # was 25 (~5mm triangles); 1 → ~1.5mm triangles
+FRINGE_GRASS_SEAM_EXCLUDE_MM:     float = 0.325  # was 1.2; matches *_FRINGE_GAP_MM (0.125) + 0.2 safety (halved 2026-09-11 alongside gap halving; halved again 2026-09-12 task 508 alongside 0.5→0.25 gap tightening; scaled again 2026-09-13 task 513 to 0.325 = 0.125 + 0.2 preserving same relative margin alongside 0.25→0.125 gap tightening)
+# Width of the green/fringe interface blend band, in 20×20 TPS grid cells.
+# W_mm = FRINGE_BLEND_CELLS × (2×half/20).  At half≈89.1 mm, 3 cells ≈ 26.7 mm.
+# Set to 3 so the blend reaches ~3 cell-widths into the fringe; increase to
+# widen the blend, decrease to tighten it toward the seam.
+FRINGE_BLEND_CELLS: int = 3
+
+# ── Grass v2 knobs (Topo 2026-09-09) ─────────────────────────────────────────
+# GRASS_ALGORITHM picks the fringe grass implementation:
+#   "v1" → apply_grass_texture (paraboloid on jittered hex-ish grid; the original)
+#   "v2" → apply_grass_texture_v2 (cone/pyramid profile, Poisson-disk centers,
+#          per-bump amplitude jitter, per-vertex XY shear). Default for the
+#          prototype run — flip back to "v1" if v2 misbehaves.
+# FRINGE_GRASS_MIN_SPACING_MM: hard floor on grass_spacing before it feeds v2.
+# The Boundary Editor default is 0.05 mm which would produce millions of Poisson
+# centers and hours of compute; below the floor we clamp UP and print a
+# one-line warning (we do NOT edit the editor default here — that's Thomas's
+# call once he sees the prototype).
+GRASS_ALGORITHM:               str   = "v2"
+# Floor rationale: v2's cone kernel has support radius = bump_spacing. Below
+# ~1 mm the bumps overlap into fuzz (individual blades no longer resolve at
+# the printer's ~0.4 mm nozzle) AND Bridson's runtime scales as N=area/r²
+# (7.5s at r=0.4 mm on Firefly, 1.1s at r=1.0 mm). 1.0 mm keeps both aesthetic
+# resolution and compute in the ≤3× v1 budget the task called for.
+FRINGE_GRASS_MIN_SPACING_MM:   float = 1.0
+
+
+def _compute_px_to_mm(green_boundary_px: np.ndarray, egm_data: dict) -> tuple[float, np.ndarray]:
+    """
+    Compute scale (px→mm) and centroid offset so the green fits in PRINT_SIZE_MM.
+    Returns (scale, centroid_px) where mm_xy = (px - centroid_px) * scale, Y flipped.
+    """
+    img_w = float(egm_data.get("imageSize", egm_data.get("image_size", {})).get("width", 0))
+    img_h = float(egm_data.get("imageSize", egm_data.get("image_size", {})).get("height", 0))
+
+    # Fall back to green bounding box if image size not in EGM
+    bx = green_boundary_px[:, 0]
+    by = green_boundary_px[:, 1]
+    if img_w == 0 or img_h == 0:
+        img_w = bx.max() - bx.min()
+        img_h = by.max() - by.min()
+        centroid_px = np.array([(bx.min() + bx.max()) / 2.0, (by.min() + by.max()) / 2.0])
+    else:
+        centroid_px = np.array([img_w / 2.0, img_h / 2.0])
+
+    max_dim = max(img_w, img_h)
+    if max_dim < 1:
+        # Last resort: use green extents
+        max_dim = max(bx.max() - bx.min(), by.max() - by.min())
+        centroid_px = np.array([(bx.min() + bx.max()) / 2.0, (by.min() + by.max()) / 2.0])
+
+    scale = PRINT_SIZE_MM / max_dim
+    return scale, centroid_px
+
+
+def _px_to_mm_2d(pts_px: np.ndarray, scale: float, centroid_px: np.ndarray) -> np.ndarray:
+    """Convert Nx2 pixel coords to mm, flipping Y."""
+    xy = (pts_px - centroid_px) * scale
+    xy[:, 1] = -xy[:, 1]
+    return xy
+
+
+def _height_to_mm(
+    Z_raw: np.ndarray,
+    inside_mask: np.ndarray,
+    elevation_range_mm: float = ELEVATION_RANGE_MM,
+) -> np.ndarray:
+    """
+    Normalise raw Poisson heights to mm elevation, preserving NaN outside the green.
+    Maps [z_min, z_max] → [BASE_THICKNESS_MM, BASE_THICKNESS_MM + elevation_range_mm].
+
+    elevation_range_mm defaults to the module-level ELEVATION_RANGE_MM constant;
+    callers that read a per-EGM override should pass it explicitly.
+
+    Uniform-input special case (squash-bug fix, motivated by SC 17 [127] flat-
+    fallback regression): when z_min == z_max, the prior implementation set
+    z_range = 1.0 and computed `(Z - z_min) / 1.0 * elevation_range_mm` which
+    equals zero everywhere, collapsing the whole green to BASE_THICKNESS_MM
+    (1.5 mm) regardless of the actual fallback value. That destroys the
+    no-arrows fallback's intended elevation (e.g. 5 mm for water holes
+    silently became 1.5 mm). Fix: when the input is uniform, preserve the
+    input value clamped to the printable range
+    [BASE_THICKNESS_MM, BASE_THICKNESS_MM + elevation_range_mm] instead of
+    normalising to zero. This preserves the homeowner-mandated fallback Z.
+    """
+    valid = Z_raw[inside_mask]
+    z_min, z_max = valid.min(), valid.max()
+
+    Z_mm = np.full_like(Z_raw, np.nan)
+    if z_max == z_min:
+        # Uniform input: preserve the value, clamped to the printable range.
+        # Rationale: see SC 17 [127] flat-fallback regression (no-arrows
+        # water-hole case where the constant 5 mm was being squashed to
+        # BASE_THICKNESS_MM by the (Z - z_min)/1.0 = 0 arithmetic).
+        z_clamped = float(
+            np.clip(z_min, BASE_THICKNESS_MM, BASE_THICKNESS_MM + elevation_range_mm)
+        )
+        Z_mm[inside_mask] = z_clamped
+    else:
+        z_range = z_max - z_min
+        Z_mm[inside_mask] = (
+            BASE_THICKNESS_MM
+            + (Z_raw[inside_mask] - z_min) / z_range * elevation_range_mm
+        )
+    return Z_mm
+
+
+def _perimeter_median_filter(
+    Z: np.ndarray,
+    inside_mask: np.ndarray,
+    window: int = 5,
+) -> np.ndarray:
+    """
+    In-place 1D sequential median around the inside_mask perimeter loop.
+
+    Walks the ordered closed perimeter of ``inside_mask`` (4-connected boundary
+    cells) and at each cell replaces ``Z[r,c]`` with the median of a length-
+    ``window`` (default 5) symmetric window centred on the cell. The center
+    sample is the cell's INITIAL value at iteration time, while the two-left
+    and one-left positions in the window have already been updated by their
+    own medians on this single pass — i.e. the filter is causal/sequential
+    (one direction around the loop), not parallel.
+
+    Loop construction uses ``cv2.findContours`` with ``RETR_EXTERNAL`` and
+    ``CHAIN_APPROX_NONE`` on ``inside_mask.astype(uint8)``, giving a closed
+    sequence of (col, row) pixel coords in order. Wraparound at the seam is
+    handled by ``(i ± k) % N`` indexing.
+
+    Returns a copy of ``Z`` with the perimeter cells modified. Cells that are
+    not on the perimeter (interior or out-of-mask) are unchanged.
+    """
+    if window < 3 or window % 2 == 0:
+        raise ValueError("window must be odd and >= 3")
+    half = window // 2
+
+    Z_out = np.copy(Z)
+    mask_u8 = inside_mask.astype(np.uint8)
+    contours, _ = cv2.findContours(
+        mask_u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE
+    )
+    if not contours:
+        return Z_out
+
+    # Use the longest contour (the green proper). Smaller external contours
+    # would only appear if inside_mask had disjoint components.
+    contour = max(contours, key=lambda c: len(c))
+    # contour shape (N, 1, 2) with (x=col, y=row)
+    pts = contour.reshape(-1, 2)
+    # Drop duplicate-consecutive points (CHAIN_APPROX_NONE can repeat at
+    # corners) so the window is over distinct cells.
+    rc_seq: list[tuple[int, int]] = []
+    last = None
+    for x, y in pts:
+        rc = (int(y), int(x))
+        if rc != last:
+            rc_seq.append(rc)
+            last = rc
+    # Also drop the closing duplicate if findContours appended it.
+    if len(rc_seq) > 1 and rc_seq[0] == rc_seq[-1]:
+        rc_seq.pop()
+    n = len(rc_seq)
+    if n < window:
+        return Z_out
+
+    # Snapshot of original Z values along the loop (the "initial value" for
+    # each cell's window center). The left-side neighbours are read live from
+    # Z_out (already updated this pass); right-side neighbours come from the
+    # snapshot so they remain at their initial value until their own turn.
+    Z_init = np.array([Z[r, c] for (r, c) in rc_seq], dtype=np.float64)
+
+    for i in range(n):
+        r, c = rc_seq[i]
+        samples: list[float] = []
+        # Already-updated left neighbours (from Z_out)
+        for k in range(half, 0, -1):
+            lr, lc = rc_seq[(i - k) % n]
+            samples.append(float(Z_out[lr, lc]))
+        # The center cell's INITIAL value for this iteration
+        samples.append(float(Z_init[i]))
+        # Still-original right neighbours (from snapshot)
+        for k in range(1, half + 1):
+            samples.append(float(Z_init[(i + k) % n]))
+        Z_out[r, c] = float(np.median(samples))
+
+    return Z_out
+
+
+def _remove_small_terrace_islands(
+    Z_plot: np.ndarray,
+    inside_mask: np.ndarray,
+    scale: float,
+    max_diameter_mm: float = 6.3,
+    max_passes: int = 50,
+) -> np.ndarray:
+    """
+    Collapse tiny constant-elevation islands in a quantized heightmap.
+
+    An island is a 4-connected region of cells (inside ``inside_mask``) at a
+    single quantized Z level whose neighbours outside the region sit at
+    different Z levels. If the island's bounding-circle diameter (max pairwise
+    distance between cell centres × ``scale``) is ≤ ``max_diameter_mm``, every
+    cell of the island is reassigned to the neighbour level whose Z is
+    numerically closest to the island's own Z (ties broken toward the lower-Z
+    neighbour). Repeats until no qualifying island remains.
+
+    Islands whose only neighbours are NaN (outside ``inside_mask``) are left
+    alone — they form the boundary of the green and have no valid merge
+    target. Recursion is bounded by ``max_passes`` to guard against pathological
+    cycles in edge cases.
+    """
+    from scipy.ndimage import label as _nd_label
+    from scipy.spatial.distance import pdist
+
+    Z_plot = np.copy(Z_plot)
+    structure = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=np.int32)
+
+    for pass_idx in range(max_passes):
+        levels = np.unique(Z_plot[inside_mask])
+        removed_this_pass = 0
+
+        for lvl in levels:
+            level_mask = inside_mask & (Z_plot == lvl)
+            if not level_mask.any():
+                continue
+            labels, n_components = _nd_label(level_mask, structure=structure)
+            for comp_id in range(1, n_components + 1):
+                rr, cc = np.where(labels == comp_id)
+                # Bounding-circle diameter (mm). One cell trivially fits.
+                if len(rr) == 1:
+                    diameter_mm = 0.0
+                else:
+                    pts = np.column_stack([rr, cc]).astype(np.float64)
+                    diameter_mm = float(pdist(pts).max()) * scale
+                if diameter_mm > max_diameter_mm:
+                    continue
+
+                # Collect 4-neighbour Z values that are inside the green and
+                # not part of this island.
+                nbr_zs: list[float] = []
+                nrows, ncols = Z_plot.shape
+                for r, c in zip(rr, cc):
+                    for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                        nr, nc = r + dr, c + dc
+                        if nr < 0 or nr >= nrows or nc < 0 or nc >= ncols:
+                            continue
+                        if not inside_mask[nr, nc]:
+                            continue
+                        if labels[nr, nc] == comp_id:
+                            continue
+                        nbr_zs.append(float(Z_plot[nr, nc]))
+                if not nbr_zs:
+                    continue  # no valid merge target (boundary-touching island)
+
+                unique_nbr_zs = np.unique(np.asarray(nbr_zs, dtype=np.float64))
+                lvl_f = float(lvl)
+                deltas = np.abs(unique_nbr_zs - lvl_f)
+                min_delta = deltas.min()
+                # Tie-breaker: pick the lower-Z neighbour level.
+                candidates = unique_nbr_zs[deltas == min_delta]
+                target_z = float(candidates.min())
+
+                Z_plot[rr, cc] = target_z
+                removed_this_pass += 1
+
+        print(f"  Terrace island cleanup pass {pass_idx + 1}: removed {removed_this_pass}")
+        if removed_this_pass == 0:
+            break
+
+    return Z_plot
+
+
+def _build_heightmap_mesh(
+    Z_mm: np.ndarray,
+    xs_grid: np.ndarray,
+    ys_grid: np.ndarray,
+    inside_mask: np.ndarray,
+    _green_boundary_px: np.ndarray,
+    scale: float,
+    centroid_px: np.ndarray,
+    stepped: bool = False,
+    contour_step_mm: float = 0.0,
+) -> trimesh.Trimesh:
+    """
+    Build a closed watertight mesh from a height map grid.
+
+    Strategy:
+    1. Build a vertex for each interior grid point at its (x_mm, y_mm, z_mm).
+    2. Triangulate interior cells (2 triangles per quad). Only emit quads where
+       ALL four corners are inside the green.
+    3. Collect all boundary edges of the top surface mesh (edges referenced by
+       exactly one triangle). Each boundary edge (va, vb) becomes a wall quad:
+       add a corresponding pair of bottom vertices at z=0 and stitch a quad.
+    4. Cap the bottom with a triangulated flat polygon (Shapely + trimesh).
+    5. Concatenate everything and let trimesh.repair fix normals / fill holes.
+
+    Parameters
+    ----------
+    stepped : if True, quantize Z_mm into discrete terrace levels first.
+    contour_step_mm : terrace step size in mm (from EGM contourStep). When > 0
+        the number of levels is derived from the actual Z range divided by this
+        value. When 0 (default / legacy), N_CONTOUR_LEVELS is used instead.
+    """
+    grid_res = Z_mm.shape[0]
+
+    # --- Optionally quantize heights ---
+    if stepped:
+        valid_vals = Z_mm[inside_mask]
+        z_min_mm, z_max_mm = valid_vals.min(), valid_vals.max()
+        z_range_mm = z_max_mm - z_min_mm
+        if contour_step_mm > 0.0 and z_range_mm > 1e-9:
+            n_levels = max(1, round(z_range_mm / contour_step_mm))
+            step = z_range_mm / n_levels
+        else:
+            step = z_range_mm / N_CONTOUR_LEVELS
+        if step < 1e-9:
+            step = 1.0
+        Z_plot = np.copy(Z_mm)
+        Z_plot[inside_mask] = (
+            np.round((Z_plot[inside_mask] - z_min_mm) / step) * step + z_min_mm
+        )
+    else:
+        Z_plot = Z_mm
+
+    # --- Perimeter median filter (task #325, Thomas) ─────────────────────
+    # Walk the green's ordered perimeter loop and replace each boundary
+    # cell's Z with the median of a 5-cell window [two-left, one-left,
+    # this-cell-INITIAL, one-right, two-right]. Sequential/causal: by the
+    # time cell i is processed, cells i-1 and i-2 already hold their medians
+    # while i+1 and i+2 are still original. Targets the 12:00 north pointy
+    # spike cluster identified in [135] without re-introducing the south
+    # arc spike cluster (Cluster A).
+    Z_plot = _perimeter_median_filter(Z_plot, inside_mask, window=7)
+
+    # --- Grid px → mm ---
+    xs_mm = (xs_grid - centroid_px[0]) * scale   # shape (grid_res,)
+    ys_mm = -(ys_grid - centroid_px[1]) * scale  # shape (grid_res,), Y flipped
+
+    # --- Top surface vertices ---
+    vert_idx = np.full((grid_res, grid_res), -1, dtype=int)
+    top_verts: list[list[float]] = []
+
+    for r in range(grid_res):
+        for c in range(grid_res):
+            if inside_mask[r, c]:
+                vert_idx[r, c] = len(top_verts)
+                top_verts.append([xs_mm[c], ys_mm[r], float(Z_plot[r, c])])
+
+    # --- Top surface faces (only fully-inside quads) ---
+    top_faces: list[list[int]] = []
+    for r in range(grid_res - 1):
+        for c in range(grid_res - 1):
+            v00 = vert_idx[r,   c]
+            v01 = vert_idx[r,   c+1]
+            v10 = vert_idx[r+1, c]
+            v11 = vert_idx[r+1, c+1]
+            if v00 < 0 or v01 < 0 or v10 < 0 or v11 < 0:
+                continue
+            # CCW winding when viewed from above (+Z = outside)
+            top_faces.append([v00, v10, v11])
+            top_faces.append([v00, v11, v01])
+
+    # --- Find boundary edges of the top surface ---
+    # An edge is a boundary edge if it belongs to exactly one triangle.
+    # Represent each directed edge as a tuple (a, b); collect all directed edges,
+    # then a boundary edge is one whose reverse (b, a) does NOT appear.
+    from collections import defaultdict
+    edge_count: dict[tuple[int, int], int] = defaultdict(int)
+    for f in top_faces:
+        a, b, c_ = f
+        edge_count[(a, b)] += 1
+        edge_count[(b, c_)] += 1
+        edge_count[(c_, a)] += 1
+
+    # Boundary directed edges: (a→b) where (b→a) is absent or count=0
+    # These are edges where the face is on the outside of the surface.
+    # We need undirected boundary edges to build walls, oriented outward.
+    boundary_edges: list[tuple[int, int]] = []
+    for (a, b), _ in edge_count.items():
+        # If (b, a) is not in edge_count, this edge is on the boundary
+        if edge_count.get((b, a), 0) == 0:
+            boundary_edges.append((a, b))
+
+    # ── Boundary vertex XY snap onto the smooth green polyline ─────────────
+    # Task #689 (2026-08-31, Topo). The green mesh's boundary vertices were
+    # sitting on 200×200 raster cell centers → stair-step at ~0.85 mm per axis
+    # (Chebyshev worst case ~0.60 mm), which reads as visibly jagged next to
+    # the fringe seam that already lives on the smooth gbnd polyline.
+    #
+    # Fix: for every TOP vertex that lies on a boundary edge, project its XY
+    # onto the SMOOTHED green polyline in mm-space (`_green_boundary_px`
+    # transformed via `scale/centroid_px`). Same connectivity, exact smooth
+    # curve — matches the fringe seam mesh exactly (both now sit on gbnd),
+    # printed gap → 0.
+    #
+    # Skipped when `_green_boundary_px` has < 4 points (defensive; can happen
+    # for degenerate inputs where the caller passes an empty array — e.g. for
+    # trap sub-meshes that reuse this function).
+    if _green_boundary_px is not None and len(_green_boundary_px) >= 4:
+        _gbnd_mm_local = _px_to_mm_2d(
+            _green_boundary_px.copy(), scale, centroid_px
+        )
+        _boundary_vert_ids: set[int] = set()
+        for _a, _b in boundary_edges:
+            _boundary_vert_ids.add(_a)
+            _boundary_vert_ids.add(_b)
+        _snap_shifts_mm: list[float] = []
+        for _vi in _boundary_vert_ids:
+            _x, _y, _z = top_verts[_vi]
+            _d, _nx, _ny = _min_dist_to_polyline(
+                float(_x), float(_y), _gbnd_mm_local
+            )
+            _snap_shifts_mm.append(_d)
+            top_verts[_vi] = [float(_nx), float(_ny), float(_z)]
+        if _snap_shifts_mm:
+            _shifts = np.asarray(_snap_shifts_mm, dtype=np.float64)
+            print(f"  Boundary-vertex XY-snap to smooth green polyline "
+                  f"(task #689): reseated {len(_snap_shifts_mm)} top verts, "
+                  f"median shift={float(np.median(_shifts)):.4f} mm, "
+                  f"max shift={float(_shifts.max()):.4f} mm")
+
+    # --- Build wall vertices and faces ---
+    # For each boundary directed edge (va_top → vb_top) on the top surface,
+    # create bottom counterparts (va_bot, vb_bot) at z=0 and stitch a wall quad.
+    # The directed edge (a→b) already has correct outward winding from the top faces,
+    # so the wall quad CCW (outward) is: va_top, vb_top, vb_bot, va_bot
+    # = two triangles: (va_top, vb_top, vb_bot) and (va_top, vb_bot, va_bot)
+
+    top_verts_arr = np.array(top_verts, dtype=np.float64)
+    n_top = len(top_verts_arr)
+
+    # Map top vertex index → bottom vertex index
+    top_to_bot: dict[int, int] = {}
+    bot_verts: list[list[float]] = []
+
+    def get_bot(vi: int) -> int:
+        if vi not in top_to_bot:
+            top_to_bot[vi] = n_top + len(bot_verts)
+            bot_verts.append([top_verts_arr[vi, 0], top_verts_arr[vi, 1], 0.0])
+        return top_to_bot[vi]
+
+    wall_faces: list[list[int]] = []
+    for va, vb in boundary_edges:
+        ba = get_bot(va)
+        bb = get_bot(vb)
+        # Wall quad: top edge va→vb, bottom edge bb→ba (reversed for outward normal)
+        wall_faces.append([va, vb, bb])
+        wall_faces.append([va, bb, ba])
+
+    # --- Bottom cap: triangulate using the exact bottom (z=0) vertices from the walls ---
+    # Build a loop from the bot_verts (which are already at z=0 and match wall bottom edges).
+    # We need to order the bottom boundary into a polygon ring, then triangulate it.
+    # Build a directed adjacency from wall bottom edges: for each wall edge (va→vb),
+    # the corresponding bottom edge is (bot(vb) → bot(va)) — reversed so the bottom
+    # cap normal points downward (-Z = outward from solid).
+
+    # Collect bottom directed edges as a linked list
+    bot_next: dict[int, int] = {}
+    for va, vb in boundary_edges:
+        ba = top_to_bot[va]
+        bb = top_to_bot[vb]
+        # Bottom edge runs bb → ba (reversed from top) to form a closed ring
+        bot_next[bb] = ba
+
+    # Trace all closed loops in the bottom ring
+    visited: set[int] = set()
+    loops: list[list[int]] = []
+    for start in list(bot_next.keys()):
+        if start in visited:
+            continue
+        loop = []
+        cur = start
+        for _ in range(len(bot_next) + 1):
+            if cur in visited:
+                break
+            visited.add(cur)
+            loop.append(cur)
+            cur = bot_next.get(cur, -1)
+            if cur == start or cur < 0:
+                break
+        if len(loop) >= 3:
+            loops.append(loop)
+
+    cap_faces: list[list[int]] = []
+    # Triangulate each loop as a fan from the first vertex.
+    # For irregular shapes this is not ideal but trimesh.repair.fill_holes will
+    # handle remaining gaps. For large loops, use Shapely for proper triangulation.
+    for loop in loops:
+        if len(loop) < 3:
+            continue
+        # Build a 2D polygon from these bottom vertices and triangulate with Shapely
+        loop_xy = np.array([[bot_verts[vi - n_top][0], bot_verts[vi - n_top][1]]
+                             for vi in loop], dtype=np.float64)
+        poly2d = ShapelyPolygon(loop_xy)
+        if not poly2d.is_valid:
+            poly2d = poly2d.buffer(0)
+        if poly2d.is_empty:
+            continue
+
+        # Triangulate via trimesh (earcut)
+        try:
+            cap_mesh = trimesh.creation.extrude_polygon(poly2d, height=0.0001)
+            cap_verts_arr = np.array(cap_mesh.vertices)
+            cap_faces_arr = np.array(cap_mesh.faces)
+            # Select only the bottom cap faces (z ≈ 0)
+            z_bot = cap_verts_arr[:, 2] < 0.00005
+            f_bot = z_bot[cap_faces_arr].all(axis=1)
+            cap_v_sel = cap_verts_arr[z_bot, :2]
+
+            # Map cap vertices back to the loop's bottom vertex indices by nearest XY
+            from scipy.spatial import cKDTree
+            tree = cKDTree(loop_xy)
+            dists, idxs = tree.query(cap_v_sel)
+            old2new_cap = np.full(len(cap_verts_arr), -1, dtype=int)
+            z_bot_indices = np.where(z_bot)[0]
+            for local_i, (dist, li) in enumerate(zip(dists, idxs)):
+                if dist < 1.0:  # within 1 mm tolerance
+                    old2new_cap[z_bot_indices[local_i]] = loop[li]
+                else:
+                    old2new_cap[z_bot_indices[local_i]] = loop[li]  # use nearest anyway
+
+            for f in cap_faces_arr[f_bot]:
+                fn0 = old2new_cap[f[0]]
+                fn1 = old2new_cap[f[1]]
+                fn2 = old2new_cap[f[2]]
+                if fn0 >= 0 and fn1 >= 0 and fn2 >= 0 and fn0 != fn1 and fn1 != fn2 and fn0 != fn2:
+                    # Flip winding: bottom normal must point -Z (outward)
+                    cap_faces.append([fn0, fn2, fn1])
+        except Exception:
+            # Fallback: fan triangulation from first vertex
+            v0 = loop[0]
+            for i in range(1, len(loop) - 1):
+                cap_faces.append([v0, loop[i+1], loop[i]])
+
+    # --- Assemble ---
+    all_verts = top_verts + bot_verts
+    all_faces = top_faces + wall_faces + cap_faces
+
+    verts_np = np.array(all_verts, dtype=np.float64)
+    faces_np = np.array(all_faces, dtype=np.int64)
+
+    mesh = trimesh.Trimesh(vertices=verts_np, faces=faces_np, process=True)
+    trimesh.repair.fix_normals(mesh)
+    trimesh.repair.fill_holes(mesh)
+
+    return mesh
+
+
+def drill_flag_hole(
+    mesh: "trimesh.Trimesh",
+    diameter: float = 2.5,
+    x_offset_mm: float = 0.0,
+    y_offset_mm: float = 0.0,
+) -> "trimesh.Trimesh":
+    """
+    Subtract a vertical cylindrical hole through the XY center of the mesh.
+
+    The cylinder spans from Z=-1 to Z=max_Z+1 to ensure it punches all the
+    way through regardless of surface height variation.
+
+    Parameters
+    ----------
+    mesh         : watertight trimesh.Trimesh in mm coordinates
+    diameter     : hole diameter in mm (default 2.5 mm for a standard flag pin)
+    x_offset_mm  : shift the hole center to the right by this many mm
+                   (positive = right, negative = left). Default 0.0.
+    y_offset_mm  : shift the hole center up by this many mm
+                   (positive = up in the slicer view, negative = down).
+                   Default 0.0. The mm space here is post Y-flip from
+                   _px_to_mm_2d, so +Y is "up" as seen in Bambu Studio.
+
+    Returns
+    -------
+    trimesh.Trimesh with the hole drilled
+    """
+    import trimesh.creation
+    import trimesh.boolean
+
+    # --- Find XY center of the mesh bounding box, then apply per-hole offsets ---
+    bb = mesh.bounds  # shape (2, 3): [[xmin,ymin,zmin],[xmax,ymax,zmax]]
+    cx = (bb[0, 0] + bb[1, 0]) / 2.0 + float(x_offset_mm)
+    cy = (bb[0, 1] + bb[1, 1]) / 2.0 + float(y_offset_mm)
+    z_max = bb[1, 2]
+    if x_offset_mm or y_offset_mm:
+        print(f"  Flag hole offset: ({x_offset_mm:+.2f}, {y_offset_mm:+.2f}) mm "
+              f"→ center ({cx:.2f}, {cy:.2f}) mm")
+
+    # Cylinder extends 1 mm below base (z=-1) and 1 mm above top
+    cyl_height = z_max + 2.0   # total height: from -1 to z_max+1
+    cyl_center_z = (z_max + 2.0) / 2.0 - 1.0  # midpoint of [-1, z_max+1]
+
+    radius = diameter / 2.0
+    # segments=64 gives a smooth enough hole at 2.5 mm diameter
+    cylinder = trimesh.creation.cylinder(radius=radius, height=cyl_height, sections=64)
+
+    # Translate cylinder so its axis passes through (cx, cy) and spans the right Z range
+    cylinder.apply_translation([cx, cy, cyl_center_z])
+
+    # --- Boolean difference: try manifold3d first, then blender, then fallback ---
+    result = None
+    for engine in ('manifold', 'blender'):
+        try:
+            result = trimesh.boolean.difference([mesh, cylinder], engine=engine)
+            if result is not None and len(result.faces) > 0:
+                print(f"  Boolean difference succeeded (engine='{engine}')")
+                break
+        except Exception as exc:
+            print(f"  Boolean engine '{engine}' failed: {exc}")
+            result = None
+
+    if result is None or len(result.faces) == 0:
+        # Fallback: remove faces whose centroid XY is within radius of center.
+        # This is imprecise (open mesh, no wall cap) but better than nothing.
+        print("  WARNING: Boolean backends unavailable — using face-removal fallback "
+              "(hole will be open, not capped).")
+        centroids = mesh.triangles_center  # (N, 3)
+        dist_xy = np.sqrt((centroids[:, 0] - cx) ** 2 + (centroids[:, 1] - cy) ** 2)
+        keep = dist_xy >= radius
+        result = mesh.submesh([np.where(keep)[0]], append=True)
+
+    # Verify watertight status
+    print(f"  Post-drill watertight: {result.is_watertight}")
+    print(f"  Post-drill faces: {len(result.faces)}, vertices: {len(result.vertices)}")
+    return result
+
+
+def drill_fringe_hole(
+    mesh: "trimesh.Trimesh",
+    diameter: float = 5.0,
+    offset_from_left: float = 12.0,
+    offset_from_top: float = 12.0,
+) -> "trimesh.Trimesh":
+    """
+    Subtract a vertical cylindrical hole through the fringe mesh at a position
+    offset from the top-left corner of the fringe bounding box.
+
+    Parameters
+    ----------
+    mesh             : watertight trimesh.Trimesh in mm coordinates
+    diameter         : hole diameter in mm (default 5.0 mm)
+    offset_from_left : distance from the left (X-min) edge of the bounding box in mm
+    offset_from_top  : distance down from the top (Y-max) edge of the bounding box in mm
+
+    Returns
+    -------
+    trimesh.Trimesh with the hole drilled
+    """
+    import trimesh.creation
+    import trimesh.boolean
+    import trimesh.repair
+
+    # --- Determine hole center from fringe bounding box ---
+    bounds = mesh.bounds  # shape (2, 3): [[xmin,ymin,zmin],[xmax,ymax,zmax]]
+    cx = bounds[0, 0] + offset_from_left
+    cy = bounds[1, 1] - offset_from_top
+    z_max = bounds[1, 2]
+
+    print(f"  Fringe hole center: ({cx:.2f}, {cy:.2f}) mm  diameter={diameter} mm")
+    print(f"  Fringe pre-repair watertight: {mesh.is_watertight}")
+
+    # --- Approach A: repair a copy of the fringe before boolean ---
+    mesh_repaired = mesh.copy()
+    trimesh.repair.fill_holes(mesh_repaired)
+    trimesh.repair.fix_normals(mesh_repaired)
+    trimesh.repair.fix_winding(mesh_repaired)
+    mesh_repaired.merge_vertices()
+    print(f"  Fringe post-repair watertight: {mesh_repaired.is_watertight}")
+
+    # Cylinder extends 1 mm below base (z=-1) and 1 mm above top
+    cyl_height = z_max + 2.0          # total height: from -1 to z_max+1
+    cyl_center_z = (z_max + 2.0) / 2.0 - 1.0  # midpoint of [-1, z_max+1]
+
+    radius = diameter / 2.0
+    cylinder = trimesh.creation.cylinder(radius=radius, height=cyl_height, sections=64)
+
+    # Translate cylinder so its axis passes through (cx, cy) and spans the right Z range
+    cylinder.apply_translation([cx, cy, cyl_center_z])
+
+    # --- Boolean difference: try manifold3d first, then blender, then fallback ---
+    # Use the repaired copy so the boolean engine receives a watertight (or closer-to-watertight) mesh
+    result = None
+    for engine in ('manifold', 'blender'):
+        try:
+            result = trimesh.boolean.difference([mesh_repaired, cylinder], engine=engine)
+            if result is not None and len(result.faces) > 0:
+                print(f"  Fringe boolean difference succeeded (engine='{engine}')")
+                break
+        except Exception as exc:
+            print(f"  Fringe boolean engine '{engine}' failed: {exc}")
+            result = None
+
+    if result is None or len(result.faces) == 0:
+        # Fallback: remove faces whose centroid XY is within radius of center.
+        # This is imprecise (open mesh, no wall cap) but better than nothing.
+        print("  WARNING: Boolean backends unavailable even after repair — using face-removal fallback "
+              "(fringe hole will be open, not capped).")
+        print("  NOTE: If this persists, consider Approach B: exclude hole region during build_fringe_mesh().")
+        centroids = mesh.triangles_center  # (N, 3)
+        dist_xy = np.sqrt((centroids[:, 0] - cx) ** 2 + (centroids[:, 1] - cy) ** 2)
+        keep = dist_xy >= radius
+        result = mesh.submesh([np.where(keep)[0]], append=True)
+
+    # Verify watertight status
+    print(f"  Fringe post-drill watertight: {result.is_watertight}")
+    print(f"  Fringe post-drill faces: {len(result.faces)}, vertices: {len(result.vertices)}")
+    return result
+
+
+def _remove_faces_whose_footprint_overlaps_polygon(
+    mesh: "trimesh.Trimesh",
+    shapely_polygon: "ShapelyPolygon",
+    label: str = "carve",
+) -> tuple["trimesh.Trimesh", int]:
+    """
+    Delete every triangle in ``mesh`` whose XY-projected footprint intersects
+    ``shapely_polygon``. Returns (new_mesh, n_removed).
+
+    Motivation (task 713, Topo 2026-09-02) — same bug class Topo fixed for the
+    tee hole in task 703. The fringe's bottom-slab earcut triangulation
+    (build_fringe_mesh → polygon-with-holes earcut) can emit a handful of
+    GIANT triangles that span half the mesh. When such a triangle's XY
+    footprint covers a trap or water cutout, it lands at z=0 UNDER the cutout
+    and re-plugs the void — producing the "sand rake stripe" Thomas saw on
+    DeLaveaga #11's trap 1 (traps 2 and 3 got lucky, no giant-triangle footprint
+    over them). Cell-level `traps_union.contains(sp)` correctly excludes fringe
+    top-surface cells inside a trap, but has no visibility into whether the
+    LATER earcut on the bottom loop produces a triangle spanning the trap.
+
+    Filter (three vectorised checks per triangle, union → remove):
+      (a) any of the 3 triangle vertices lies INSIDE the polygon
+      (b) the polygon's representative point (or centroid) lies INSIDE the
+          triangle's XY projection (barycentric)
+      (c) any of the 3 triangle edges intersects the polygon exterior
+
+    For a convex disk polygon (as used by drill_tee_hole) this matches the
+    v/pt/edge test the tee-hole path pioneered — see the disk wrapper below.
+    """
+    if mesh is None or len(mesh.faces) == 0:
+        return mesh, 0
+    if shapely_polygon is None or shapely_polygon.is_empty:
+        return mesh, 0
+
+    poly = shapely_polygon
+    if not poly.is_valid:
+        poly = poly.buffer(0)
+        if poly.is_empty:
+            return mesh, 0
+
+    tri_v = mesh.triangles  # (N, 3, 3)
+    ax, ay = tri_v[:, 0, 0], tri_v[:, 0, 1]
+    bx, by = tri_v[:, 1, 0], tri_v[:, 1, 1]
+    cx3, cy3 = tri_v[:, 2, 0], tri_v[:, 2, 1]
+
+    # ── Coarse bbox reject: skip triangles whose XY bbox misses the polygon ──
+    pxmin, pymin, pxmax, pymax = poly.bounds
+    fxmin = np.minimum(np.minimum(ax, bx), cx3)
+    fxmax = np.maximum(np.maximum(ax, bx), cx3)
+    fymin = np.minimum(np.minimum(ay, by), cy3)
+    fymax = np.maximum(np.maximum(ay, by), cy3)
+    bbox_hit = (fxmax >= pxmin) & (fxmin <= pxmax) & (fymax >= pymin) & (fymin <= pymax)
+    cand_idx = np.where(bbox_hit)[0]
+    if cand_idx.size == 0:
+        return mesh, 0
+
+    # ── (a) vertex-inside-polygon: batch via shapely.vectorized.contains ─────
+    try:
+        from shapely.vectorized import contains as _sh_contains
+    except Exception:
+        _sh_contains = None
+
+    if _sh_contains is not None:
+        # Stack all three vertex arrays; one call per array (much faster than
+        # per-face Python).
+        va_in = _sh_contains(poly, ax[cand_idx], ay[cand_idx])
+        vb_in = _sh_contains(poly, bx[cand_idx], by[cand_idx])
+        vc_in = _sh_contains(poly, cx3[cand_idx], cy3[cand_idx])
+        vert_hit = va_in | vb_in | vc_in
+    else:
+        # Slow-path fallback (shouldn't hit in normal env).
+        from shapely.geometry import Point as _SP
+        vert_hit = np.zeros(cand_idx.size, dtype=bool)
+        for k, fi in enumerate(cand_idx):
+            if (poly.contains(_SP(float(ax[fi]), float(ay[fi]))) or
+                poly.contains(_SP(float(bx[fi]), float(by[fi]))) or
+                poly.contains(_SP(float(cx3[fi]), float(cy3[fi])))):
+                vert_hit[k] = True
+
+    # ── (b) polygon representative point inside triangle (catches giant tris
+    # spanning the polygon whose own vertices sit outside). We use the
+    # polygon's representative_point (guaranteed inside) — one point-in-tri
+    # test per candidate. Barycentric sign-consistent check, vectorised.
+    rep = poly.representative_point()
+    rx, ry = float(rep.x), float(rep.y)
+    axs = ax[cand_idx]; ays = ay[cand_idx]
+    bxs = bx[cand_idx]; bys = by[cand_idx]
+    cxs = cx3[cand_idx]; cys = cy3[cand_idx]
+    d1 = (rx - bxs) * (ays - bys) - (axs - bxs) * (ry - bys)
+    d2 = (rx - cxs) * (bys - cys) - (bxs - cxs) * (ry - cys)
+    d3 = (rx - axs) * (cys - ays) - (cxs - axs) * (ry - ays)
+    has_neg = (d1 < 0) | (d2 < 0) | (d3 < 0)
+    has_pos = (d1 > 0) | (d2 > 0) | (d3 > 0)
+    pt_in_tri = ~(has_neg & has_pos)
+
+    # ── (c) edge crosses polygon exterior: catches the remaining case where
+    # a triangle straddles the polygon (edges cross into the interior but no
+    # vertex is inside and the rep-point is outside the triangle). Use
+    # shapely-vectorized intersects on the edges (batched by building
+    # LineString per candidate — slower but only on the bbox-narrowed set).
+    from shapely.geometry import LineString as _LS
+    edge_hit = np.zeros(cand_idx.size, dtype=bool)
+    poly_ext = poly.exterior if hasattr(poly, "exterior") and poly.exterior is not None else None
+    # For a MultiPolygon representative check, fall back to the boundary.
+    poly_boundary = poly.boundary if poly_ext is None else poly_ext
+    # Only run edge test on triangles NOT already caught by (a) or (b) —
+    # keeps the LineString cost bounded even for pathological meshes.
+    _remaining = np.where(~(vert_hit | pt_in_tri))[0]
+    for k in _remaining:
+        seg_ab = _LS([(axs[k], ays[k]), (bxs[k], bys[k])])
+        if seg_ab.intersects(poly_boundary):
+            edge_hit[k] = True; continue
+        seg_bc = _LS([(bxs[k], bys[k]), (cxs[k], cys[k])])
+        if seg_bc.intersects(poly_boundary):
+            edge_hit[k] = True; continue
+        seg_ca = _LS([(cxs[k], cys[k]), (axs[k], ays[k])])
+        if seg_ca.intersects(poly_boundary):
+            edge_hit[k] = True; continue
+
+    overlap_local = vert_hit | pt_in_tri | edge_hit
+    if not overlap_local.any():
+        return mesh, 0
+
+    # Expand back to full face indexing
+    overlap_mask = np.zeros(len(mesh.faces), dtype=bool)
+    overlap_mask[cand_idx[overlap_local]] = True
+    keep_face_mask = ~overlap_mask
+    n_removed = int(overlap_mask.sum())
+
+    n_vert = int(vert_hit.sum())
+    n_pt = int(pt_in_tri.sum())
+    n_edge = int(edge_hit.sum())
+    n_giant = int((pt_in_tri & ~vert_hit).sum())  # "bottom-slab giant tris"
+    print(f"  [{label}] removed {n_removed} faces whose XY footprint overlaps polygon "
+          f"(cand={cand_idx.size}, vertex_hit={n_vert}, pt_in_tri={n_pt}, "
+          f"edge_hit={n_edge}, giant_pt_in_tri_only={n_giant})")
+
+    carved = mesh.submesh([np.where(keep_face_mask)[0]], append=True)
+    return carved, n_removed
+
+
+def drill_tee_hole(
+    mesh: "trimesh.Trimesh",
+    x_mm_from_topleft: float,
+    y_mm_from_topleft: float,
+    diameter: float = TEE_HOLE_DIAMETER_MM,
+    collar_od: float = TEE_HOLE_COLLAR_OD_MM,
+    collar_protrude: float = TEE_HOLE_COLLAR_PROTRUDE_MM,
+) -> "trimesh.Trimesh":
+    """
+    Punch a 2 mm through-hole into the fringe at (x_mm, y_mm) measured from
+    the top-left corner of the print bounds, and drop in a reinforcing
+    annular collar so the hole walls are thicker than the fringe's baseline
+    thickness alone. The collar optionally protrudes ABOVE the fringe top
+    surface to give the tee more lateral guidance.
+
+    Strategy — no boolean engine required
+    -------------------------------------
+    The fringe mesh is chronically non-watertight after all the trap / water /
+    grass-texture surgery, so `trimesh.boolean.difference` on it fails with
+    "Not all meshes are volumes" on manifold and blender-not-installed on the
+    fallback. Rather than try harder to repair the mesh (fragile) we build
+    the collar as an independent, closed annular tube — the same trick
+    `build_mount_pipe_mesh` uses for the upper-left mounting bore — and
+    concatenate it into the fringe.
+
+    Task 748 (2026-09-05) added a pre-extrusion bore-carve into `bottom_poly`
+    inside `build_fringe_mesh` so the fringe extrusion NATURALLY builds clean
+    vertical walls at radius = outer_r + guard. Since then the fringe arrives
+    here with a perfect through-hole already in place, and the historic
+    face-removal step (which was needed pre-748 to open the bore) becomes
+    DESTRUCTIVE: it hits every wall face along the bore boundary via
+    edge_hit, leaving 200+ open edges → non-manifold rim → Bambu Studio
+    auto-repair fills the hole. Task 508 (2026-09-12, Topo): detect the
+    already-carved bore (no face footprint covers the tee axis) and skip
+    the removal in that case. Fall back to the legacy sweep only if the
+    fringe still has faces plugging the tee axis (rare, e.g. task 748
+    fallback path or an ancient EGM).
+
+    The tube itself is watertight by construction; the fringe's minor gaps
+    around the hole are handled by the slicer the same way it handles the
+    fringe's other imperfections today.
+
+    Parameters
+    ----------
+    mesh : trimesh.Trimesh
+        The (already-lifted, already-capped) fringe mesh in world mm coords.
+        Its outer XY bbox is expected at ±(PRINT_SIZE_MM/2 + FRINGE_XY_EXPANSION_MM/2).
+    x_mm_from_topleft, y_mm_from_topleft : float
+        Tee-hole location, in mm from the top-left corner of the print bounds.
+        Converted internally to world (mesh-local) coords.
+    diameter : float
+        Inner through-hole diameter (default 2.0 mm — accepts a standard tee).
+    collar_od : float
+        Outer diameter of the reinforcing sleeve (default 4.0 mm → 1 mm wall
+        on each side of the tee).
+    collar_protrude : float
+        Height the collar rises ABOVE the LOCAL fringe surface at (x_mm, y_mm)
+        — NOT the global fringe max. 0 = collar top is flush with the fringe
+        surface at the tee position (default). Positive values push the collar
+        rim above the local terrain to give the tee more lateral guidance;
+        negative values (uncommon) would sink it.  Behaviour changed in v4.27
+        (task 699): pre-v4.27 the reference was the mesh's global max Z, which
+        put the collar above the local surface on any hole whose tee sat away
+        from the frame-edge cap band.
+    """
+    # ---- 1. Convert print-top-left mm → mesh world coords -----------------
+    half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0
+    cx = -half + float(x_mm_from_topleft)
+    cy = +half - float(y_mm_from_topleft)
+
+    bounds = mesh.bounds  # ((xmin,ymin,zmin),(xmax,ymax,zmax))
+    z_min_mesh = float(bounds[0, 2])
+    z_max_mesh = float(bounds[1, 2])
+    print(f"  [tee_hole] top-left mm=({x_mm_from_topleft:.2f}, {y_mm_from_topleft:.2f}) "
+          f"→ mesh world=({cx:.2f}, {cy:.2f}) mm  (half={half:.3f})")
+    print(f"  [tee_hole] fringe Z range: [{z_min_mesh:.3f}, {z_max_mesh:.3f}] mm  "
+          f"diameter={diameter} mm  collar_od={collar_od} mm  protrude={collar_protrude} mm")
+
+    # ---- 2. Sanity: bore XY must land inside fringe outer bbox ------------
+    if not (bounds[0, 0] <= cx <= bounds[1, 0] and bounds[0, 1] <= cy <= bounds[1, 1]):
+        print(f"  [tee_hole] WARNING: XY ({cx:.2f}, {cy:.2f}) is OUTSIDE fringe bounds "
+              f"X=[{bounds[0,0]:.2f}, {bounds[1,0]:.2f}] Y=[{bounds[0,1]:.2f}, {bounds[1,1]:.2f}]. "
+              f"Skipping tee-hole punch to avoid an empty subtract.")
+        return mesh
+
+    inner_r = float(diameter) / 2.0
+    outer_r = float(collar_od) / 2.0
+    if outer_r <= inner_r:
+        print(f"  [tee_hole] WARNING: collar_od ({collar_od}) must exceed diameter "
+              f"({diameter}); skipping tee hole.")
+        return mesh
+
+    # ---- 3. Punch a hole in the fringe surface wide enough for the tube ---
+    # Remove every triangle whose XY footprint overlaps the collar OD disk (plus
+    # a tiny guard so we don't leave stubs poking into the tube).  We must open
+    # BOTH the top surface AND the bottom slab so the tube's exterior walls are
+    # visible and, crucially, so nothing plugs the through-hole from below.
+    #
+    # Task #703 (Topo, 2026-09-01): pre-#703 we removed by triangle CENTROID
+    # inside the disk.  That missed the fringe's BOTTOM-SLAB triangulation
+    # (earcut on polygon-with-holes → a handful of GIANT triangles whose
+    # centroid sits far from the tee but whose XY footprint covers the bore).
+    #
+    # Task 713 (Topo, 2026-09-02): the vertex/pt-in-tri/edge test the tee-hole
+    # pioneered is now the shared utility
+    # `_remove_faces_whose_footprint_overlaps_polygon`. We call it with the
+    # bore disk expressed as a Shapely circle so the disk case and the
+    # trap/water carve case use one code path.
+    #
+    # Task 508 (Topo, 2026-09-12): NON-DESTRUCTIVE MODE. Since task 748
+    # (2026-09-05) the fringe's bottom_poly is already carved with the bore
+    # disc BEFORE extrusion, so `_replace_fringe_with_watertight_extrusion`
+    # produces a mesh with perfect vertical bore walls at r=outer_r+guard.
+    # The old vertex/pt/edge test (a) hits the vertices AT the bore boundary
+    # (some fp-round inside), and (b) hits every wall-face edge lying ALONG
+    # the boundary (edge_hit=True universally). Result: 200+ perfect bore
+    # walls destroyed → 256 open edges → non-manifold ring at r=4.2 → Bambu
+    # Studio's auto-repair fills the hole and Thomas sees "walls marked but
+    # not hollowed through". Fix: detect whether the bore is already carved
+    # (no face footprint covers the tee center); if so, SKIP the destructive
+    # sweep and just concatenate the collar into the already-clean bore. If
+    # for any reason the carve is absent (task 748 fallback / EGM edge case),
+    # fall back to the historic face-removal so we still open a through-hole.
+    guard_mm = 0.15  # small keep-out so the collar wall isn't touched by leftover fringe faces
+    remove_r = outer_r + guard_mm
+
+    # Bore-already-carved detection: does any triangle's XY footprint cover
+    # (cx, cy)? Uses the same barycentric sign test as
+    # `_remove_faces_whose_footprint_overlaps_polygon`, but only for the
+    # single tee-axis point. If no face covers the point, the tee axis is
+    # already void in XY (i.e., bottom_poly.difference(_tee_bore_disk) ran).
+    tri_v = mesh.triangles  # (F, 3, 3)
+    ax, ay = tri_v[:, 0, 0], tri_v[:, 0, 1]
+    bx, by = tri_v[:, 1, 0], tri_v[:, 1, 1]
+    cx3, cy3 = tri_v[:, 2, 0], tri_v[:, 2, 1]
+    _d1 = (cx - bx) * (ay - by) - (ax - bx) * (cy - by)
+    _d2 = (cx - cx3) * (by - cy3) - (bx - cx3) * (cy - cy3)
+    _d3 = (cx - ax) * (cy3 - ay) - (cx3 - ax) * (cy - ay)
+    _has_neg = (_d1 < 0) | (_d2 < 0) | (_d3 < 0)
+    _has_pos = (_d1 > 0) | (_d2 > 0) | (_d3 > 0)
+    _face_covers_tee_axis = ~(_has_neg & _has_pos)
+    _n_face_covers = int(_face_covers_tee_axis.sum())
+
+    from shapely.geometry import Point as _ShapelyPointDisk
+    if _n_face_covers == 0:
+        # Already-carved path — bottom_poly.difference() built clean bore walls
+        # at r=outer_r+guard. Do NOT run the vertex/pt/edge sweep — it would
+        # destroy those walls (edge_hit fires on every wall face lying along
+        # the bore boundary → non-manifold ring, Bambu auto-fills).
+        print(f"  [tee_hole] bore already carved in fringe (0 faces cover tee axis) — "
+              f"skipping destructive face-removal (task 508). Walls at r={remove_r:.3f} preserved.")
+        fringe_carved = mesh
+        n_removed = 0
+    else:
+        # Fallback: bore not carved into fringe (rare — bottom_poly path failed
+        # or the EGM version predates task 748). Run the legacy sweep so we
+        # still get an open hole, even if the resulting boundary is jagged.
+        print(f"  [tee_hole] {_n_face_covers} faces cover tee axis — running legacy "
+              f"face-removal sweep (fallback, may produce jagged rim).")
+        bore_disk = _ShapelyPointDisk(cx, cy).buffer(remove_r, resolution=32)
+        fringe_carved, n_removed = _remove_faces_whose_footprint_overlaps_polygon(
+            mesh, bore_disk, label=f"tee_hole@({cx:.2f},{cy:.2f})",
+        )
+        if n_removed == 0:
+            # Nothing to remove and nothing covered → tee is outside fringe
+            # entirely. Refuse to drop a floating tube on top of empty space.
+            print("  [tee_hole] WARNING: no fringe faces near tee point — skipping.")
+            return mesh
+
+    # ---- 4. Build the watertight annular collar tube ----------------------
+    # The tube extends from z=0 (build plate) up to z=(local_fringe_top + protrude).
+    #
+    # LOCAL fringe height (task 699, Topo 2026-09-01): the collar top must sit
+    # flush with the fringe surface AT THE TEE POSITION — NOT at the global
+    # fringe max. The fringe's global max Z is only reached inside the frame-
+    # edge cap band (~1 mm from the perimeter, per project_golf_render_rules);
+    # elsewhere the surface follows the terrain and drops considerably. Using
+    # the global max produced a visible collar protrusion above the local
+    # fringe (v4.26 T-hole regression Thomas caught in DeLaveaga #11 [176]).
+    #
+    # We sample the mesh vertices in a small disk around (cx, cy) (top-surface
+    # verts only, filtered by z > half the base slab) and take the max Z as
+    # our local fringe surface height — same pattern as the mount-pipe rim
+    # sampling a few sections down. The fringe is a ~200×200 grid so cell
+    # step ≈ 0.9 mm; a 2 mm sample radius reliably captures 9+ verts.
+    _sample_r = max(2.0, outer_r + 0.5)  # at least 2 mm, or collar OR + a hair
+    _verts = mesh.vertices
+    _dxy2_v = (_verts[:, 0] - cx) ** 2 + (_verts[:, 1] - cy) ** 2
+    _top_mask = _dxy2_v <= (_sample_r ** 2)
+    _top_mask &= _verts[:, 2] > (BASE_THICKNESS_MM * 0.5)  # skip bottom slab / walls
+    if _top_mask.any():
+        _local_zs = _verts[_top_mask, 2]
+        z_local = float(np.max(_local_zs))
+        print(f"  [tee_hole] local fringe surface sample: {int(_top_mask.sum())} verts "
+              f"within {_sample_r:.2f} mm of tee, Z range=[{_local_zs.min():.3f}, "
+              f"{_local_zs.max():.3f}] mm → local top = {z_local:.3f} mm  "
+              f"(global fringe max = {z_max_mesh:.3f} mm)")
+    else:
+        # Fallback: no top-surface verts near tee (fringe carved away here?).
+        # Use a small positive height so the collar isn't a zero-tall ring.
+        z_local = max(float(BASE_THICKNESS_MM), 2.0)
+        print(f"  [tee_hole] WARNING: no top-surface fringe verts within "
+              f"{_sample_r:.2f} mm of tee — falling back to z_local={z_local:.3f} mm")
+    tube_top = float(z_local) + max(float(collar_protrude), 0.0)
+    if tube_top <= 0.0:
+        print(f"  [tee_hole] WARNING: computed tube top ({tube_top}) <= 0 — skipping.")
+        return mesh
+    try:
+        collar_tube = build_mount_pipe_mesh(
+            cx=cx, cy=cy,
+            inner_radius=inner_r,
+            outer_radius=outer_r,
+            z_top=tube_top,
+            n_seg=48,
+        )
+    except Exception as exc:
+        print(f"  [tee_hole] ERROR building collar tube: {exc} — returning carved fringe (open hole).")
+        return fringe_carved
+    print(f"  [tee_hole] collar tube: r_in={inner_r:.2f} r_out={outer_r:.2f} "
+          f"z=[0.00, {tube_top:.3f}]  verts={len(collar_tube.vertices)} "
+          f"faces={len(collar_tube.faces)} watertight={collar_tube.is_watertight}")
+
+    # ---- 5. Concatenate collar tube into carved fringe --------------------
+    combined = trimesh.util.concatenate([fringe_carved, collar_tube])
+    combined.merge_vertices(digits_vertex=6)
+    combined.update_faces(combined.nondegenerate_faces())
+    combined.update_faces(combined.unique_faces())
+    combined.remove_unreferenced_vertices()
+    print(f"  [tee_hole] fringe + collar merged: verts={len(combined.vertices)} "
+          f"faces={len(combined.faces)} watertight={combined.is_watertight} "
+          f"Z=[{combined.bounds[0,2]:.3f}, {combined.bounds[1,2]:.3f}] mm")
+    return combined
+
+
+def save_stl_meshes(
+    Z_grid: np.ndarray,
+    xs_grid: np.ndarray,
+    ys_grid: np.ndarray,
+    inside_mask: np.ndarray,
+    green_boundary_px: np.ndarray,
+    egm_data: dict,
+    smooth_out: str | None,
+    stepped_out: str | None,
+) -> "trimesh.Trimesh":
+    """Build smooth and stepped meshes. Returns (smooth_mesh, stepped_mesh).
+
+    If ``smooth_out`` / ``stepped_out`` are None, the meshes are built but no
+    STL files are written. The pipeline only feeds the meshes into the 3MF
+    scene, so disk writes are vestigial.
+    """
+    scale, centroid_px = _compute_px_to_mm(green_boundary_px, egm_data)
+    print(f"  Scale: {scale:.6f} px→mm, centroid: {centroid_px}")
+
+    elevation_range_mm = float(egm_data.get("elevationRange") or ELEVATION_RANGE_MM)
+    print(f"  Elevation range from EGM: {elevation_range_mm} mm")
+    # `fringeEdgeHeight` intentionally NOT read here — the fringe Z math no
+    # longer ramps to a rectangle-edge target (task 483). The EGM key remains
+    # on-disk for backward compatibility with existing .egm files.
+
+    Z_mm = _height_to_mm(Z_grid, inside_mask, elevation_range_mm=elevation_range_mm)
+    valid_mm = Z_mm[inside_mask]
+    print(f"  Z_mm range: {valid_mm.min():.3f} .. {valid_mm.max():.3f} mm")
+
+    # Slope limiter (mm units): cap any cell whose Z rises more than
+    # _MAX_SLOPE_DELTA_MM above its highest 4-neighbor. Passing
+    # elevation_range_mm equal to the current Z_mm range makes the
+    # raw→mm conversion inside limit_max_slope a no-op (raw_per_mm = 1),
+    # so max_delta_mm is applied directly in mm. Both the smooth and
+    # stepped green meshes below consume this filtered Z_mm, so the
+    # fringe seam (built later from the same underlying Z) inherits
+    # the reduced peak instead of chasing an artefact spike.
+    _z_range_mm = float(valid_mm.max() - valid_mm.min())
+    if _z_range_mm > 0:
+        Z_mm, _slope_stats = limit_max_slope(
+            Z_mm, inside_mask, elevation_range_mm=_z_range_mm,
+        )
+        valid_mm = Z_mm[inside_mask]
+        print(
+            f"  limit_max_slope (Z_mm): max_delta={_slope_stats['max_delta_mm']:.2f} mm/cell, "
+            f"iters={_slope_stats['iters']}, cells reduced={_slope_stats['cells_reduced']}, "
+            f"first-pass max drop={_slope_stats['max_drop_mm']:.3f} mm"
+        )
+        print(f"  Z_mm range post-limit: {valid_mm.min():.3f} .. {valid_mm.max():.3f} mm")
+
+    # zScale: user-dialed vertical amplitude multiplier (default 1.0 = unchanged).
+    # Applied after limit_max_slope so artifact rejection stays strict. Scales
+    # relief above BASE_THICKNESS_MM so the base plate itself is unaffected.
+    # Clamped to [0.5, 5.0]: below 0.5 the plaque is too shallow to read as 3D;
+    # above 5.0 the geometry pushes toward unprintable overhangs on the Bambu A1.
+    # 2026-10-09, replaces the rescale-after-limiter (reverted this same turn).
+    _z_scale_raw = egm_data.get("zScale")
+    if _z_scale_raw is None:
+        _z_scale = 1.0
+    else:
+        try:
+            _z_scale = max(0.5, min(5.0, float(_z_scale_raw)))
+        except (TypeError, ValueError):
+            _z_scale = 1.0
+    if abs(_z_scale - 1.0) > 1e-6:
+        Z_mm = np.where(
+            inside_mask,
+            BASE_THICKNESS_MM + (Z_mm - BASE_THICKNESS_MM) * _z_scale,
+            Z_mm,
+        )
+        valid_mm = Z_mm[inside_mask]
+        print(
+            f"  Z_mm range post-zScale: {valid_mm.min():.3f} .. {valid_mm.max():.3f} mm "
+            f"(zScale={_z_scale:.2f}×, applied over BASE_THICKNESS_MM={BASE_THICKNESS_MM:.2f})"
+        )
+    else:
+        print(f"  zScale: {_z_scale:.2f} (default, no-op)")
+
+    contour_step_mm = float(egm_data.get("contourStep") or 0.0)
+    print(f"  Contour step from EGM: {contour_step_mm} mm "
+          f"({'user-specified' if contour_step_mm > 0 else 'fallback to N_CONTOUR_LEVELS=' + str(N_CONTOUR_LEVELS)})")
+
+    # --- Smooth surface ---
+    print("  Building smooth surface mesh…")
+    smooth_mesh = _build_heightmap_mesh(
+        Z_mm, xs_grid, ys_grid, inside_mask, green_boundary_px,
+        scale, centroid_px, stepped=False, contour_step_mm=contour_step_mm
+    )
+    bb = smooth_mesh.bounds
+    print(f"  Smooth mesh: {len(smooth_mesh.vertices)} vertices, {len(smooth_mesh.faces)} faces")
+    print(f"  Watertight: {smooth_mesh.is_watertight}")
+    print(f"  Bounding box: X [{bb[0,0]:.1f}, {bb[1,0]:.1f}] "
+          f"Y [{bb[0,1]:.1f}, {bb[1,1]:.1f}] Z [{bb[0,2]:.1f}, {bb[1,2]:.1f}] mm")
+
+    # --- Stepped surface ---
+    print("  Building stepped surface mesh…")
+    stepped_mesh = _build_heightmap_mesh(
+        Z_mm, xs_grid, ys_grid, inside_mask, green_boundary_px,
+        scale, centroid_px, stepped=True, contour_step_mm=contour_step_mm
+    )
+    bb = stepped_mesh.bounds
+    print(f"  Stepped mesh: {len(stepped_mesh.vertices)} vertices, {len(stepped_mesh.faces)} faces")
+    print(f"  Watertight: {stepped_mesh.is_watertight}")
+    print(f"  Bounding box: X [{bb[0,0]:.1f}, {bb[1,0]:.1f}] "
+          f"Y [{bb[0,1]:.1f}, {bb[1,1]:.1f}] Z [{bb[0,2]:.1f}, {bb[1,2]:.1f}] mm")
+
+    # --- Drill flag-pin hole through both meshes ---
+    # Per-hole offset (mm) read from EGM; default 0,0 = green-center (legacy behavior).
+    x_off = float(egm_data.get('flagOffsetXMm', 0.0) or 0.0)
+    y_off = float(egm_data.get('flagOffsetYMm', 0.0) or 0.0)
+    print(f"  Drilling 3.0mm flag hole at green center "
+          f"(flagOffset = {x_off:+.2f}, {y_off:+.2f} mm)…")
+    print("  [smooth]")
+    smooth_mesh = drill_flag_hole(
+        smooth_mesh, diameter=3.0,
+        x_offset_mm=x_off, y_offset_mm=y_off,
+    )
+    print("  [stepped]")
+    stepped_mesh = drill_flag_hole(
+        stepped_mesh, diameter=3.0,
+        x_offset_mm=x_off, y_offset_mm=y_off,
+    )
+
+    # --- Export (optional; skipped when called from the 3MF pipeline) ---
+    if smooth_out:
+        os.makedirs(os.path.dirname(smooth_out), exist_ok=True)
+        smooth_mesh.export(smooth_out)
+        print(f"  Saved: {smooth_out}")
+
+    if stepped_out:
+        os.makedirs(os.path.dirname(stepped_out), exist_ok=True)
+        stepped_mesh.export(stepped_out)
+        print(f"  Saved: {stepped_out}")
+
+    return smooth_mesh, stepped_mesh
+
+
+# ---------------------------------------------------------------------------
+# Step 7: Build fringe mesh
+# ---------------------------------------------------------------------------
+
+def _dist_to_segment(px: float, py: float, ax: float, ay: float, bx: float, by: float) -> float:
+    """Squared distance from point (px, py) to segment (ax,ay)-(bx,by)."""
+    dx, dy = bx - ax, by - ay
+    t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy + 1e-30)
+    t = max(0.0, min(1.0, t))
+    nx, ny = ax + t * dx, ay + t * dy
+    return math.hypot(px - nx, py - ny), nx, ny
+
+
+def _min_dist_to_polyline(px: float, py: float, pts: np.ndarray) -> tuple[float, float, float]:
+    """
+    Return (min_dist, nearest_x, nearest_y) from point to closed polyline pts (Nx2).
+
+    Vectorised over all polyline segments in numpy — critical for the fringe
+    grid loop (task 683, Topo 2026-08-30). The scalar-Python version was O(N)
+    per call and became a wall-clock catastrophe once GREEN_BOUNDARY_SPLINE +
+    4× Chaikin pushed N to ~26k boundary points: 40k fringe cells × 26k pts
+    = ~1e9 pure-Python ops per pipeline (~20 min wall time). Vectorised, one
+    call is a single numpy pass — total wall time drops back to ~2 min.
+    """
+    n = len(pts)
+    if n < 2:
+        return float("inf"), float(pts[0, 0]), float(pts[0, 1])
+    a = pts                                # (N, 2) segment starts
+    b = np.roll(pts, -1, axis=0)           # (N, 2) segment ends (closed)
+    d = b - a                              # (N, 2) edge vectors
+    denom = (d * d).sum(axis=1) + 1e-30    # (N,) squared edge lengths
+    px_a = np.array([px, py]) - a          # (N, 2)
+    t = (px_a * d).sum(axis=1) / denom     # (N,) projection param
+    np.clip(t, 0.0, 1.0, out=t)
+    proj = a + t[:, None] * d              # (N, 2) closest point on each segment
+    diff = proj - np.array([px, py])       # (N, 2)
+    dist2 = (diff * diff).sum(axis=1)      # (N,)
+    i = int(np.argmin(dist2))
+    return float(math.sqrt(dist2[i])), float(proj[i, 0]), float(proj[i, 1])
+
+
+def _nearest_grid_z(nx_mm: float, ny_mm: float,
+                    xs_mm: np.ndarray, ys_mm: np.ndarray,
+                    Z_mm: np.ndarray, inside_mask: np.ndarray) -> float:
+    """
+    Given a point (nx_mm, ny_mm) in mm coords, find the nearest valid grid cell
+    (inside the green) and return its Z_mm value.
+    """
+    # Find closest valid grid cell to the nearest boundary point
+    valid_rows, valid_cols = np.where(inside_mask)
+    if len(valid_rows) == 0:
+        return BASE_THICKNESS_MM
+
+    # xs_mm and ys_mm are 1D — build 2D coords for valid cells
+    cell_x = xs_mm[valid_cols]
+    cell_y = ys_mm[valid_rows]
+    dists2 = (cell_x - nx_mm) ** 2 + (cell_y - ny_mm) ** 2
+    best = np.argmin(dists2)
+    return float(Z_mm[valid_rows[best], valid_cols[best]])
+
+
+def _count_fringe_spikes(
+    Z: np.ndarray,
+    mask: np.ndarray,
+    threshold_mm: float,
+    return_locations: bool = False,
+):
+    """
+    Count cells in `mask` whose Z exceeds the median of their in-mask 8
+    neighbours by more than `threshold_mm`. Mirrors the spike-scanner used in
+    task #313 reporting. If `return_locations=True`, also returns a list of
+    (r, c, z, nbr_median, delta) tuples for each spike.
+    """
+    nrows, ncols = Z.shape
+    count = 0
+    locations: list[tuple[int, int, float, float, float]] = []
+    for r in range(nrows):
+        for c in range(ncols):
+            if not mask[r, c]:
+                continue
+            nbr_vals: list[float] = []
+            for dr in (-1, 0, 1):
+                for dc in (-1, 0, 1):
+                    if dr == 0 and dc == 0:
+                        continue
+                    nr, nc = r + dr, c + dc
+                    if 0 <= nr < nrows and 0 <= nc < ncols and mask[nr, nc]:
+                        nbr_vals.append(float(Z[nr, nc]))
+            if not nbr_vals:
+                continue
+            med = float(np.median(nbr_vals))
+            delta = float(Z[r, c]) - med
+            if delta > threshold_mm:
+                count += 1
+                if return_locations:
+                    locations.append((r, c, float(Z[r, c]), med, delta))
+    if return_locations:
+        return count, locations
+    return count
+
+
+def _replace_fringe_with_watertight_extrusion(
+    old_mesh: "trimesh.Trimesh",
+    bottom_poly: "ShapelyPolygon",
+    fringe_max_z: float,
+    label: str = "fringe",
+) -> "trimesh.Trimesh":
+    """
+    Task 742 (Topo, 2026-09-05): rewrite fringe mesh assembly using
+    ``trimesh.creation.extrude_polygon`` to guarantee a watertight, positive-
+    volume mesh.
+
+    The prior fringe assembly (top-surface grid + stitched walls + earcut
+    bottom cap) produced 1115 open edges and negative volume on DeLaveaga H11
+    (task 738 diagnosis). Bambu Studio auto-repairs the broken mesh, inserting
+    phantom filament in visually unpredictable places.
+
+    This helper takes the polygon-with-holes that already describes the fringe
+    footprint (frame rectangle minus green minus traps minus water minus bore
+    holes) and extrudes it at ``fringe_max_z`` — that produces a clean box with
+    correct walls / bottom / (initially flat) top. Then we displace each TOP
+    vertex to the sculpted Z sampled from the OLD mesh's top surface, so we
+    keep the per-cell terrain variation that the sculpting pipeline computed.
+
+    Displacing only top vertices preserves watertightness (topology unchanged;
+    walls & bottom untouched). Boundary top vertices sit on the polygon
+    perimeter, so their XY exactly matches the polygon rings — the trap/water
+    cutout perimeters and green-cutout perimeter are identical between the
+    fringe mesh here and the slabs / green mesh built elsewhere, killing the
+    seam mismatch at the source.
+
+    We use the Triangle engine with quality + max-area constraints so the top
+    face carries interior Steiner points at ~5 mm spacing, giving enough
+    resolution to sample terrain variation cleanly.
+    """
+    from scipy.spatial import cKDTree
+    if bottom_poly is None or bottom_poly.is_empty:
+        print(f"  [{label} watertight-rewrite] EMPTY polygon — returning old mesh unchanged.")
+        return old_mesh
+    if fringe_max_z <= 0.0:
+        print(f"  [{label} watertight-rewrite] fringe_max_z <= 0 — returning old mesh unchanged.")
+        return old_mesh
+
+    # Ensure valid polygon (fix self-intersections from smoothing artifacts).
+    if not bottom_poly.is_valid:
+        try:
+            from shapely.validation import make_valid
+            bottom_poly = make_valid(bottom_poly)
+        except Exception:
+            bottom_poly = bottom_poly.buffer(0)
+        if hasattr(bottom_poly, "geoms"):
+            bottom_poly = max(bottom_poly.geoms, key=lambda g: g.area)
+
+    print(f"  [{label} watertight-rewrite] extruding polygon-with-holes: "
+          f"area={bottom_poly.area:.1f} mm² interiors={len(list(bottom_poly.interiors))} "
+          f"height={fringe_max_z:.3f} mm")
+
+    # Extrude at max Z using Triangle engine with quality + area constraints
+    # so the top face carries interior Steiner points. 'p'=PSLG, 'q30'=min
+    # angle 30°, 'a<X>'=max triangle area X mm².
+    #
+    # Task 500 (Topo, 2026-09-09): tunable via FRINGE_TOP_MAX_TRIANGLE_AREA_MM2.
+    # Prior default 25 mm² (~5 mm triangles) was too coarse for grass-texture
+    # bumps at spacing 1-2.4 mm — each bump landed on ≤1 interior vertex,
+    # producing spikes instead of grass. Now 1 mm² (~1.5 mm triangles) so the
+    # interior carries enough vertex density for grass to actually read as grass.
+    _tri_args = f"pq30a{FRINGE_TOP_MAX_TRIANGLE_AREA_MM2}"
+    try:
+        new_mesh = trimesh.creation.extrude_polygon(
+            bottom_poly, height=float(fringe_max_z),
+            engine="triangle", triangle_args=_tri_args,
+        )
+    except Exception as exc_ex:
+        print(f"  [{label} watertight-rewrite] extrude with triangle FAILED ({exc_ex}) "
+              f"→ falling back to earcut (no interior verts, flat top)")
+        try:
+            new_mesh = trimesh.creation.extrude_polygon(
+                bottom_poly, height=float(fringe_max_z), engine="earcut",
+            )
+        except Exception as exc_earcut:
+            print(f"  [{label} watertight-rewrite] earcut fallback ALSO FAILED "
+                  f"({exc_earcut}) — returning old mesh unchanged.")
+            return old_mesh
+
+    print(f"  [{label} watertight-rewrite] extruded mesh: "
+          f"verts={len(new_mesh.vertices)} faces={len(new_mesh.faces)} "
+          f"watertight={new_mesh.is_watertight} "
+          f"volume={new_mesh.volume:.1f} mm³ "
+          f"open_edges={len(trimesh.grouping.group_rows(new_mesh.edges_sorted, require_count=1))}")
+
+    # --- Build KD-tree of old mesh top-surface vertices for Z sampling ------
+    old_verts = old_mesh.vertices
+    if len(old_verts) < 4:
+        print(f"  [{label} watertight-rewrite] old mesh empty — skipping displacement.")
+        return new_mesh
+
+    # Top-surface only: Z > BASE_THICKNESS_MM / 2 excludes floor / wall bottoms.
+    _top_mask_old = old_verts[:, 2] > (BASE_THICKNESS_MM * 0.5)
+    if not _top_mask_old.any():
+        print(f"  [{label} watertight-rewrite] no top-surface verts in old mesh — "
+              f"leaving new mesh at flat max Z.")
+        return new_mesh
+    top_xy_old = old_verts[_top_mask_old, :2]
+    top_z_old = old_verts[_top_mask_old, 2]
+    old_kd = cKDTree(top_xy_old)
+
+    # --- Displace TOP vertices of new mesh only ------------------------------
+    # Top-face vertices are those at z == fringe_max_z (extrude_polygon
+    # creates vertices at exactly [0, height]). Use a tight tolerance.
+    new_verts = new_mesh.vertices.copy()
+    top_z_target = float(fringe_max_z)
+    top_mask_new = np.abs(new_verts[:, 2] - top_z_target) < 1e-4
+    if not top_mask_new.any():
+        print(f"  [{label} watertight-rewrite] no top verts found at z={top_z_target} — "
+              f"leaving new mesh unmodified.")
+        return new_mesh
+
+    top_xy_new = new_verts[top_mask_new, :2]
+
+    # Sample old-mesh Z via IDW over K nearest neighbours for smoother result.
+    K = min(4, len(top_z_old))
+    dists_s, idxs_s = old_kd.query(top_xy_new, k=K)
+    # Ensure 2D shape for K=1 case
+    dists_s = np.atleast_2d(dists_s.T).T if K == 1 else dists_s
+    idxs_s = np.atleast_2d(idxs_s.T).T if K == 1 else idxs_s
+    if K == 1:
+        sampled_z = top_z_old[idxs_s[:, 0]]
+    else:
+        # Guard divide-by-zero: any near-coincident (< 1e-6 mm) vertex snaps
+        # to the exact nearest Z (no blending).
+        _coincident = dists_s.min(axis=1) < 1e-6
+        w = 1.0 / np.maximum(dists_s, 1e-6) ** 2
+        w /= w.sum(axis=1, keepdims=True)
+        sampled_z = (w * top_z_old[idxs_s]).sum(axis=1)
+        if _coincident.any():
+            # Overwrite with nearest for exact-match cases (seam-match preserved)
+            nearest_col = np.argmin(dists_s, axis=1)
+            _sn = top_z_old[idxs_s[np.arange(len(idxs_s)), nearest_col]]
+            sampled_z = np.where(_coincident, _sn, sampled_z)
+
+    # Clamp: never above top_z_target (safety), never below BASE_THICKNESS_MM.
+    sampled_z = np.clip(sampled_z, BASE_THICKNESS_MM, top_z_target)
+
+    new_verts[top_mask_new, 2] = sampled_z
+    new_mesh.vertices = new_verts
+
+    # Recompute normals — vertex Z change flipped some triangle orientations.
+    trimesh.repair.fix_normals(new_mesh)
+
+    print(f"  [{label} watertight-rewrite] displaced {int(top_mask_new.sum())} "
+          f"top vertices  Z range=[{sampled_z.min():.3f}, {sampled_z.max():.3f}] mm  "
+          f"final watertight={new_mesh.is_watertight} volume={new_mesh.volume:.1f} mm³")
+    return new_mesh
+
+
+# ---------------------------------------------------------------------------
+# TPS global height field (task 684, Topo 2026-10-02)
+# ---------------------------------------------------------------------------
+# Current state (task 698, 2026-10-02):
+#   Currently only outer-frame base points feed the TPS fit → surface is flat
+#   at BASE_THICKNESS_MM.  The spike_application + fringe_boundary_heights
+#   pipelines were removed on 2026-10-02 (Thomas pivot — slope-arrow Poisson
+#   green surface + manual fringe-height mechanism coming).
+#   Future mechanism will feed additional height constraints via a NEW argument
+#   or a NEW source — keep the TPS primitive ready for that work.
+# ---------------------------------------------------------------------------
+
+def _build_tps_base(
+    egm_data: dict,
+    green_bnd_mm: np.ndarray,
+    elevation_spikes_mm: list[dict],
+    fringe_boundary_heights_mm: list[dict],
+    grid_x: np.ndarray,
+    grid_y: np.ndarray,
+) -> np.ndarray:
+    """Build a C²-smooth global height field via thin-plate spline (TPS).
+
+    Fits a single ``scipy.interpolate.RBFInterpolator`` with
+    ``kernel="thin_plate_spline"`` over the 16 outer-frame anchors at
+    BASE_THICKNESS_MM, then evaluates it on ``(grid_x, grid_y)``.
+
+    The TPS minimises bending energy subject to exact interpolation through
+    each constraint.  With only the 16 frame anchors active the surface is
+    flat at BASE_THICKNESS_MM everywhere.  Thomas's future mechanism will
+    supply additional height constraints via a new argument or source.
+
+    .. note::
+        ``fringe_boundary_heights_mm`` is **deprecated** (task 690, 2026-10-02).
+        Thomas's revelation: the exterior fringe numbers (10/15/20/25/30) are
+        *distance-from-pin markers*, not altitudes.  The parameter is accepted
+        for API stability but its contents are **ignored**.  Callers should be
+        updated to pass ``fringe_boundary_heights_mm=[]``; the parameter will
+        be removed in a future version.
+
+    .. note::
+        ``elevation_spikes_mm`` is **deprecated** (task 698, 2026-10-02).
+        The OCR→elevationSpikes Gaussian-bump pipeline was dropped (Thomas
+        pivot to slope-arrow Poisson green + manual fringe-height mechanism).
+        The parameter is accepted for API stability but its contents are
+        **ignored**.  Pass ``[]`` to suppress the deprecation log line.
+
+    Parameters
+    ----------
+    egm_data : dict
+        EGM data dict — used for ``elevationRange``.
+    green_bnd_mm : (N, 2) array
+        Green boundary polyline in mm-space (retained for API compatibility).
+    elevation_spikes_mm : list of {"xy_mm": array(2,), "z_mm": float}
+        **DEPRECATED — ignored.**  Formerly interior elevation spikes; now a
+        no-op.  Pass ``[]`` to suppress the deprecation log line.
+    fringe_boundary_heights_mm : list of {"xy_mm": array(2,), "z_mm": float}
+        **DEPRECATED — ignored.**  Formerly fringe boundary anchors; now a
+        no-op.  Pass ``[]`` to suppress the deprecation log line.
+    grid_x, grid_y : (R, C) arrays
+        Meshgrid at which the surface is evaluated.
+
+    Returns
+    -------
+    (R, C) float array of Z values in mm.
+
+    Fallback
+    --------
+    If fewer than 5 *unique* constraints exist after deduplication (TPS
+    would be underdetermined), returns a flat surface at BASE_THICKNESS_MM.
+    Co-located constraints with conflicting Z are averaged before fitting.
+    """
+    from scipy.interpolate import RBFInterpolator
+
+    _elevation_range_mm = float(egm_data.get("elevationRange") or ELEVATION_RANGE_MM)
+    half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0
+
+    # ── Deprecated parameters — accepted but ignored ─────────────────────────
+    # elevation_spikes_mm — DEPRECATED (task 698, Topo 2026-10-02).
+    # The OCR→elevationSpikes Gaussian-bump pipeline was dropped on 2026-10-02
+    # (Thomas pivot).  Interior spikes no longer shape the TPS surface.
+    if elevation_spikes_mm:
+        print(
+            f"  [TPS] DEPRECATED: elevation_spikes_mm passed "
+            f"({len(elevation_spikes_mm)} item(s)) but ignored — "
+            f"spike-application pipeline removed in task 698. "
+            f"Remove callers; this parameter will be deleted in a future version."
+        )
+
+    # fringe_boundary_heights_mm — DEPRECATED (task 690, Topo 2026-10-02).
+    # Thomas's revelation: the exterior fringe numbers (10/15/20/25/30) are
+    # *distance-from-pin markers*, NOT altitudes.  Adding them as height
+    # constraints was semantically wrong.  The parameter is kept for API
+    # stability (Sienna removes callers in T2); its contents are now ignored.
+    if fringe_boundary_heights_mm:
+        print(
+            f"  [TPS] DEPRECATED: fringe_boundary_heights_mm passed "
+            f"({len(fringe_boundary_heights_mm)} item(s)) but ignored — "
+            f"strip fringeBoundaryHeights from TPS constraints (task 690). "
+            f"Remove callers; this parameter will be deleted in a future version."
+        )
+
+    # ── Collect constraints ──────────────────────────────────────────────────
+    # Use a dict (xy_key → z_sum, count) so co-located duplicates are averaged.
+    _SNAP = 0.05  # mm — grid cell below which two XY are "co-located"
+
+    def _key(xy):
+        return (round(float(xy[0]) / _SNAP), round(float(xy[1]) / _SNAP))
+
+    xy_dict: dict = {}  # key → [z_sum, count]
+
+    def _add(xy, z):
+        k = _key(xy)
+        if k in xy_dict:
+            xy_dict[k][0] += float(z)
+            xy_dict[k][1] += 1
+        else:
+            xy_dict[k] = [float(z), 1, float(xy[0]), float(xy[1])]
+
+    # NOTE: elevation_spikes_mm and fringe_boundary_heights_mm are intentionally
+    # NOT added here — both are deprecated/ignored as of task 698.
+
+    # Outer frame anchors — 16 evenly spaced around a circle at 1.1× half
+    r_frame = half * 1.1
+    for angle in np.linspace(0, 2 * np.pi, 16, endpoint=False):
+        fxy = np.array([r_frame * np.cos(angle), r_frame * np.sin(angle)])
+        _add(fxy, BASE_THICKNESS_MM)
+
+    # ── Build constraint arrays ──────────────────────────────────────────────
+    constraints_xy = []
+    constraints_z = []
+    for k, (z_sum, count, ox, oy) in xy_dict.items():
+        if count > 1:
+            print(f"  [TPS] co-located {count} constraints at ({ox:.2f},{oy:.2f}) "
+                  f"→ averaged Z={z_sum/count:.3f} mm")
+        constraints_xy.append([ox, oy])
+        constraints_z.append(z_sum / count)
+
+    n_constraints = len(constraints_xy)
+    if n_constraints < 5:
+        print(f"  [TPS] only {n_constraints} unique constraints — "
+              f"falling back to flat BASE_THICKNESS_MM={BASE_THICKNESS_MM:.3f} mm")
+        return np.full(grid_x.shape, BASE_THICKNESS_MM)
+
+    c_xy = np.array(constraints_xy, dtype=np.float64)  # (N, 2)
+    c_z = np.array(constraints_z, dtype=np.float64)    # (N,)
+
+    # ── Fit TPS ─────────────────────────────────────────────────────────────
+    # smoothing=0 → exact interpolation through all constraints.
+    # epsilon is unused for thin_plate_spline but required; default is fine.
+    try:
+        rbf = RBFInterpolator(
+            c_xy, c_z,
+            kernel="thin_plate_spline",
+            smoothing=0.0,
+        )
+    except Exception as exc:
+        print(f"  [TPS] RBFInterpolator fit failed ({exc}) — "
+              f"falling back to flat BASE_THICKNESS_MM")
+        return np.full(grid_x.shape, BASE_THICKNESS_MM)
+
+    # ── Evaluate on grid ─────────────────────────────────────────────────────
+    query_xy = np.column_stack([grid_x.ravel(), grid_y.ravel()])
+    try:
+        z_flat = rbf(query_xy)
+    except Exception as exc:
+        print(f"  [TPS] RBFInterpolator eval failed ({exc}) — "
+              f"falling back to flat BASE_THICKNESS_MM")
+        return np.full(grid_x.shape, BASE_THICKNESS_MM)
+
+    z_base = z_flat.reshape(grid_x.shape)
+
+    # Clamp to printable range — TPS can overshoot above/below with extreme
+    # constraints. Hard clamp keeps the mesh inside the printer envelope.
+    z_base = np.clip(z_base, 0.0, BASE_THICKNESS_MM + _elevation_range_mm + 2.0)
+
+    print(f"  [TPS] fit N={n_constraints} constraints, "
+          f"Z range [{float(z_base.min()):.3f}, {float(z_base.max()):.3f}] mm")
+    return z_base
+
+
+# ---------------------------------------------------------------------------
+# 20 × 20 grid-cell TPS height field (task 704, Topo 2026-10-04)
+# ---------------------------------------------------------------------------
+
+def _build_tps_grid_height_field(
+    egm_data: dict,
+    green_bnd_mm: np.ndarray,
+    bnd_z: np.ndarray,
+    grid_x: np.ndarray,
+    grid_y: np.ndarray,
+) -> np.ndarray:
+    """Build a C²-smooth global height field driven by a 20×20 grid of cell constraints.
+
+    For each of the 400 grid cells:
+      - **Default Z**: sampled from ``bnd_z`` via nearest-neighbour KDTree lookup on
+        the green boundary polyline ``green_bnd_mm``.  This gives each cell the
+        Poisson-derived green-rim elevation at its centre, so the surface smoothly
+        extends the green boundary elevation into the fringe everywhere.
+      - **User override**: if ``egm_data["gridCellHeights"]`` contains an entry for
+        the cell's index (``row * 20 + col``), the value is an **additive mm offset**
+        applied on top of the Poisson-nearest default for that cell.  Zero / unset →
+        offset of 0 → cell uses the algorithm's natural value unchanged.  Positive
+        raises the cell; negative lowers it.  Range ±20 mm, clamped defensively.
+        Floored at ``BASE_THICKNESS_MM`` so a negative delta cannot push a cell below
+        the base plate (invalid geometry).
+
+    All 400 ``(cell_center_x_mm, cell_center_y_mm, cell_z)`` triples are fed into
+    ``scipy.interpolate.RBFInterpolator`` with ``kernel="thin_plate_spline"``
+    (inherited from :func:`_build_tps_base`).  The result is a single C²-smooth
+    surface everywhere — no kinks at cell boundaries.
+
+    Grid geometry (axis-aligned, origin lower-left of frame):
+      - Frame side = ``2 * half`` where ``half = PRINT_SIZE_MM/2 + FRINGE_XY_EXPANSION_MM/2``.
+      - Cell ``(col, row)`` centre in world mm: ``(-half + (col+0.5)*cell_side,
+        -half + (row+0.5)*cell_side)``.
+      - ``cell_index = row * 20 + col``; ``row 0`` = bottom, ``col 0`` = left.
+
+    Parameters
+    ----------
+    egm_data : dict
+        EGM data dict.  ``gridCellHeights`` key (optional) is read as a sparse dict
+        ``{cell_index: delta_mm}`` where each value is an additive offset (±20 mm)
+        over the cell's Poisson-nearest default.  Both int and string keys are accepted.
+    green_bnd_mm : (N, 2) float array
+        Green boundary polyline in mm-space (origin at green centroid).
+    bnd_z : (N,) float array
+        Poisson-derived Z values at each ``green_bnd_mm`` point.  Typically built by
+        looking up ``green_cell_z`` at the nearest green grid cell for each boundary
+        vertex; ``fringeBoundaryHeight`` anchors may already be injected.
+    grid_x, grid_y : (R, C) float arrays
+        Meshgrid at which the TPS surface is evaluated.
+
+    Returns
+    -------
+    (R, C) float array of Z values in mm.
+
+    Notes
+    -----
+    Degenerate case (empty or absent ``gridCellHeights``): all 400 cells carry
+    Poisson-nearest defaults (offsets of 0).  TPS fits a smooth surface that
+    approximates the task-700 nearest-boundary extension but is C²-smooth across
+    cell boundaries instead of piecewise-constant.
+
+    The 16 outer-frame anchors at ``BASE_THICKNESS_MM`` from :func:`_build_tps_base`
+    are NOT added here — the 400 cell constraints already cover the full frame,
+    so no extra anchors are needed to prevent blow-up.
+    """
+    from scipy.interpolate import RBFInterpolator
+    from scipy.spatial import cKDTree
+
+    GRID_SIZE = 20  # 20 × 20 cells
+    _elevation_range_mm = float(egm_data.get("elevationRange") or ELEVATION_RANGE_MM)
+    half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0
+    cell_side = (2.0 * half) / GRID_SIZE  # square cells
+
+    # ── Step 1: Compute default Z for every cell centre via nearest bnd_z ──────
+    # Build KDTree once over the green boundary for vectorised lookup.
+    gbnd_kd = cKDTree(green_bnd_mm)
+    n_cells = GRID_SIZE * GRID_SIZE  # 400
+
+    cell_cx = np.empty(n_cells, dtype=np.float64)  # world x-coord of cell centre
+    cell_cy = np.empty(n_cells, dtype=np.float64)  # world y-coord of cell centre
+
+    for row in range(GRID_SIZE):
+        for col in range(GRID_SIZE):
+            idx = row * GRID_SIZE + col
+            cell_cx[idx] = -half + (col + 0.5) * cell_side
+            cell_cy[idx] = -half + (row + 0.5) * cell_side
+
+    cell_centres = np.column_stack([cell_cx, cell_cy])  # (400, 2)
+
+    # Vectorised NN lookup: for each cell centre find nearest green boundary point.
+    _, nn_idx = gbnd_kd.query(cell_centres, k=1)  # (400,)
+    nn_idx = np.atleast_1d(nn_idx)
+    cell_defaults = bnd_z[nn_idx].copy()  # (400,) — mutable; user values go here
+
+    # ── Step 2: Merge user-set values over defaults ───────────────────────────
+    # gridMode (task 774, v5.34) determines how gridCellHeights values are interpreted:
+    #   "delta"    — additive offset (±20 mm) over Poisson-nearest default (default/legacy behavior)
+    #   "absolute" — value REPLACES the Poisson default; clamped to [0, 30] mm, floored at BASE_THICKNESS_MM
+    #   "off"      — overrides disabled entirely; all 400 cells use Poisson defaults (gridCellHeights preserved on disk)
+    grid_mode = str(egm_data.get("gridMode") or "delta").lower()
+    if grid_mode not in ("delta", "absolute", "off"):
+        grid_mode = "delta"  # defensive fallback for unknown modes
+    grid_cell_heights = egm_data.get("gridCellHeights") or {}
+    n_overrides = 0
+    if grid_mode != "off":
+        for key, val_mm in grid_cell_heights.items():
+            try:
+                ci = int(key)
+                val = float(val_mm)
+            except (TypeError, ValueError):
+                continue
+            if ci < 0 or ci >= n_cells:
+                continue
+            if grid_mode == "absolute":
+                # Value REPLACES the Poisson default.  Clamp to [0, 30] mm per UI spec,
+                # then floor the resolved Z at BASE_THICKNESS_MM so the cell cannot sit
+                # below the base plate (invalid geometry).
+                val = max(0.0, min(30.0, val))
+                cell_defaults[ci] = max(BASE_THICKNESS_MM, val)
+            else:  # delta (default/legacy)
+                # User value is an ADDITIVE OFFSET in mm over the Poisson-nearest default.
+                # Zero / unset → no change.  Range ±20 mm, clamped defensively here even
+                # though the UI already enforces the same bounds.  Floor the resolved
+                # absolute Z at BASE_THICKNESS_MM so a large negative delta cannot push a
+                # cell below the base plate (invalid geometry).
+                val = max(-20.0, min(20.0, val))  # clamp delta to ±20 mm
+                cell_defaults[ci] = max(BASE_THICKNESS_MM, cell_defaults[ci] + val)
+            n_overrides += 1
+
+    print(f"  [TPS-grid] mode={grid_mode}; 400 cells: {n_overrides} user-set, "
+          f"{n_cells - n_overrides} Poisson-default; "
+          f"resolved Z range [{float(cell_defaults.min()):.3f}, {float(cell_defaults.max()):.3f}] mm")
+
+    # ── Step 3: Fit TPS over all 400 cell-centre constraints ─────────────────
+    # smoothing=0 → exact interpolation through all 400 constraints.
+    try:
+        rbf = RBFInterpolator(
+            cell_centres,      # (400, 2) — XY of cell centres
+            cell_defaults,     # (400,)   — Z values (Poisson default or user override)
+            kernel="thin_plate_spline",
+            smoothing=0.0,
+        )
+    except Exception as exc:
+        print(f"  [TPS-grid] RBFInterpolator fit failed ({exc}) — "
+              f"falling back to _build_tps_base (flat BASE_THICKNESS_MM)")
+        return np.full(grid_x.shape, BASE_THICKNESS_MM)
+
+    # ── Step 4: Evaluate on the fringe query grid ─────────────────────────────
+    query_xy = np.column_stack([grid_x.ravel(), grid_y.ravel()])
+    try:
+        z_flat = rbf(query_xy)
+    except Exception as exc:
+        print(f"  [TPS-grid] RBFInterpolator eval failed ({exc}) — "
+              f"falling back to flat BASE_THICKNESS_MM")
+        return np.full(grid_x.shape, BASE_THICKNESS_MM)
+
+    z_grid = z_flat.reshape(grid_x.shape)
+
+    # Clamp to printable range — TPS can overshoot with extreme constraints.
+    # Ceiling is derived from the true max absolute Z across all 400 cells
+    # (after delta-apply), so a user-set positive offset raises the ceiling
+    # correctly. gridCellHeights values are now additive offsets, NOT absolute
+    # Z values — never use raw delta values as a ceiling here.
+    # Headroom of +2 mm absorbs TPS overshoot at the peak.
+    _user_max_mm = float(cell_defaults.max())  # true max absolute Z after delta-merge
+    _z_ceiling = max(
+        BASE_THICKNESS_MM + _elevation_range_mm + 2.0,
+        _user_max_mm + 2.0,
+    )
+    z_grid = np.clip(z_grid, 0.0, _z_ceiling)
+
+    print(f"  [TPS-grid] surface Z range [{float(z_grid.min()):.3f}, "
+          f"{float(z_grid.max()):.3f}] mm")
+    return z_grid
+
+
+def _normalize_green_fringe_interface(
+    z_tps: np.ndarray,
+    grid_x: np.ndarray,
+    grid_y: np.ndarray,
+    green_bnd_mm: np.ndarray,
+    bnd_z: np.ndarray,
+    blend_cells: int = FRINGE_BLEND_CELLS,
+) -> np.ndarray:
+    """Blend the TPS fringe surface toward green boundary Z near the green edge.
+
+    For each point on the fringe grid whose perpendicular distance to the green
+    boundary is within the blend band (W_mm), the TPS value is pulled toward the
+    nearest boundary Z using a cosine falloff:
+
+        weight(d) = 0.5 * (1 + cos(pi * d / W_mm))   for d < W_mm
+        weight(d) = 0                                  for d >= W_mm
+
+    weight=1.0 at d=0 (boundary cell takes exact green Z), weight=0 at d=W_mm
+    (prior TPS value is preserved exactly).  Cells beyond W_mm are untouched.
+
+    Parameters
+    ----------
+    z_tps     : (R, C) TPS height field in mm (modified in place and returned).
+    grid_x    : (R, C) X coordinates of the fringe grid in mm.
+    grid_y    : (R, C) Y coordinates of the fringe grid in mm.
+    green_bnd_mm : (N, 2) green boundary polyline points in mm.
+    bnd_z     : (N,) Z value at each boundary point in mm.
+    blend_cells : blend band width in 20×20 TPS grid cells; converted to mm
+                  using the actual half-extent so it scales with print size.
+    """
+    from scipy.spatial import cKDTree as _KDT
+
+    half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0
+    cell_side_mm = (2.0 * half) / 20.0
+    W_mm = blend_cells * cell_side_mm
+
+    bnd_kd = _KDT(green_bnd_mm)
+    pts = np.column_stack([grid_x.ravel(), grid_y.ravel()])
+    dists, idxs = bnd_kd.query(pts, k=1)
+    dists = dists.reshape(grid_x.shape)
+    idxs = idxs.reshape(grid_x.shape)
+
+    in_band = dists < W_mm
+    if not in_band.any():
+        return z_tps
+
+    # Cosine weight: 1 at boundary, 0 at W_mm.
+    w = np.where(in_band, 0.5 * (1.0 + np.cos(np.pi * dists / W_mm)), 0.0)
+    target_z = bnd_z[idxs]  # nearest boundary Z for every grid point
+
+    z_out = z_tps.copy()
+    z_out = np.where(in_band, (1.0 - w) * z_tps + w * target_z, z_tps)
+    n_blended = int(in_band.sum())
+    print(f"  [fringe-normalise] blend band {W_mm:.1f} mm ({blend_cells} cells); "
+          f"{n_blended} grid points blended toward green boundary Z")
+    return z_out
+
+
+def build_fringe_mesh(
+    Z_mm: np.ndarray,
+    xs_grid: np.ndarray,
+    ys_grid: np.ndarray,
+    inside_mask: np.ndarray,
+    green_boundary_px: np.ndarray,
+    egm_data: dict,
+    fringe_grid_res: int = 200,
+    holes: list | None = None,
+) -> trimesh.Trimesh:
+    """
+    Build a tapered fringe mesh that:
+    - Surrounds the green polygon
+    - Is bounded by the PRINT_SIZE_MM square centred at origin (mm coords)
+    - Excludes sand trap and water polygons (so their inset slabs sit in a
+      true recess in the fringe rather than overlapping a flush surface)
+    - Holds green-edge Z flat all the way to the frame — no ramp toward
+      the rectangle boundary (task 483). Prior implementation tapered from
+      green-edge height to a per-hole rectangle-edge target.
+
+    Parameters
+    ----------
+    holes : list of (cx, cy, radius) tuples in mm coords.
+        Each hole will be baked into the mesh as a clean cylindrical cutout
+        with vertical walls connecting the top surface to z=0.
+
+    Returns a closed trimesh.Trimesh in mm coords.
+    """
+    from scipy.spatial import cKDTree
+    from collections import defaultdict
+
+    _elevation_range_mm = float(egm_data.get("elevationRange") or ELEVATION_RANGE_MM)
+
+    # zScale applied in the main pipeline — ceiling must account for vertical stretch.
+    _z_scale_raw_fringe = (egm_data or {}).get("zScale")
+    try:
+        _z_scale_fringe = max(0.5, min(5.0, float(_z_scale_raw_fringe))) if _z_scale_raw_fringe is not None else 1.0
+    except (TypeError, ValueError):
+        _z_scale_fringe = 1.0
+
+    # Effective Z ceiling for mesh clamps: honour user-set grid cells that
+    # push above the Poisson-driven elevation range.  gridCellHeights values
+    # are now ADDITIVE OFFSETS, not absolute Z values, so we cannot use the
+    # raw values as a ceiling.  Overshoot is harmless — the ceiling only
+    # prevents false clipping; a too-high ceiling costs nothing.
+    _grid_heights = (egm_data or {}).get("gridCellHeights") or {}
+    _max_positive_delta = 0.0
+    if _grid_heights:
+        try:
+            _max_positive_delta = max(0.0, max(float(v) for v in _grid_heights.values()))
+        except (TypeError, ValueError):
+            _max_positive_delta = 0.0
+    _user_cell_max_mm = (BASE_THICKNESS_MM + _elevation_range_mm) + _max_positive_delta
+    # Ceiling = scaled Poisson max OR user-cell max (grid-cell deltas are literal mm, not scaled).
+    _effective_z_ceiling_mm = max(
+        BASE_THICKNESS_MM + _elevation_range_mm * _z_scale_fringe,
+        _user_cell_max_mm,
+    )
+
+    scale, centroid_px = _compute_px_to_mm(green_boundary_px, egm_data)
+
+    # mm coords of the green grid (used for Z lookups)
+    xs_mm_green = (xs_grid - centroid_px[0]) * scale        # shape (grid_res,)
+    ys_mm_green = -(ys_grid - centroid_px[1]) * scale       # shape (grid_res,), Y flipped
+
+    half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0  # ±89.625 mm + signed offset per edge
+
+    # --- Build a grid covering the FULL print rectangle in mm coords ---
+    xs_mm = np.linspace(-half, half, fringe_grid_res)
+    ys_mm = np.linspace(-half, half, fringe_grid_res)
+
+    # --- Convert green boundary to mm for inside/outside tests ---
+    green_bnd_mm = _px_to_mm_2d(green_boundary_px.copy(), scale, centroid_px)
+    _green_bnd_mm_closed = np.vstack([green_bnd_mm, green_bnd_mm[0:1]])  # for polyline dist
+
+    # --- Collect trap + water polygons in mm coords ---
+    # Water polygons get the same fringe carve-out treatment as sand traps so
+    # their inset slabs (export_water_meshes) sit in a real void rather than on
+    # top of an unbroken fringe — overlapping slabs were the source of the
+    # 1,129 non-manifold edges Thomas reported on PGA West-Arnold Palmer #5.
+    #
+    # #347: subtract the mount-pipe footprint from each trap/water shapely
+    # polygon BEFORE the union → traps_union. Otherwise the fringe carve-out
+    # would remove material under the pipe where there's no longer any
+    # trap/water material to host the slab — the pipe would sit on a hole.
+    trap_polys_mm: list[np.ndarray] = []
+    trap_shapely: list[ShapelyPolygon] = []
+    water_polys_mm: list[np.ndarray] = []
+    water_shapely: list[ShapelyPolygon] = []
+    boulders_annulus_shapely: list[ShapelyPolygon] = []
+
+    # Build pipe-footprint Shapely circles from the holes list. Each hole is
+    # (cx, cy, radius). We subtract these from the trap/water shapely polygons
+    # used for the carve-out union so the void only spans where slab material
+    # actually lives.
+    _hole_circles: list[ShapelyPolygon] = []
+    if holes:
+        from shapely.geometry import Point as _ShapelyPoint
+        for _hcx, _hcy, _hr in holes:
+            _hole_circles.append(_ShapelyPoint(_hcx, _hcy).buffer(_hr))
+
+    for poly in egm_data.get("polygons", []):
+        ptype = poly.get("type")
+        if ptype not in ("trap", "water"):
+            continue
+        # task 723: use RAW Catmull-Rom polygon (pre-smoothing) for the fringe
+        # carve-out exclusion test and the snap target.  The smoothed polygon
+        # can be inward of the raw boundary by a few tenths of a mm; fringe
+        # walls snapped to smoothed+TRAP_FRINGE_GAP_MM can then land inside the
+        # raw polygon, producing slicer "conflicts of gcode paths" between fringe
+        # and trap layers.  Using the raw outline ensures fringe walls always sit
+        # at raw+GAP_MM — strictly outside the raw polygon, matching what the
+        # slicer sees as the trap's outer boundary.
+        # Water polygons also get raw treatment for consistency (same gap logic).
+        try:
+            pts_px = _poly_to_raw_catmull_px(poly)
+        except Exception:
+            pts_px = np.array([[p["x"], p["y"]] for p in poly["points"]], dtype=np.float64)
+        pts_mm = _px_to_mm_2d(pts_px, scale, centroid_px)
+        try:
+            sp = ShapelyPolygon(pts_mm)
+            if not sp.is_valid:
+                sp = sp.buffer(0)
+            # Subtract every pipe-hole circle from the carve-out polygon.
+            for _hc in _hole_circles:
+                if sp.intersects(_hc):
+                    sp_diff = sp.difference(_hc)
+                    if not sp_diff.is_empty:
+                        sp = sp_diff if not isinstance(sp_diff, ShapelyMultiPolygon) \
+                            else max(sp_diff.geoms, key=lambda g: g.area)
+        except Exception:
+            sp = None
+        if ptype == "trap":
+            trap_polys_mm.append(pts_mm)
+            if sp is not None:
+                trap_shapely.append(sp)
+        else:  # water
+            water_polys_mm.append(pts_mm)
+            if sp is not None:
+                water_shapely.append(sp)
+
+    # --- Collect boulders-annulus carve shapes ---
+    # A boulders polygon enters annulus mode when it geometrically encloses
+    # at least one water polygon (full-ring containment via Shapely `.covers`,
+    # not `.contains` — task #466). `covers` is the right predicate because
+    # after task #463 the boundary-region-derived water polygon shares frame
+    # edges with the boulders polygon, and `contains` returns False whenever
+    # boundaries touch (strict interior containment). `covers` returns True
+    # when the water is geometrically inside the boulders polygon OR they
+    # share boundary — both should trigger annulus mode. In that case the
+    # fringe must have the ANNULUS shape (boulders minus enclosed water)
+    # carved out of it — the same way trap and water carve-outs work — so
+    # the annulus slab sits in a real recess rather than floating on top.
+    # Water-only boulders polygons (no enclosed water) remain on-top slabs and
+    # must NOT be carved from the fringe (they sit above it, not inside it).
+    #
+    # We re-derive the water polygons in mm here (already built above in
+    # water_shapely) to avoid a second px→mm pass.
+    if water_shapely:
+        from shapely.ops import unary_union as _fringe_uu
+        for _bpoly in egm_data.get("polygons", []):
+            if _bpoly.get("type") != "boulders":
+                continue
+            try:
+                _b_pts_px = _poly_to_dense_px(_bpoly)
+            except Exception:
+                _b_pts_px = np.array([[p["x"], p["y"]] for p in _bpoly["points"]], dtype=np.float64)
+            _b_pts_mm = _px_to_mm_2d(_b_pts_px, scale, centroid_px)
+            try:
+                _b_sp = ShapelyPolygon(_b_pts_mm)
+                if not _b_sp.is_valid:
+                    _b_sp = _b_sp.buffer(0)
+                _b_sp_padded = _b_sp.buffer(BOUNDARY_REGION_COVERS_TOL_MM)
+                _enclosed = [wsp for wsp in water_shapely if _b_sp_padded.covers(wsp)]
+                if not _enclosed:
+                    continue
+                _w_union = _fringe_uu(_enclosed)
+                _annulus = _b_sp.difference(_w_union)
+                if not _annulus.is_valid:
+                    _annulus = _annulus.buffer(0)
+                if _annulus.is_empty:
+                    continue
+                # Subtract pipe-hole circles from the annulus carve shape.
+                for _hc in _hole_circles:
+                    if _annulus.intersects(_hc):
+                        _diff = _annulus.difference(_hc)
+                        if not _diff.is_empty:
+                            _annulus = _diff
+                boulders_annulus_shapely.append(_annulus)
+            except Exception as _exc_ba:
+                print(f"  WARNING: fringe boulders-annulus carve failed: {_exc_ba}")
+
+    # --- Build Shapely green polygon for point-in-polygon tests ---
+    print(f"  [green_carve] building green ShapelyPolygon from {len(green_bnd_mm)} boundary pts")
+    green_shapely = ShapelyPolygon(green_bnd_mm)
+    if not green_shapely.is_valid:
+        print("  [green_carve] green polygon invalid → buffer(0) repair")
+        green_shapely = green_shapely.buffer(0)
+    print(f"  [green_carve] green area={green_shapely.area:.2f} mm² valid={green_shapely.is_valid}")
+
+    # Task 677 (Topo, 2026-08-28): expand the green polygon by GREEN_FRINGE_GAP_MM
+    # for the fringe-exclusion test ONLY. This carves a deterministic slit
+    # between the green outer edge and the fringe inner edge so the printed
+    # pieces slide together instead of interfering at the seam. `green_shapely`
+    # itself is left unmodified because downstream code (seam-Z sampling,
+    # bnd_z lookups) needs the exact green edge to preserve seam-match Z.
+    if GREEN_FRINGE_GAP_MM > 0:
+        print(f"  [green_carve] buffering green by +{GREEN_FRINGE_GAP_MM} mm for exclusion")
+        green_shapely_exclusion = green_shapely.buffer(+GREEN_FRINGE_GAP_MM)
+        if not green_shapely_exclusion.is_valid:
+            print("  [green_carve] exclusion polygon invalid → buffer(0) repair")
+            green_shapely_exclusion = green_shapely_exclusion.buffer(0)
+    else:
+        print("  [green_carve] GREEN_FRINGE_GAP_MM == 0 → exclusion polygon == green polygon (identity)")
+        green_shapely_exclusion = green_shapely
+    print(f"  [green_carve] exclusion ready: area={green_shapely_exclusion.area:.2f} mm² empty={green_shapely_exclusion.is_empty}")
+
+    # Union all traps + water + boulders-annuli polygons.  They share the same
+    # carve-out role: any fringe cell falling inside any of these shapes is
+    # excluded so the corresponding slab can drop into a real recess.
+    #
+    # Boulders on-top slabs (no enclosed water) are intentionally absent here —
+    # they sit above the fringe surface and must not carve it.
+    #
+    # Fringe-rectangle clip note (#343): the trap/water mesh path clips each
+    # polygon to the fringe rectangle (see _clip_polygon_to_fringe_rect, used
+    # in export_trap_stls / export_water_meshes). We do NOT need to clip
+    # `traps_union` here because the fringe builder loops over a grid spanning
+    # exactly [-half, +half] on each axis (xs_mm / ys_mm above), so the
+    # `traps_union.contains(sp)` test is only ever consulted for points inside
+    # the fringe rectangle. Any portion of a trap/water polygon outside the
+    # rectangle simply has no fringe cells to carve out — the implicit clip
+    # by the iteration domain matches the explicit clip applied to the slab.
+    # Task 705 (2026-09-01): TRAP_FRINGE_GAP_MM / WATER_FRINGE_GAP_MM leave a
+    # deterministic slit between each carve-out polygon and the fringe cutout,
+    # exactly like GREEN_FRINGE_GAP_MM for the green. Zero by default (the
+    # smoothed boundary is meant to mate cleanly). If a printer/filament
+    # combo needs a hair of clearance, dial these up like the green one.
+    _trap_carve = trap_shapely
+    if TRAP_FRINGE_GAP_MM > 0 and trap_shapely:
+        _buffered_traps = []
+        for _tsp in trap_shapely:
+            _t_ex = _tsp.buffer(+TRAP_FRINGE_GAP_MM)
+            if not _t_ex.is_valid:
+                _t_ex = _t_ex.buffer(0)
+            _buffered_traps.append(_t_ex)
+        _trap_carve = _buffered_traps
+        print(f"  [trap_carve] buffered {len(trap_shapely)} traps by "
+              f"+{TRAP_FRINGE_GAP_MM} mm for fringe exclusion")
+    _water_carve = water_shapely
+    if WATER_FRINGE_GAP_MM > 0 and water_shapely:
+        _buffered_water = []
+        for _wsp in water_shapely:
+            _w_ex = _wsp.buffer(+WATER_FRINGE_GAP_MM)
+            if not _w_ex.is_valid:
+                _w_ex = _w_ex.buffer(0)
+            _buffered_water.append(_w_ex)
+        _water_carve = _buffered_water
+        print(f"  [water_carve] buffered {len(water_shapely)} water polys by "
+              f"+{WATER_FRINGE_GAP_MM} mm for fringe exclusion")
+
+    _carve_shapely = list(_trap_carve) + list(_water_carve) + boulders_annulus_shapely
+    if _carve_shapely:
+        from shapely.ops import unary_union
+        traps_union = unary_union(_carve_shapely)
+    else:
+        traps_union = None
+
+    print(f"  Fringe grid: {fringe_grid_res}x{fringe_grid_res} over ±{half:.2f} mm")
+    print(f"  Green boundary: {len(green_bnd_mm)} mm-space points")
+    print(f"  Trap polygons: {len(trap_polys_mm)}")
+    print(f"  Water polygons: {len(water_polys_mm)}")
+    print(f"  Boulders annuli (carved): {len(boulders_annulus_shapely)}")
+    if holes:
+        print(f"  Baked holes: {holes}")
+
+    # --- Build fringe mask and height array ---
+    # fringe_mask[r, c] = True iff cell is in the fringe region
+    fringe_mask = np.zeros((fringe_grid_res, fringe_grid_res), dtype=bool)
+    Z_fringe = np.full((fringe_grid_res, fringe_grid_res), np.nan)
+
+    # Pre-build KD-tree of valid green grid cells for fast Z lookups.
+    # Fringe always samples the raw smooth Z_mm — never the terraced
+    # quantization — so the fringe surface prints smooth regardless of the
+    # green's style. Seam-reseat below uses the same smooth source, so the
+    # inner-boundary snap stays continuous with the fringe interior.
+    _Z_lerp_src = Z_mm
+
+    # Apply perimeter median filter to the lerp source so it matches the
+    # filtered Z_for_seam below (built with the same recipe + filter). This
+    # keeps the lerp baseline at the green edge and the seam-reseat snap
+    # targets in lockstep — no step at the seam between the lerp source and
+    # the seam vertices.
+    _Z_lerp_src = _perimeter_median_filter(_Z_lerp_src, inside_mask, window=7)
+
+    valid_rows_g, valid_cols_g = np.where(inside_mask)
+    green_cell_xy = np.column_stack([xs_mm_green[valid_cols_g], ys_mm_green[valid_rows_g]])
+    green_cell_z  = _Z_lerp_src[valid_rows_g, valid_cols_g]
+    green_kd = cKDTree(green_cell_xy)
+
+    # Pre-build array of green boundary points in mm for vectorised dist
+    gbnd = green_bnd_mm  # (N, 2)
+
+    # Task #509 (Michelbook H12 [102] concave-polygon flip cliffs, Topo):
+    #
+    # The original design sampled `green_edge_h` by projecting the fringe cell
+    # to the SINGLE nearest boundary point, then IDW-averaging Z from the
+    # K=4 green cells adjacent to that projection. On a concave green polygon
+    # this creates a **hard cliff** in the fringe Z field: as a fringe cell
+    # crosses the medial axis of the concave region, its nearest-boundary
+    # projection jumps from one edge segment to a DIFFERENT edge segment
+    # (potentially on the opposite side of the polygon, at a very different
+    # Z). IDW around that projection point can't smooth the flip because the
+    # 4 sampled cells all sit at the new projection — the *entire* sampled
+    # neighbourhood snaps at once.
+    #
+    # Fix: sample `green_edge_h` as a spatially-smooth field over the fringe
+    # cell's own XY. For each fringe cell, take the K_BND_IDW nearest
+    # **boundary polyline points** (from the cell itself, not the projection)
+    # and IDW-blend their Z. Each boundary polyline point contributes its
+    # closest-green-cell Z. The set of top-K boundary points varies
+    # continuously with (x, y), so the sampled field varies continuously too.
+    #
+    # At the boundary itself (d_to_green → 0) the nearest boundary point has
+    # weight → ∞ and its Z dominates, so the seam-match property (task #483:
+    # fringe Z equals green Z at the shared boundary) is preserved exactly.
+    #
+    # Far from the boundary (into the interior of a concave notch), the K
+    # boundary points span both competing edge segments, so the sampled Z
+    # is a smooth blend of both — no discontinuity.
+    #
+    # K=24 chosen empirically: at ~2 mm boundary-point spacing (typical on a
+    # 300 mm-perimeter green with 176 densified points), 24 pts cover ~50 mm
+    # of arc, wide enough to bridge the concave flip on H12 but narrow enough
+    # to preserve local Z structure on convex greens.
+    K_BND_IDW = min(24, len(gbnd))
+
+    # Pre-compute boundary-point Z by looking up the nearest green cell Z for
+    # each boundary point. This is O(N_bnd) and only runs once per hole.
+    _bnd_nearest_dists, _bnd_nearest_idxs = green_kd.query(gbnd, k=1)
+    bnd_z = green_cell_z[_bnd_nearest_idxs].copy()  # shape (N_bnd,) — mutable copy
+
+    # ── Fringe boundary height anchors (task 658, Sienna) ────────────────────
+    # Exterior OCR markers (numbers printed on the black boundary line outside
+    # the green) set the fringe Z — and the green seam Z — at the nearest
+    # boundary interface point.  Approach A: override `bnd_z` entries before
+    # the per-cell IDW interpolation runs; the existing loop uses `bnd_z` as
+    # its interpolation source, so the anchors propagate automatically.
+    #
+    # The `gbnd` polyline is very dense (~0.2 mm spacing after Catmull-Rom
+    # densification).  A single overridden entry is diluted to near zero in
+    # K=24 IDW (the other 23 entries in the nearest-K set stay at natural Z).
+    # Fix: override the K_BND_IDW nearest gbnd points to the anchor location.
+    # When a fringe cell queries its K=24 nearest boundary points, all K of
+    # them are now anchored → the IDW returns exactly anchor_Z.
+    #
+    # Multiple anchors: each anchor owns the K_BND_IDW nearest gbnd indices
+    # from its own projection.  If two anchors overlap, the later one wins
+    # (harmless — OCR values in the same region should agree to within 0.5mm).
+    #
+    # Green-side continuity: `bnd_z` drives the fringe IDW, and the seam-reseat
+    # section below uses `g_bdry_arr` (green top-boundary ring Z) as a separate
+    # KD-tree source.  Both are overridden independently with the same anchor Z
+    # so fringe Z == green seam Z at the interface.
+    _raw_fbh = egm_data.get("fringeBoundaryHeights") or []
+    _fbh_anchor_count = 0
+    if _raw_fbh:
+        gbnd_kd_anchors = cKDTree(gbnd)   # (N_bnd, 2) — reused in seam section
+        _k_override = K_BND_IDW          # override this many consecutive boundary pts
+        for _fbh in _raw_fbh:
+            try:
+                _ax_px = float(_fbh["x"])
+                _ay_px = float(_fbh["y"])
+                _av_mm = float(_fbh["value"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if not (0.0 < _av_mm <= 50.0):
+                continue   # reject out-of-range values (matches _OCR_SPIKE_MAX_MM)
+            # Convert pixel coords to mm-space using the same transform as polygons
+            _a_mm = _px_to_mm_2d(
+                np.array([[_ax_px, _ay_px]], dtype=np.float64), scale, centroid_px
+            )[0]
+            # Find K_BND_IDW nearest gbnd points; override all of them so that
+            # any fringe cell whose IDW set includes the anchor area returns
+            # anchor_Z as the dominant value.
+            _k = min(_k_override, len(gbnd))
+            _adists, _aidxs = gbnd_kd_anchors.query(_a_mm[:2], k=_k)
+            _aidxs = np.atleast_1d(_aidxs)
+            _adists = np.atleast_1d(_adists)
+            _nearest_dist = float(_adists[0]) if len(_adists) > 0 else 0.0
+            # Clamp to sane elevation range (honours user grid cells above Poisson range)
+            _z_anchor = max(BASE_THICKNESS_MM,
+                            min(_av_mm, _effective_z_ceiling_mm))
+            for _ai in _aidxs:
+                bnd_z[int(_ai)] = _z_anchor
+            _fbh_anchor_count += 1
+            print(
+                f"  FringeBoundaryAnchor: px=({_ax_px:.1f},{_ay_px:.1f}) "
+                f"→ mm=({_a_mm[0]:+.2f},{_a_mm[1]:+.2f}) "
+                f"→ nearest gbnd=({gbnd[int(_aidxs[0]),0]:+.2f},{gbnd[int(_aidxs[0]),1]:+.2f}) "
+                f"value={_av_mm:.3f} mm "
+                f"(override {len(_aidxs)} pts, nearest dist={_nearest_dist:.2f} mm)"
+            )
+        if _fbh_anchor_count:
+            print(f"  Fringe boundary anchors: {_fbh_anchor_count} anchor(s) "
+                  f"injected into bnd_z ({_k_override} pts each, Approach A)")
+
+    gbnd_kd_lerp = cKDTree(gbnd)
+
+    # Kept for the pre-#509 sanity check / rollback (K=4 green-cell IDW at
+    # the projection). Not used on the fix path but preserved for diagnostic
+    # scripts that want to inspect the old behaviour.
+    K_LERP_NEIGHBOURS = min(4, len(green_cell_z))
+
+    # ── TPS grid-cell height field (task 704, Topo 2026-10-04) ─────────────────
+    # Phase 2 of the 20×20 grid-cell elevation mechanism.  Replaces the task-700
+    # nearest-boundary extension (_z_nn_grid) with a full TPS fit over all 400
+    # cell centres.  Each cell's default Z is still the Poisson-nearest bnd_z
+    # value (same source as the old NN extension), but user-set cells in
+    # gridCellHeights override their local Z → the TPS propagates the override
+    # smoothly across the fringe.  When gridCellHeights is absent or empty the
+    # TPS is driven entirely by the 400 Poisson defaults, producing a C²-smooth
+    # approximation of the old NN extension.
+    #
+    # elevationSpikes deprecation notice (task 698) is kept for EGMs that still
+    # carry the field; the field is otherwise ignored.
+    _egm_spikes_raw = egm_data.get("elevationSpikes") or egm_data.get("elevation_spikes") or []
+    if _egm_spikes_raw:
+        print(f"  [fringe] DEPRECATED: EGM contains {len(_egm_spikes_raw)} elevationSpikes "
+              f"item(s) — spike-application pipeline removed in task 698. "
+              f"Spikes are ignored; elevation_spikes field will be removed in a future version.")
+
+    # Build the fringe meshgrid once (reused both for TPS query and per-cell loop).
+    GX_fringe, GY_fringe = np.meshgrid(xs_mm, ys_mm)  # (R, C) mm coords
+
+    # Call the 400-cell TPS builder.  It reads bnd_z for Poisson defaults and
+    # egm_data["gridCellHeights"] for user overrides.
+    _z_tps_grid = _build_tps_grid_height_field(
+        egm_data=egm_data,
+        green_bnd_mm=gbnd,
+        bnd_z=bnd_z,
+        grid_x=GX_fringe,
+        grid_y=GY_fringe,
+    )  # (R, C)
+
+    print(f"  [fringe TPS-grid] Z range: "
+          f"[{float(_z_tps_grid.min()):.3f}, {float(_z_tps_grid.max()):.3f}] mm "
+          f"({len(gbnd)} boundary vertices, bnd_z range "
+          f"[{float(bnd_z.min()):.3f}, {float(bnd_z.max()):.3f}] mm)")
+
+    # Task 780 (Sienna, 2026-10-13): normalise the green/fringe interface.
+    # Pull the TPS surface toward the green boundary Z in a cosine-weighted band
+    # of FRINGE_BLEND_CELLS cells.  Grid-cell overrides are already baked into
+    # _z_tps_grid (via _build_tps_grid_height_field), so this step blends both
+    # Poisson defaults and user overrides toward the boundary — no separate
+    # treatment needed.  Beyond the band, values are untouched.
+    _z_tps_grid = _normalize_green_fringe_interface(
+        z_tps=_z_tps_grid,
+        grid_x=GX_fringe,
+        grid_y=GY_fringe,
+        green_bnd_mm=gbnd,
+        bnd_z=bnd_z,
+    )
+
+    # Task 726 (Topo, 2026-09-04): compute fringe cell half-step for footprint
+    # overlap tests below.  The grid is uniform (linspace), so the step is
+    # constant across the entire grid.
+    _fringe_half_step = float(xs_mm[1] - xs_mm[0]) / 2.0 if fringe_grid_res > 1 else 0.0
+
+    for r in range(fringe_grid_res):
+        for c in range(fringe_grid_res):
+            x = float(xs_mm[c])
+            y = float(ys_mm[r])
+
+            # Must be INSIDE the print rectangle (always true by construction)
+            # Must be OUTSIDE the (gap-expanded) green — task 677 leaves a
+            # deterministic GREEN_FRINGE_GAP_MM slit at the green/fringe seam.
+            # Use Shapely contains for green check (faster than cv2 here)
+            from shapely.geometry import Point as ShapelyPoint
+            sp = ShapelyPoint(x, y)
+            if green_shapely_exclusion.contains(sp):
+                continue  # inside green (or in the seam gap) → skip
+
+            # Must be OUTSIDE all traps and water polygons (carve-out region).
+            # Task 726 fix: use cell-FOOTPRINT overlap instead of centroid
+            # point-in-polygon.  The old `traps_union.contains(sp)` test only
+            # skipped cells whose CENTER was inside the trap, leaving up to
+            # ~half a grid-cell of fringe top surface bleeding into the trap
+            # area on every boundary cell.  Replace with a Shapely box that
+            # covers the full cell footprint and test `.intersects(traps_union)`
+            # — any overlap at all is enough to suppress the top face.
+            # Buffer by TRAP_FRINGE_GAP_MM so the exclusion zone matches the
+            # buffered polygon already used for wall/carve geometry.
+            if traps_union is not None:
+                _cell_box = shapely_box(
+                    x - _fringe_half_step, y - _fringe_half_step,
+                    x + _fringe_half_step, y + _fringe_half_step,
+                )
+                if _cell_box.intersects(traps_union):
+                    continue
+
+            # Must be OUTSIDE all baked holes
+            if holes:
+                in_hole = False
+                for hcx, hcy, hradius in holes:
+                    if math.hypot(x - hcx, y - hcy) <= hradius:
+                        in_hole = True
+                        break
+                if in_hole:
+                    continue
+
+            # Nearest point on the green boundary — used to derive
+            # d_to_green (horizontal distance from the green polygon), which
+            # drives the plateau-taper (task #506).
+            d_to_green, nx, ny = _min_dist_to_polyline(x, y, gbnd)
+
+            # Task 704 (Topo 2026-10-04): TPS grid-cell height field.
+            # Look up the pre-computed TPS grid (_z_tps_grid): for this fringe cell,
+            # green_edge_h is the TPS surface value at (x, y).  The TPS fits over
+            # 400 cell centres with Poisson-derived defaults (and user-set overrides
+            # from gridCellHeights), so it naturally matches the green boundary Z
+            # at unset cells and locally reflects user overrides at set cells.
+            # Seam-reseat (below) still overrides the innermost ring from g_bdry_arr.
+            green_edge_h = float(_z_tps_grid[r, c])
+
+            # ── TPS fallback (edge-case robustness) ──────────────────────────
+            # _z_tps_grid should always be finite (it is clamped in
+            # _build_tps_grid_height_field).  Guard against rare degenerate
+            # surfaces by falling back to the IDW path.
+            if not math.isfinite(green_edge_h) or green_edge_h == 0.0:
+                dists_b, idxs_b = gbnd_kd_lerp.query([x, y], k=K_BND_IDW)
+                dists_b = np.atleast_1d(np.asarray(dists_b, dtype=np.float64))
+                idxs_b = np.atleast_1d(np.asarray(idxs_b, dtype=np.int64))
+                if float(dists_b.min()) < 1e-9:
+                    green_edge_h = float(bnd_z[idxs_b[int(np.argmin(dists_b))]])
+                else:
+                    w = 1.0 / (dists_b ** 2)
+                    w /= w.sum()
+                    green_edge_h = float(np.dot(w, bnd_z[idxs_b]))
+
+            # Task #506: plateau-taper. When green_edge_h exceeds the boundary
+            # cap, project a decaying blend of green_edge_h → BOUNDARY_HEIGHT_CAP_MM
+            # over FRINGE_GREEN_EDGE_TAPER_MM of XY distance from the green
+            # boundary. Weight is 0 at the boundary (seam matches green exactly)
+            # and 1 once we are FRINGE_GREEN_EDGE_TAPER_MM or more away. For
+            # gentle greens (green_edge_h <= cap) the target equals the source,
+            # so this reduces to the pre-#506 behaviour: no change.
+            # v5.17 clipping fix: when the user has explicitly set a grid cell
+            # above BOUNDARY_HEIGHT_CAP_MM (9 mm), the taper must not pull that
+            # TPS-propagated peak back down toward the cap as d_to_green grows.
+            # Raise the effective cap to the user's own ceiling; natural low
+            # fringe (green_edge_h <= 9) is unaffected because the branch is
+            # gated on green_edge_h > _cap_target.
+            _effective_boundary_cap_mm = max(BOUNDARY_HEIGHT_CAP_MM, _effective_z_ceiling_mm)
+            _cap_target = min(green_edge_h, _effective_boundary_cap_mm)
+            if FRINGE_GREEN_EDGE_TAPER_MM > 0 and green_edge_h > _cap_target:
+                _weight = min(1.0, max(0.0, d_to_green / FRINGE_GREEN_EDGE_TAPER_MM))
+                green_edge_h = (1.0 - _weight) * green_edge_h + _weight * _cap_target
+
+            # Task 717 (Topo, 2026-09-03): plateau breaker.  When many fringe
+            # cells hit the same clamp value BASE_THICKNESS_MM (1.5 mm), they
+            # form a dead-flat horizontal plateau at that z.  Bambu Studio's
+            # layer sectioner slices this plateau ambiguously — at layer 8
+            # (z ~ 1.5–1.6 mm on 0.2 mm layers) the intersection polygon
+            # degenerates into ~25 tiny polylines and the slicer emits
+            # "conflicts of gcode paths at layer 8 (geometry_0 ↔ geometry_1)"
+            # even when green and fringe never actually share any XY.
+            #
+            # Fix: lift the fringe floor by FRINGE_PLATEAU_MARGIN_MM AND add
+            # a small per-cell tilt so no two grid cells clamp to the exact
+            # same z-value.  The tilt is a smooth ramp along +x+y — 0 at
+            # cell (0, 0), max at cell (N-1, N-1) — with a peak-to-peak
+            # amplitude of 0.10 mm.  That's much smaller than the layer
+            # height (0.2 mm) so the print visually reads as flat, but the
+            # slicer never sees a truly horizontal plateau at any single z,
+            # eliminating the layer-aligned degenerate section.
+            #
+            # Verified DeLaveaga #11 [210]: z=1.60 fringe area = 21867 mm²
+            # (correct, matches z=0.5 baseline), overlap with green = 0.00
+            # (was 5036 mm² at [208]).  Cell counts, top-surface topology,
+            # seam-match, and trap/water cutouts all unchanged.
+            FRINGE_PLATEAU_MARGIN_MM = 0.30  # 1.5 → 1.8 mm floor on default BASE
+            FRINGE_PLATEAU_TILT_MM = 0.10    # 0.10 mm peak-to-peak XY ramp
+            _tilt = FRINGE_PLATEAU_TILT_MM * (r + c) / (2 * (fringe_grid_res - 1))
+            _floor = BASE_THICKNESS_MM + FRINGE_PLATEAU_MARGIN_MM + _tilt
+            z_fringe = max(_floor, min(green_edge_h, _effective_z_ceiling_mm))
+
+            fringe_mask[r, c] = True
+            Z_fringe[r, c] = z_fringe
+
+    n_fringe = fringe_mask.sum()
+    print(f"  Fringe cells: {n_fringe}")
+    if n_fringe == 0:
+        raise RuntimeError("No fringe cells found — check coordinate system")
+
+    # Fringe smoothing disabled — keeping raw interpolated surface
+    valid_z = Z_fringe[fringe_mask]
+    print(f"  Fringe Z range: {valid_z.min():.3f} .. {valid_z.max():.3f} mm")
+
+    # ── Seam-reseat: snap fringe's INNER boundary cells to the green's ──
+    # top-boundary Z ring. The fringe is always smooth (never terraced),
+    # so we snap to the raw smooth Z_mm even when the green itself is
+    # rendered terraced — this keeps the fringe interior and its
+    # inner-boundary snap targets in lockstep (no steps on the fringe).
+    # Where a smooth fringe meets a terraced green there may be a small
+    # Z mismatch at the mesh boundary; that is intentional per the
+    # "fringe always prints smooth" design.
+    Z_for_seam = Z_mm
+
+    # Apply perimeter median filter to Z_for_seam so the seam Z values match
+    # the filtered lerp source (same filter recipe applied above). Without
+    # this the seam snap-targets would drift from the interior lerp baseline
+    # and re-open a step at the fringe's inner boundary.
+    Z_for_seam = _perimeter_median_filter(Z_for_seam, inside_mask, window=7)
+
+    # Collect green top-boundary ring (mm space, with Z)
+    g_nrows, g_ncols = inside_mask.shape
+    g_bdry_pts = []  # (x, y, z)
+    for gr in range(g_nrows):
+        for gc in range(g_ncols):
+            if not inside_mask[gr, gc]:
+                continue
+            # has at least one 4-neighbour outside?
+            nbrs_outside = False
+            for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                nr, nc = gr + dr, gc + dc
+                if (nr < 0 or nr >= g_nrows or nc < 0 or nc >= g_ncols
+                        or not inside_mask[nr, nc]):
+                    nbrs_outside = True
+                    break
+            if nbrs_outside:
+                g_bdry_pts.append(
+                    (float(xs_mm_green[gc]), float(ys_mm_green[gr]),
+                     float(Z_for_seam[gr, gc]))
+                )
+    if g_bdry_pts:
+        g_bdry_arr = np.asarray(g_bdry_pts, dtype=np.float64)
+
+        # ── Inject fringe boundary anchors into g_bdry_arr (task 658) ────────
+        # Override the K_SEAM_NEIGHBOURS nearest green top-boundary ring
+        # vertices (g_bdry_arr[:, 2]) to the anchor Z.  The seam-reseat below
+        # IDW-blends K=4 g_bdry_arr entries per fringe seam cell; overriding
+        # all K=4 nearest entries ensures the seam cell gets anchor_Z via IDW.
+        # This makes green seam Z == fringe Z at the interface (continuity).
+        if _raw_fbh and len(g_bdry_arr) > 0:
+            _g_bdry_kd_anchor = cKDTree(g_bdry_arr[:, :2])
+            # Override K_BND_IDW nearest green ring vertices so that when the
+            # seam-reseat IDW queries its K=4 neighbours, all 4 are anchored.
+            # K_SEAM_NEIGHBOURS (=4) is defined just below, but K_BND_IDW (=24)
+            # is already defined above; using it ensures full band coverage.
+            _k_seam = min(K_BND_IDW, len(g_bdry_arr))
+            _seam_anchor_count = 0
+            for _fbh in _raw_fbh:
+                try:
+                    _ax_px = float(_fbh["x"])
+                    _ay_px = float(_fbh["y"])
+                    _av_mm = float(_fbh["value"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if not (0.0 < _av_mm <= 50.0):
+                    continue
+                _a_mm = _px_to_mm_2d(
+                    np.array([[_ax_px, _ay_px]], dtype=np.float64), scale, centroid_px
+                )[0]
+                _gz_anchor = max(BASE_THICKNESS_MM,
+                                 min(_av_mm, _effective_z_ceiling_mm))
+                # Override K_SEAM_NEIGHBOURS nearest green boundary ring vertices
+                _k_s = min(_k_seam, len(g_bdry_arr))
+                _sa_dists, _sa_idxs = _g_bdry_kd_anchor.query(_a_mm[:2], k=_k_s)
+                _sa_idxs = np.atleast_1d(_sa_idxs)
+                for _si in _sa_idxs:
+                    g_bdry_arr[int(_si), 2] = _gz_anchor
+                _seam_anchor_count += 1
+            if _seam_anchor_count:
+                print(f"  FringeBoundaryAnchor: {_seam_anchor_count} anchor(s) "
+                      f"injected into g_bdry_arr (seam continuity, "
+                      f"{_k_seam} pts each)")
+
+        g_bdry_kd = cKDTree(g_bdry_arr[:, :2])
+        # Fringe cell spacing (approx; grid may be anisotropic — take max for safety)
+        dx_fringe = float(xs_mm[1] - xs_mm[0])
+        dy_fringe = float(ys_mm[1] - ys_mm[0])
+        seam_radius = 1.5 * max(abs(dx_fringe), abs(dy_fringe))
+
+        # Pre-build a KD-tree of green boundary polyline for seam-cell detection
+        gbnd_kd_seam = cKDTree(gbnd)
+
+        # Build override map: (r, c) -> (x, y, z)
+        # Task #488 (fringe seam sawtooth): IDW-blend Z from the K nearest
+        # green top-boundary vertices to kill nearest-vertex Z quantization.
+        #
+        # Task #689 (2026-08-31, Topo) — fringe stair-step at green↔fringe seam.
+        # Prior fix (#488) intentionally held fringe seam XY on the fringe grid
+        # to avoid the "twisted triangle" failure from pre-#488 code that
+        # snapped XY onto discrete GREEN VERTEX positions. That was correct at
+        # the time (green boundary was a coarse polyline with only ~200-500
+        # vertices — two adjacent fringe cells often collided onto the same
+        # green vertex → twisted quads).
+        #
+        # Since #683 the green boundary is a *dense smooth polyline* `gbnd`
+        # (~26k points after 48-px spline + 5x Chaikin, ≈2 mm segment length),
+        # so we can now project each seam cell's XY onto the *segment* (not a
+        # vertex) of `gbnd`. Adjacent fringe cells 0.85 mm apart project to
+        # DISTINCT continuous points on the polyline — no vertex collisions,
+        # no twisted triangles. The stair-step at the seam disappears because
+        # the seam vertex XY now lies exactly on the smoothed green polygon,
+        # matching the green mesh XY exactly (0 mm gap, mesh-topology equal).
+        #
+        # We still keep the fringe cell's grid (r, c) as the mesh index so
+        # downstream triangulation (top_faces, walls, hole walls) is unchanged.
+        K_SEAM_NEIGHBOURS = min(4, len(g_bdry_arr))
+        seam_override: dict[tuple[int, int], tuple[float, float, float]] = {}
+        _seam_snap_shifts_mm: list[float] = []  # diagnostic — how far each seam XY moved
+
+        # Task 707 (2026-09-02, Topo): snap target = OUTWARD-BUFFERED green.
+        # With GREEN_FRINGE_GAP_MM > 0 the fringe cell-exclusion pushes the
+        # nominal fringe inner edge out by GAP_MM, but the seam-snap below
+        # would still pull each fringe boundary vertex back onto the RAW
+        # smoothed green polyline (`gbnd`) — collapsing the physical gap to
+        # zero. Fix: snap to the exterior of `green_shapely_exclusion` (the
+        # +GAP_MM-buffered polygon) so the fringe inner ring sits exactly
+        # GAP_MM outside the green outer ring. When GAP_MM==0, exclusion ==
+        # green so `gbnd_snap` == `gbnd` and behaviour is unchanged.
+        if (GREEN_FRINGE_GAP_MM > 0
+                and green_shapely_exclusion is not green_shapely
+                and green_shapely_exclusion.exterior is not None):
+            gbnd_snap = np.asarray(
+                list(green_shapely_exclusion.exterior.coords), dtype=np.float64
+            )
+        else:
+            gbnd_snap = gbnd
+        for r in range(fringe_grid_res):
+            for c in range(fringe_grid_res):
+                if not fringe_mask[r, c]:
+                    continue
+                x = float(xs_mm[c]); y = float(ys_mm[r])
+                # cell is on the inner (green-adjacent) boundary if it sits
+                # within one fringe-grid-step of the green polyline
+                d_bnd, _ = gbnd_kd_seam.query([x, y], k=1)
+                if d_bnd > seam_radius:
+                    continue
+                # IDW-blend Z from the K nearest green top-boundary vertices.
+                dists, gi_arr = g_bdry_kd.query([x, y], k=K_SEAM_NEIGHBOURS)
+                dists = np.atleast_1d(np.asarray(dists, dtype=np.float64))
+                gi_arr = np.atleast_1d(np.asarray(gi_arr, dtype=np.int64))
+                if float(dists.min()) < 1e-9:
+                    # Coincident: use that vertex's Z exactly.
+                    gz = float(g_bdry_arr[gi_arr[int(np.argmin(dists))], 2])
+                else:
+                    w = 1.0 / (dists ** 2)
+                    w /= w.sum()
+                    gz = float(np.dot(w, g_bdry_arr[gi_arr, 2]))
+                # Task #689: project XY onto the smooth green polyline `gbnd`
+                # so the printed seam matches the green mesh XY exactly (no
+                # stair-step at the fringe/green interface). Task 707 upgrade:
+                # snap to `gbnd_snap` (= exterior of `green_shapely_exclusion`
+                # when GAP_MM>0) so the physical seam gap = GAP_MM, not zero.
+                _d_proj, _nx, _ny = _min_dist_to_polyline(x, y, gbnd_snap)
+                _seam_snap_shifts_mm.append(_d_proj)
+                seam_override[(r, c)] = (float(_nx), float(_ny), gz)
+                Z_fringe[r, c] = gz  # keep the height array consistent
+        if _seam_snap_shifts_mm:
+            _shifts_arr = np.asarray(_seam_snap_shifts_mm, dtype=np.float64)
+            _snap_median = float(np.median(_shifts_arr))
+            _snap_max = float(_shifts_arr.max())
+        else:
+            _snap_median = _snap_max = 0.0
+        print(f"  Seam-reseat (IDW-Z K={K_SEAM_NEIGHBOURS} + XY-snap to smooth gbnd, task #689): "
+              f"reseated {len(seam_override)} fringe inner-boundary cells "
+              f"onto smooth green polyline "
+              f"(XY snap median={_snap_median:.3f} mm max={_snap_max:.3f} mm; "
+              f"printed seam gap → 0)")
+    else:
+        seam_override = {}
+
+    # ── Trap / water seam-reseat (task 705, Topo 2026-09-01) ────────────────
+    # Extend the same XY-snap the green-fringe seam already gets: for each
+    # trap and water polygon, project every fringe cell within one grid step
+    # of that polygon's smoothed polyline onto the polyline. Result: the
+    # fringe cutout perimeter matches the trap/water slab outer edge exactly
+    # (both now sit on the same smooth polyline in XY), killing the
+    # stair-step at the fringe/trap and fringe/water interfaces.
+    #
+    # Unlike the green seam, we do NOT touch Z — the trap/water slabs sit
+    # BELOW the fringe top surface (a vertical wall drops from the fringe
+    # top down to the slab top), so the fringe cell just needs its natural
+    # Z_fringe height preserved. If we blended Z toward the slab top we'd
+    # tilt the fringe surface into the cutout, which is not the intent.
+    #
+    # Cell already in seam_override (green seam) wins — a fringe cell that's
+    # simultaneously adjacent to the green AND a trap/water cutout keeps
+    # the green snap (which is the tighter Z-critical case). In practice
+    # such overlap only happens for pathological hole layouts where a trap
+    # or water polygon touches the green — the green wall/seam still
+    # controls the visible geometry there.
+    dx_fringe = float(xs_mm[1] - xs_mm[0])
+    dy_fringe = float(ys_mm[1] - ys_mm[0])
+    # Tighter radius than the green seam (1.5×) — for trap/water we only want
+    # the SINGLE innermost fringe ring (the one directly on the cutout edge),
+    # not a two-cell-deep band. Two-deep folds onto itself when the polyline
+    # is closer to a grid cell than the grid pitch, creating twisted quads.
+    _tw_seam_radius = 0.9 * max(abs(dx_fringe), abs(dy_fringe))
+    _tw_snap_shifts: dict[str, list[float]] = {"trap": [], "water": []}
+    _tw_snap_counts: dict[str, int] = {"trap": 0, "water": 0}
+    # Track which cells we've already claimed for a trap/water seam so a cell
+    # near TWO cutouts (e.g. two adjacent traps) keeps the first snap — a
+    # second snap would drag it toward a different polyline and could create
+    # a fold-over triangle bridging the two cutouts.
+    _tw_seam_claimed: set[tuple[int, int]] = set()
+
+    def _snap_fringe_to_polygon_polyline(
+        pts_mm_arr: np.ndarray, label: str, kind: str
+    ) -> None:
+        """Snap fringe cells near ``pts_mm_arr`` onto that polyline (XY only)."""
+        if pts_mm_arr is None or len(pts_mm_arr) < 4:
+            return
+        _kd = cKDTree(pts_mm_arr)
+        for r_ in range(fringe_grid_res):
+            for c_ in range(fringe_grid_res):
+                if not fringe_mask[r_, c_]:
+                    continue
+                if (r_, c_) in seam_override:
+                    # green seam wins (see comment above)
+                    continue
+                if (r_, c_) in _tw_seam_claimed:
+                    continue
+                x_ = float(xs_mm[c_]); y_ = float(ys_mm[r_])
+                d_bnd, _ = _kd.query([x_, y_], k=1)
+                if d_bnd > _tw_seam_radius:
+                    continue
+                _d_proj, _nx, _ny = _min_dist_to_polyline(x_, y_, pts_mm_arr)
+                _tw_snap_shifts[kind].append(_d_proj)
+                _tw_snap_counts[kind] += 1
+                # Preserve natural Z; only the XY moves.
+                _z_keep = float(Z_fringe[r_, c_])
+                seam_override[(r_, c_)] = (float(_nx), float(_ny), _z_keep)
+                _tw_seam_claimed.add((r_, c_))
+
+    # Task 707 (2026-09-02, Topo): snap target = OUTWARD-BUFFERED polygon
+    # exterior so the physical fringe/trap and fringe/water seam gap ends up
+    # equal to *_FRINGE_GAP_MM (not zero, as the raw snap-to-polyline would
+    # produce). Mirrors the green-seam fix above. When GAP_MM==0 we pass the
+    # raw polyline through unchanged and behaviour matches task 705.
+    def _buffered_snap_polyline(
+        pts_mm_arr: np.ndarray, gap_mm: float
+    ) -> np.ndarray:
+        if gap_mm <= 0 or pts_mm_arr is None or len(pts_mm_arr) < 4:
+            return pts_mm_arr
+        try:
+            _poly = ShapelyPolygon(pts_mm_arr)
+            if not _poly.is_valid:
+                _poly = _poly.buffer(0)
+            _buf = _poly.buffer(+gap_mm)
+            if not _buf.is_valid or _buf.is_empty or _buf.exterior is None:
+                return pts_mm_arr
+            return np.asarray(list(_buf.exterior.coords), dtype=np.float64)
+        except Exception:
+            return pts_mm_arr
+
+    for _ti, _tp_mm in enumerate(trap_polys_mm, start=1):
+        _snap_target = _buffered_snap_polyline(_tp_mm, TRAP_FRINGE_GAP_MM)
+        _snap_fringe_to_polygon_polyline(_snap_target, f"trap_{_ti}", "trap")
+    for _wi, _wp_mm in enumerate(water_polys_mm, start=1):
+        _snap_target = _buffered_snap_polyline(_wp_mm, WATER_FRINGE_GAP_MM)
+        _snap_fringe_to_polygon_polyline(_snap_target, f"water_{_wi}", "water")
+
+    for _kind in ("trap", "water"):
+        _shifts_list = _tw_snap_shifts[_kind]
+        if _shifts_list:
+            _arr = np.asarray(_shifts_list, dtype=np.float64)
+            print(f"  Seam-reseat ({_kind}, task 705): "
+                  f"reseated {_tw_snap_counts[_kind]} fringe cells "
+                  f"onto smooth {_kind} polyline(s) "
+                  f"(XY snap median={float(np.median(_arr)):.3f} mm "
+                  f"max={float(_arr.max()):.3f} mm)")
+        elif ({"trap": trap_polys_mm, "water": water_polys_mm}[_kind]):
+            print(f"  Seam-reseat ({_kind}, task 705): no fringe cells within "
+                  f"{_tw_seam_radius:.2f} mm of any {_kind} polyline (unusual — "
+                  f"check {_kind} polygons vs fringe grid)")
+
+    # ── Pointy-spike filter (task #314) ──────────────────────────────────────
+    # Both spike clusters identified in #313 (9 seam-stilt cells along the
+    # south arc + 1 tall lerp spike near the rect edge) are local outliers in
+    # the fringe top surface. We run a mask-aware median filter on Z_fringe:
+    # each in-mask cell is replaced by the median of the in-mask cells inside
+    # a KxK window around it (cells outside the mask are dropped from the
+    # window). This is approach (a) from Thomas's spec — generic_filter with
+    # a custom callable — and avoids any out-of-mask bias that approach (b)
+    # would introduce at mask boundaries.
+    #
+    # We do NOT exclude the seam cells from the filter input — their Z is
+    # already the green-boundary truth, so letting it propagate one cell
+    # inward actually improves the seam blend. The exact seam vertex Z is
+    # still restored from `seam_override` when top_verts is built (below), so
+    # the seam itself remains pinned to the green mesh.
+    def _masked_median(
+        Z_in: np.ndarray, mask_in: np.ndarray, size: int
+    ) -> np.ndarray:
+        """KxK median where out-of-mask cells are dropped from the window."""
+        out = Z_in.copy()
+        nrows, ncols = Z_in.shape
+        half = size // 2
+        for r in range(nrows):
+            for c in range(ncols):
+                if not mask_in[r, c]:
+                    continue
+                r0, r1 = max(0, r - half), min(nrows, r + half + 1)
+                c0, c1 = max(0, c - half), min(ncols, c + half + 1)
+                win = Z_in[r0:r1, c0:c1]
+                wm = mask_in[r0:r1, c0:c1]
+                vals = win[wm]
+                if vals.size:
+                    out[r, c] = float(np.median(vals))
+        return out
+
+    if fringe_mask.any():
+        # Spike-scanner BEFORE: 8-neighbour median + 1.5 mm threshold
+        before_count = _count_fringe_spikes(Z_fringe, fringe_mask, 1.5)
+
+        # ── Half-strength median (task #315, Thomas) ─────────────────────
+        # Per Thomas, the full 3x3 mask-aware median over-smoothed the
+        # carefully tuned green→rect taper. We retain the median's outlier-
+        # killing power but blend 50/50 with the original Z_fringe inside
+        # the fringe mask, halving its effect. Cells outside fringe_mask
+        # are untouched (NaN preserved). The structural lerp-source fix at
+        # lines ~1514–1529 is the actual spike killer (per #314 the spike
+        # count was already 0 BEFORE the median ran), so a 50% blend
+        # should remain spike-free — verified by the FINAL scan below.
+        FRINGE_MEDIAN_BLEND = 0.5  # 0 = no smoothing, 1 = full median
+        Z_filtered = _masked_median(Z_fringe, fringe_mask, size=3)
+        Z_blended = np.where(
+            fringe_mask,
+            FRINGE_MEDIAN_BLEND * Z_filtered
+            + (1.0 - FRINGE_MEDIAN_BLEND) * Z_fringe,
+            Z_fringe,
+        )
+        Z_fringe = Z_blended
+        after_count = _count_fringe_spikes(Z_fringe, fringe_mask, 1.5)
+        print(f"  Spike filter (3x3 mask-aware median, "
+              f"blend={FRINGE_MEDIAN_BLEND:.2f}): "
+              f"spikes >1.5mm above 8-nbr median: {before_count} -> {after_count}")
+
+        # Escalate to 5x5 if any spike survives — same blend ratio.
+        if after_count > 0:
+            Z_filtered5 = _masked_median(Z_fringe, fringe_mask, size=5)
+            Z_fringe = np.where(
+                fringe_mask,
+                FRINGE_MEDIAN_BLEND * Z_filtered5
+                + (1.0 - FRINGE_MEDIAN_BLEND) * Z_fringe,
+                Z_fringe,
+            )
+            after_count2, _spike_locs = _count_fringe_spikes(
+                Z_fringe, fringe_mask, 1.5, return_locations=True
+            )
+            print(f"  Spike filter (5x5 escalation, "
+                  f"blend={FRINGE_MEDIAN_BLEND:.2f}): "
+                  f"{after_count} -> {after_count2}")
+            if after_count2 > 0:
+                sample = sorted(_spike_locs, key=lambda t: -t[4])[:5]
+                for r, c, z, med, d in sample:
+                    x = float(xs_mm[c]); y = float(ys_mm[r])
+                    print(f"    spike at (r={r},c={c}) "
+                          f"xy=({x:+.2f},{y:+.2f}) "
+                          f"z={z:.3f} 8nbr-med={med:.3f} Δ={d:+.3f}")
+
+    # ── Gaussian spike-application loop REMOVED (task 698, 2026-10-02) ─────────
+    # Thomas pivot: the OCR→elevationSpikes→Gaussian-bump pipeline is gone.
+    # SPIKE_SIGMA_MM, SPIKE_INFLUENCE_MM, SPIKE_HARD_MAX_MM constants removed.
+    # _raw_spikes loop, _skipped_in_green counter, Gaussian MAX-blend removed.
+    # elevationSpikes in the EGM is accepted-but-ignored (deprecation notice
+    # emitted by _build_tps_base if any spikes were present).
+    # Future height constraints will feed into _build_tps_base() via the
+    # grid-cell mechanism (see project_grid_cell_elevation_mechanism.md).
+
+    # FINAL diagnostic scan: check the array that actually becomes top vertices
+    # (Z_fringe + seam_override for seam cells).
+    Z_final_top = Z_fringe.copy()
+    for (sr, sc), (_sx, _sy, sz) in seam_override.items():
+        Z_final_top[sr, sc] = sz
+    final_spikes = _count_fringe_spikes(Z_final_top, fringe_mask, 1.5)
+    print(f"  FINAL fringe top surface (Z_fringe + seam_override) "
+          f"spikes >1.5mm above 8-nbr median: {final_spikes}")
+
+    # --- Build mesh using the same grid-triangulation approach as _build_heightmap_mesh ---
+    # We reuse that function by passing our fringe grid and mask.
+    # We need to supply xs_grid and ys_grid in PIXEL space for _build_heightmap_mesh,
+    # but that function converts them internally. Instead we build the mesh directly
+    # here since we already have mm coords.
+
+    # Top surface vertices
+    vert_idx = np.full((fringe_grid_res, fringe_grid_res), -1, dtype=int)
+    top_verts: list[list[float]] = []
+    for r in range(fringe_grid_res):
+        for c in range(fringe_grid_res):
+            if fringe_mask[r, c]:
+                vert_idx[r, c] = len(top_verts)
+                if (r, c) in seam_override:
+                    # Shared-seam vertex: exact (x,y,z) from green's top-boundary ring
+                    ox, oy, oz = seam_override[(r, c)]
+                    top_verts.append([ox, oy, oz])
+                else:
+                    top_verts.append([float(xs_mm[c]), float(ys_mm[r]),
+                                      float(Z_fringe[r, c])])
+
+    # Top surface faces (only fully-fringe quads)
+    top_faces: list[list[int]] = []
+    for r in range(fringe_grid_res - 1):
+        for c in range(fringe_grid_res - 1):
+            v00 = vert_idx[r,   c]
+            v01 = vert_idx[r,   c+1]
+            v10 = vert_idx[r+1, c]
+            v11 = vert_idx[r+1, c+1]
+            if v00 < 0 or v01 < 0 or v10 < 0 or v11 < 0:
+                continue
+            top_faces.append([v00, v10, v11])
+            top_faces.append([v00, v11, v01])
+
+    # Find boundary edges of the top surface
+    edge_count: dict[tuple[int, int], int] = defaultdict(int)
+    for f in top_faces:
+        a, b, c_ = f
+        edge_count[(a, b)] += 1
+        edge_count[(b, c_)] += 1
+        edge_count[(c_, a)] += 1
+
+    boundary_edges: list[tuple[int, int]] = []
+    for (a, b), cnt in edge_count.items():
+        if edge_count.get((b, a), 0) == 0:
+            boundary_edges.append((a, b))
+
+    # Wall vertices and faces
+    top_verts_arr = np.array(top_verts, dtype=np.float64)
+    n_top = len(top_verts_arr)
+    top_to_bot: dict[int, int] = {}
+    bot_verts: list[list[float]] = []
+
+    def get_bot_fringe(vi: int) -> int:
+        if vi not in top_to_bot:
+            top_to_bot[vi] = n_top + len(bot_verts)
+            bot_verts.append([top_verts_arr[vi, 0], top_verts_arr[vi, 1], 0.0])
+        return top_to_bot[vi]
+
+    wall_faces: list[list[int]] = []
+    for va, vb in boundary_edges:
+        ba = get_bot_fringe(va)
+        bb = get_bot_fringe(vb)
+        wall_faces.append([va, vb, bb])
+        wall_faces.append([va, bb, ba])
+
+    # Bottom cap — polygon with holes (cutouts for green and traps/water/bore)
+    #
+    # Task 719 (Topo, 2026-09-03): jelly-bean trap gcode conflict on DeLaveaga #11.
+    # The prior implementation traced boundary loops from `boundary_edges` using a
+    # `bot_next: dict[int, int]` (one-next-per-vertex) and treated the largest area
+    # loop as the outer ring, the rest as holes. That works when every trap/water
+    # cutout produces a CLOSED loop in the wall edges. It FAILS silently when the
+    # wall ring around an elongated / curved (jelly-bean-shape) cutout picks up a
+    # junction vertex — a vertex with 2+ outgoing bottom edges. The one-next-dict
+    # then silently OVERWRITES the earlier edge, leaving orphan chains that never
+    # close into a loop. When a trap loop is missing from the earcut polygon-with-
+    # holes, the bottom cap FILLS OVER that trap area, and Bambu Studio sees the
+    # cap as solid at every layer up to the trap slab's top — emitting "conflicts
+    # of gcode paths" for the entire trap footprint.
+    #
+    # Verified failure mode on [212] for trap_1 (jelly bean, aspect 2.54):
+    #   * fringe wall around trap_1 = 31 disconnected chain pieces at z=0
+    #   * bottom-cap boundary loops = 4 (frame + green + 2 tee-collar), no trap_1
+    #   * fringe cross-section at Z=8: fringe∩trap_1 mesh = 1636 mm² (whole trap)
+    #   * layer-slicer intersection: 25 layers of trap_1 conflict, 9 of trap_2,
+    #     12 of trap_3 — all three traps have broken wall rings, just trap_1's
+    #     failure spans the most layers because it's the tallest.
+    #
+    # Fix: build the bottom-cap polygon-with-holes from the KNOWN input geometry
+    # instead of tracing wall edges. The fringe rectangle is a known shape; the
+    # holes are exactly `green_shapely_exclusion`, every `_trap_carve`, every
+    # `_water_carve`, boulders_annulus_shapely, and each bore-hole circle. This
+    # decouples the cap from the fragile wall-loop tracing (walls can still be
+    # slightly imperfect at junction vertices, but the CAP always excludes every
+    # trap/water/bore footprint properly). Earcut vertices are snapped to
+    # existing bot_verts within a 3-grid-cell threshold, so most cap vertices
+    # still share XY with wall bottoms (mesh is as-manifold as before), and any
+    # cap vertex that doesn't have a wall partner is added as a new interior
+    # bot_vert (fine — bottom cap needs interior points anyway).
+    bot_verts_arr = np.array([[v[0], v[1]] for v in bot_verts], dtype=np.float64)
+    bot_kd = cKDTree(bot_verts_arr)
+
+    cap_faces: list[list[int]] = []
+
+    # ── Assemble the polygon-with-holes DIRECTLY from known geometry ────────
+    # This is the fringe frame perimeter minus the green + all cutouts.
+    from shapely.geometry import box as _shbox_cap
+    _cap_rect = _shbox_cap(-half, -half, +half, +half)
+    _cap_holes: list[ShapelyPolygon] = []
+    if green_shapely_exclusion is not None and not green_shapely_exclusion.is_empty:
+        # Only add the OUTER exterior of the green cutout (buffered by
+        # GREEN_FRINGE_GAP_MM). MultiPolygon -> pick each piece.
+        if hasattr(green_shapely_exclusion, "geoms"):
+            for _g in green_shapely_exclusion.geoms:
+                if _g.exterior is not None:
+                    _cap_holes.append(ShapelyPolygon(list(_g.exterior.coords)))
+        else:
+            _cap_holes.append(ShapelyPolygon(list(green_shapely_exclusion.exterior.coords)))
+    for _tp in _trap_carve:
+        if _tp is None or _tp.is_empty:
+            continue
+        if hasattr(_tp, "geoms"):
+            for _g in _tp.geoms:
+                if _g.exterior is not None:
+                    _cap_holes.append(ShapelyPolygon(list(_g.exterior.coords)))
+        elif _tp.exterior is not None:
+            _cap_holes.append(ShapelyPolygon(list(_tp.exterior.coords)))
+    for _wp in _water_carve:
+        if _wp is None or _wp.is_empty:
+            continue
+        if hasattr(_wp, "geoms"):
+            for _g in _wp.geoms:
+                if _g.exterior is not None:
+                    _cap_holes.append(ShapelyPolygon(list(_g.exterior.coords)))
+        elif _wp.exterior is not None:
+            _cap_holes.append(ShapelyPolygon(list(_wp.exterior.coords)))
+    for _bp in boulders_annulus_shapely:
+        if _bp is None or _bp.is_empty:
+            continue
+        if hasattr(_bp, "geoms"):
+            for _g in _bp.geoms:
+                if _g.exterior is not None:
+                    _cap_holes.append(ShapelyPolygon(list(_g.exterior.coords)))
+        elif _bp.exterior is not None:
+            _cap_holes.append(ShapelyPolygon(list(_bp.exterior.coords)))
+    if holes:
+        from shapely.geometry import Point as _SPPT_cap
+        for _hcx, _hcy, _hr in holes:
+            _cap_holes.append(_SPPT_cap(_hcx, _hcy).buffer(_hr))
+
+    bottom_poly = _cap_rect
+    for _h in _cap_holes:
+        try:
+            bottom_poly = bottom_poly.difference(_h)
+        except Exception:
+            continue
+    if not bottom_poly.is_valid:
+        bottom_poly = bottom_poly.buffer(0)
+
+    # Pick the largest piece if the difference produced a MultiPolygon
+    # (defensive — for well-formed inputs `bottom_poly` is always the fringe
+    # frame minus cutouts, a single polygon with N holes).
+    if hasattr(bottom_poly, "geoms"):
+        bottom_poly = max(bottom_poly.geoms, key=lambda g: g.area)
+
+    # ── Tee-hole bore-carve (task 748, Topo 2026-09-05) ─────────────────────
+    # If the EGM defines a tee_hole, subtract a precise bore-hole disc from
+    # `bottom_poly` here — BEFORE the watertight-rewrite extrudes it — so the
+    # fringe extrusion naturally builds clean vertical walls flush against the
+    # collar tube at the intended `remove_r = collar_r + guard`. Without this
+    # carve, `drill_tee_hole`'s post-extrude face-removal chews through the
+    # coarse Steiner-triangulated top face (~5 mm triangles from `pq30a25`),
+    # producing a jagged ~5-6 mm-radius hole around a 3.78 mm-radius collar
+    # tube — visible in the render as a ~1-2 mm XY gap between cylinder wall
+    # and surrounding fringe.
+    #
+    # Regression window: task 742 (2026-09-05, ea5dcae) added the watertight-
+    # rewrite (extrude_polygon on bottom_poly). Pre-742, fringe top surface
+    # was the 200×200 grid (~0.86 mm cells) so drill_tee_hole's face-removal
+    # produced a tight ~4 mm hole. Post-742, the top is Steiner-triangulated
+    # at ~5 mm spacing → face-removal enlarges the hole to ~5-6 mm.
+    #
+    # Fix: bake the bore as a proper polygon-with-holes cutout so triangulate
+    # runs vertical walls around it at exactly `remove_r`. drill_tee_hole
+    # still runs afterwards (idempotent: n_removed will be 0-few, and the
+    # collar tube concatenation still happens the same way).
+    #
+    # Guard = 0.15 mm matches the constant used inside drill_tee_hole itself.
+    # Total bore radius = collar_r + 0.15 mm = 3.78 + 0.15 = 3.93 mm.
+    _tee_spec_bp = egm_data.get("tee_hole") if isinstance(egm_data, dict) else None
+    if _tee_spec_bp:
+        try:
+            _tx = float(_tee_spec_bp.get("x_mm"))
+            _ty = float(_tee_spec_bp.get("y_mm"))
+        except (TypeError, ValueError, AttributeError):
+            _tx = _ty = None
+        if _tx is not None and _ty is not None:
+            from shapely.geometry import Point as _SPPt_tee
+            _tee_cx = -half + _tx
+            _tee_cy = +half - _ty
+            _tee_bore_r = TEE_HOLE_COLLAR_OD_MM / 2.0 + 0.15  # match drill_tee_hole's guard
+            _tee_bore_disk = _SPPt_tee(_tee_cx, _tee_cy).buffer(
+                _tee_bore_r, resolution=32
+            )
+            # First guarantee the tee area is fringe material (union an island)
+            # in case a boundary-touching trap/water carve ate the surrounding
+            # fringe. Island slightly larger than the bore so the difference
+            # below leaves a full-thickness fringe wall around the collar.
+            _tee_island_r = _tee_bore_r + 1.5   # ~1.5 mm of fringe outside the bore
+            _tee_island = _SPPt_tee(_tee_cx, _tee_cy).buffer(
+                _tee_island_r, resolution=32
+            ).intersection(_cap_rect)
+            _bp_before_area = bottom_poly.area
+            _bp_before_interiors = len(list(bottom_poly.interiors))
+            if not _tee_island.is_empty and _tee_island.area > 0:
+                try:
+                    bottom_poly = bottom_poly.union(_tee_island)
+                    if not bottom_poly.is_valid:
+                        bottom_poly = bottom_poly.buffer(0)
+                    if hasattr(bottom_poly, "geoms"):
+                        bottom_poly = max(bottom_poly.geoms, key=lambda g: g.area)
+                except Exception as _exc_isle:
+                    print(f"  Bottom cap polygon: tee-hole island union FAILED: {_exc_isle}")
+            try:
+                bottom_poly = bottom_poly.difference(_tee_bore_disk)
+                if not bottom_poly.is_valid:
+                    bottom_poly = bottom_poly.buffer(0)
+                if hasattr(bottom_poly, "geoms"):
+                    bottom_poly = max(bottom_poly.geoms, key=lambda g: g.area)
+                print(f"  Bottom cap polygon: tee-hole bore carve r={_tee_bore_r:.3f} mm "
+                      f"(island r={_tee_island_r:.3f}) at ({_tee_cx:.2f}, {_tee_cy:.2f}): "
+                      f"area {_bp_before_area:.1f} → {bottom_poly.area:.1f} mm², "
+                      f"interiors {_bp_before_interiors} → {len(list(bottom_poly.interiors))} "
+                      f"(task 748)")
+            except Exception as _exc_bore:
+                print(f"  Bottom cap polygon: tee-hole bore carve FAILED: {_exc_bore}")
+
+    print(f"  Bottom cap polygon: outer_area={bottom_poly.area:.1f} mm² "
+          f"interiors={len(list(bottom_poly.interiors))} "
+          f"(task 719: cap built from known geometry, not wall-edge loops)")
+
+    try:
+        cap_verts_2d, cap_tri_idx = trimesh.creation.triangulate_polygon(
+            bottom_poly, engine="earcut"
+        )
+        # Snap each triangulation vertex to nearest bot_vert.  Use the same
+        # 3-grid-cell threshold as the previous implementation so cap vertices
+        # near the fringe top-surface boundary re-use existing wall bottoms
+        # (keeps the mesh as-connected as the prior code where wall loops WERE
+        # closed; for the loops that failed, cap vertices simply land as new
+        # interior bot_verts which is fine — bottom cap needs interior verts
+        # anyway for the earcut triangulation).
+        dists, idxs = bot_kd.query(cap_verts_2d)
+        snap_threshold = (PRINT_SIZE_MM / fringe_grid_res) * 3  # 3 grid cells
+        local_to_global: dict[int, int] = {}
+        for local_i, (dist, li) in enumerate(zip(dists, idxs)):
+            if dist < snap_threshold:
+                local_to_global[local_i] = n_top + li
+            else:
+                x_new, y_new = float(cap_verts_2d[local_i, 0]), float(cap_verts_2d[local_i, 1])
+                new_idx = n_top + len(bot_verts)
+                bot_verts.append([x_new, y_new, 0.0])
+                local_to_global[local_i] = new_idx
+
+        for tri in cap_tri_idx:
+            fn0 = local_to_global.get(tri[0], -1)
+            fn1 = local_to_global.get(tri[1], -1)
+            fn2 = local_to_global.get(tri[2], -1)
+            if fn0 >= 0 and fn1 >= 0 and fn2 >= 0 and fn0 != fn1 and fn1 != fn2 and fn0 != fn2:
+                # Reverse winding so normal points down (−Z)
+                cap_faces.append([fn0, fn2, fn1])
+        print(f"  Bottom cap: {len(cap_faces)} triangles (polygon-with-holes, earcut, "
+              f"{len(list(bottom_poly.interiors))} hole(s) from known geometry)")
+    except Exception as e:
+        print(f"  Bottom cap earcut failed ({e}), using rectangle fan fallback")
+        # Emergency fan-fallback: triangulate the outer rectangle only. This is
+        # WORSE than the old fan fallback (which tried per-loop fans) but only
+        # fires on shapely/earcut failures which are rare enough that a big
+        # non-cutout bottom cap is preferable to a crash.
+        outer_coords = list(_cap_rect.exterior.coords)[:-1]  # drop dup
+        # Add outer coords as new bot_verts if not already present
+        for x_new, y_new in outer_coords:
+            bot_verts.append([float(x_new), float(y_new), 0.0])
+        base_idx = n_top + len(bot_verts) - len(outer_coords)
+        for i in range(1, len(outer_coords) - 1):
+            cap_faces.append([base_idx, base_idx + i + 1, base_idx + i])
+
+    # --- Hole walls ---
+    # The `holes` parameter excludes bore regions from `fringe_mask`, which means the
+    # bore edge becomes part of the fringe top-surface boundary.  The `wall_faces` loop
+    # above (which iterates all boundary_edges) already generates walls from the bore
+    # edge top surface down to z=0, and the polygon-with-holes bottom cap closes the
+    # bore at z=0.  No separate cylinder ring is needed or wanted here — adding one
+    # produces a disconnected second body (the plug) in the output mesh.
+    hole_wall_faces: list[list[int]] = []
+    if holes:
+        print(f"  Bore walls handled by fringe boundary edges for {len(holes)} hole(s) "
+              f"(no separate cylinder ring emitted)")
+
+    # Assemble
+    all_verts = top_verts + bot_verts
+    all_faces = top_faces + wall_faces + cap_faces + hole_wall_faces
+
+    verts_np = np.array(all_verts, dtype=np.float64)
+    faces_np = np.array(all_faces, dtype=np.int64)
+
+    mesh = trimesh.Trimesh(vertices=verts_np, faces=faces_np, process=True)
+    trimesh.repair.fix_normals(mesh)
+    trimesh.repair.fill_holes(mesh)
+    print(f"  Fringe: top_faces={len(top_faces)} wall_faces={len(wall_faces)} "
+          f"cap_faces={len(cap_faces)}")
+
+    # ── Drop spurious small disconnected components ─────────────────────────
+    # When a water polygon nearly covers the whole printable rectangle (the
+    # Catmull-Rom spline can swing slightly inward at the rectangle corners),
+    # the fringe_mask gets carved so aggressively that a handful of cells at
+    # the corners survive as tiny isolated islands.  After mesh assembly these
+    # show up as small 3D "rectangles" attached to / floating next to the
+    # fringe frame.  The fringe is by design a SINGLE connected body (the
+    # outer frame with green / traps / water as interior holes), so any
+    # disconnected component beyond the largest one is an artifact.  Drop
+    # everything that isn't the main body (using face count as the size
+    # metric — robust to mesh repair changing vertex counts).
+    try:
+        components = mesh.split(only_watertight=False)
+        if len(components) > 1:
+            main = max(components, key=lambda c: len(c.faces))
+            dropped = [c for c in components if c is not main]
+            n_dropped_faces = sum(len(c.faces) for c in dropped)
+            print(f"  Fringe: dropped {len(dropped)} spurious component(s) "
+                  f"({n_dropped_faces} faces) — water-near-corner carve artifact")
+            mesh = main
+    except Exception as _exc_split:
+        print(f"  Fringe: component-split cleanup skipped ({_exc_split})")
+
+    # ── Trap / water bottom-cap carve (task 713, Topo 2026-09-02) ────────────
+    # Same bug class as task 703 tee-hole. The bottom cap is earcut-triangulated
+    # from the fringe outer ring + inner cutout loops (green + trap + water).
+    # Even when a trap loop IS classified correctly as a "hole" in the earcut
+    # polygon, the earcut can still emit a triangle whose XY footprint spans
+    # the trap area (numerical edge cases, sliver loops, holes not classified
+    # as such when their area happens to sort ahead of another).  On DeLaveaga
+    # #11 [197], trap 1 had 811 fringe faces overlapping its footprint — one
+    # single triangle of area 2050 mm² covered the entire 1928 mm² trap — while
+    # traps 2 and 3 got lucky (0 overlap each).  Result: the visible
+    # sand-rake-stripe on trap 1 where the z=0 slab z-fights with the trap.
+    #
+    # Fix: after the fringe mesh is assembled, run the shared
+    # `_remove_faces_whose_footprint_overlaps_polygon` utility for every trap
+    # and water polygon (buffered by the same *_FRINGE_GAP_MM used for the
+    # cell-carve above, so the removed footprint matches the intended cutout
+    # boundary exactly).  Guaranteed: 0 fringe faces cover any trap/water
+    # footprint after this pass, regardless of what the earcut produced.
+    _bottom_carve_polys: list[tuple[ShapelyPolygon, str]] = []
+    # Task 717 investigation (Topo, 2026-09-03): I initially wired
+    # `green_shapely_exclusion` in here as a defensive mirror of the
+    # trap/water carve, but this over-removes: the fringe's LEGITIMATE
+    # bottom-cap ring bordering the green hole shares vertices with the
+    # green polygon exterior, and the polygon-overlap filter (which uses
+    # vertex_hit / edge_hit / pt_in_tri) flags every ring triangle whose
+    # boundary edge sits on the green polyline.  On DeLaveaga #11 the
+    # green-bottom-carve pass removed 2,019 faces including the ring,
+    # collapsing the fringe base into a solid slab covering the green
+    # area.  Do NOT wire the green polygon in here — it must remain a
+    # true HOLE in the fringe.  Trap/water polygons are safe because they
+    # sit strictly inside the fringe rectangle and don't share the fringe's
+    # top-surface boundary (the fringe top wraps around them cleanly).
+    # Task 719 (Topo, 2026-09-03): the bottom-cap polygon is now built directly
+    # from the +*_FRINGE_GAP_MM-buffered trap/water polygons (see task 719 fix
+    # above), so the cap already excludes each cutout's footprint by design —
+    # trap-covering earcut triangles can't happen anymore. But we KEEP this
+    # defensive carve pass as a last-line-of-defense against any wall/top-surface
+    # triangles that happened to end up inside a cutout via seam-snap or
+    # earcut edge cases.
+    #
+    # Change from tasks 713/715: use the RAW trap/water polygons (unbuffered)
+    # instead of _trap_carve / _water_carve. The cap's cutout hole rings sit
+    # exactly on the +0.25 mm buffered boundary, so legitimate cap-boundary
+    # triangles have vertices AT that buffered ring — the buffered-polygon
+    # carve incorrectly flagged them as "vertex_hit" and removed the boundary
+    # ring entirely (verified [213]: 1117 legit boundary faces removed →
+    # bottom cap fragmented into 27 loops). The raw polygon is 0.25 mm inside
+    # the buffered ring, so the boundary triangles' vertices sit OUTSIDE it and
+    # are not flagged; only true intruders (vertices inside the raw polygon)
+    # get removed.
+    if trap_shapely:
+        for _i, _tsp in enumerate(trap_shapely, start=1):
+            if _tsp is not None and not _tsp.is_empty:
+                _bottom_carve_polys.append((_tsp, f"trap_{_i}_bottom_carve"))
+    if water_shapely:
+        for _i, _wsp in enumerate(water_shapely, start=1):
+            if _wsp is not None and not _wsp.is_empty:
+                _bottom_carve_polys.append((_wsp, f"water_{_i}_bottom_carve"))
+    if _bottom_carve_polys:
+        total_removed = 0
+        for _poly, _label in _bottom_carve_polys:
+            mesh, _nrm = _remove_faces_whose_footprint_overlaps_polygon(
+                mesh, _poly, label=_label,
+            )
+            total_removed += _nrm
+        print(f"  Fringe: trap/water bottom-cap carve removed {total_removed} "
+              f"straggler face(s) across {len(_bottom_carve_polys)} cutout(s) "
+              f"(task 719: RAW polygons, not buffered — cap already excludes "
+              f"the +GAP band)")
+
+    # ── Post-carve component cleanup (task 715, Topo 2026-09-03) ─────────────
+    # The bottom-cap carve above removes triangles whose XY footprint overlaps
+    # a trap/water polygon. It correctly does NOT touch nearby wall triangles
+    # whose vertices sit *just outside* the polygon (see task 715 investigation:
+    # a 2-face vertical wall pair at (-63.4, 56.94) survived Trap 1's carve on
+    # DeLaveaga #11 [200] because both endpoints were 0.5–1.3 mm outside the
+    # trap boundary — but the fringe cell they used to bound got its top+bottom
+    # carved away, leaving the wall as a floater spanning z=0 → 9.94 mm inside
+    # trap_1's solid volume). That floater triggered TWO Bambu Studio warnings
+    # simultaneously: "floating regions" (obvious) and "conflicts of gcode
+    # paths at layer 30" (the wall pierces trap_1's solid at every layer up to
+    # z=9.94, colliding on gcode).
+    #
+    # Fix: rerun the same "keep the largest component" cleanup we already do
+    # earlier for water-near-corner artifacts, but *after* the bottom-carve so
+    # any freshly stranded wall/edge fragments are dropped too. This runs
+    # BEFORE drill_tee_hole so the collar tube — an intentional, watertight,
+    # z=0-grounded annular body concatenated by drill_tee_hole — remains a
+    # separate expected component in the final .3mf (slicers handle grounded
+    # separate bodies fine; only ungrounded/pierced floaters are problems).
+    try:
+        _post_carve_components = mesh.split(only_watertight=False)
+        if len(_post_carve_components) > 1:
+            _main = max(_post_carve_components, key=lambda c: len(c.faces))
+            _dropped = [c for c in _post_carve_components if c is not _main]
+            _n_dropped_faces = sum(len(c.faces) for c in _dropped)
+            print(f"  Fringe: post-carve dropped {len(_dropped)} straggler "
+                  f"component(s) ({_n_dropped_faces} faces) — carve-boundary "
+                  f"wall fragments (task 715)")
+            mesh = _main
+    except Exception as _exc_post_split:
+        print(f"  Fringe: post-carve component cleanup skipped ({_exc_post_split})")
+
+    # ── FINAL post-assembly intrusion sweep (task 720, Topo 2026-09-03) ──────
+    # Belt-and-suspenders check: after everything else has run (top surface,
+    # walls, bottom cap earcut *or* the emergency fan fallback, first carve
+    # pass, split cleanup, etc.), scan the WHOLE assembled fringe one more
+    # time and remove any triangle whose XY footprint has >0.5 mm² of interior
+    # overlap with any raw (unbuffered) trap or water polygon.
+    #
+    # Why this is different from the existing carve above (line ~3810):
+    #   • The existing carve uses vertex_hit / pt_in_tri / edge_hit tests,
+    #     which correctly catch the common cases but proved insufficient on
+    #     DeLaveaga #11 [215]: the very last two faces (idx 51181, 51182)
+    #     were two GIANT z=0 triangles spanning the full ±85.2 mm print bed
+    #     — an artefact of the emergency fan-fallback in the bottom-cap
+    #     earcut path (line ~3696), which triangulates the outer rectangle
+    #     WITHOUT the cutout holes when earcut raises. Those two tris cover
+    #     every trap footprint at z=0, producing the residual gcode-path
+    #     conflict Thomas hit in task 719/720.
+    #   • This pass uses `Polygon(trap).intersection(Polygon(face)).area`
+    #     directly, targeting the exact failure mode Thomas described in
+    #     task 720: "XY footprint interior overlap > 0.5 mm²". Slower per
+    #     candidate than the vertex-based test, but bbox-narrowed first and
+    #     only runs on trap/water candidates.
+    #
+    # Uses RAW (unbuffered) polygons so the legitimate cutout-rim walls at
+    # the +TRAP_FRINGE_GAP_MM / +WATER_FRINGE_GAP_MM buffered boundary are
+    # preserved. Only true intrusions (faces whose XY footprint lies inside
+    # the raw trap/water interior) get removed.
+    _final_sweep_polys: list[tuple["ShapelyPolygon", str]] = []
+    if trap_shapely:
+        for _i, _tsp in enumerate(trap_shapely, start=1):
+            if _tsp is not None and not _tsp.is_empty:
+                _final_sweep_polys.append((_tsp, f"trap_{_i}_final_sweep"))
+    if water_shapely:
+        for _i, _wsp in enumerate(water_shapely, start=1):
+            if _wsp is not None and not _wsp.is_empty:
+                _final_sweep_polys.append((_wsp, f"water_{_i}_final_sweep"))
+    if _final_sweep_polys and len(mesh.faces) > 0:
+        from shapely.geometry import Polygon as _SP_final
+        tri_v = mesh.triangles  # (N,3,3)
+        ax_f, ay_f = tri_v[:, 0, 0], tri_v[:, 0, 1]
+        bx_f, by_f = tri_v[:, 1, 0], tri_v[:, 1, 1]
+        cx_f, cy_f = tri_v[:, 2, 0], tri_v[:, 2, 1]
+        remove_mask = np.zeros(len(mesh.faces), dtype=bool)
+        total_removed = 0
+        for _poly, _label in _final_sweep_polys:
+            pxmin, pymin, pxmax, pymax = _poly.bounds
+            fxmin = np.minimum(np.minimum(ax_f, bx_f), cx_f)
+            fxmax = np.maximum(np.maximum(ax_f, bx_f), cx_f)
+            fymin = np.minimum(np.minimum(ay_f, by_f), cy_f)
+            fymax = np.maximum(np.maximum(ay_f, by_f), cy_f)
+            cand = np.where(
+                (fxmax >= pxmin) & (fxmin <= pxmax) &
+                (fymax >= pymin) & (fymin <= pymax) &
+                (~remove_mask)
+            )[0]
+            n_here = 0
+            for k in cand:
+                tri_poly = _SP_final([
+                    (float(ax_f[k]), float(ay_f[k])),
+                    (float(bx_f[k]), float(by_f[k])),
+                    (float(cx_f[k]), float(cy_f[k])),
+                ])
+                if not tri_poly.is_valid:
+                    tri_poly = tri_poly.buffer(0)
+                    if tri_poly.is_empty:
+                        continue
+                try:
+                    inter_area = _poly.intersection(tri_poly).area
+                except Exception:
+                    continue
+                if inter_area > 0.5:
+                    remove_mask[k] = True
+                    n_here += 1
+            if n_here > 0:
+                print(f"  [{_label}] FINAL SWEEP removed {n_here} face(s) with "
+                      f">0.5 mm² XY-interior overlap (task 720)")
+                total_removed += n_here
+        if total_removed > 0:
+            keep_idx = np.where(~remove_mask)[0]
+            mesh = mesh.submesh([keep_idx], append=True)
+            print(f"  Fringe: FINAL SWEEP removed {total_removed} total intruding "
+                  f"face(s) across {len(_final_sweep_polys)} cutout(s) — "
+                  f"post-assembly heavy-hammer pass (task 720)")
+            # Rerun component cleanup after removal so any freshly stranded
+            # fragments from the sweep don't survive.
+            try:
+                _sweep_components = mesh.split(only_watertight=False)
+                if len(_sweep_components) > 1:
+                    _main2 = max(_sweep_components, key=lambda c: len(c.faces))
+                    _dropped2 = [c for c in _sweep_components if c is not _main2]
+                    _nd2 = sum(len(c.faces) for c in _dropped2)
+                    print(f"  Fringe: post-sweep dropped {len(_dropped2)} "
+                          f"straggler component(s) ({_nd2} faces)")
+                    mesh = _main2
+            except Exception as _exc_sweep_split:
+                print(f"  Fringe: post-sweep component cleanup skipped ({_exc_sweep_split})")
+
+    # ── VERTEX-BASED intrusion sweep (task 722, Topo 2026-09-04) ─────────────
+    # The area-based sweep above catches faces with large XY footprint overlap
+    # (>0.5 mm²). Vertical wall triangles have near-zero XY footprints (their
+    # three vertices form a line segment in XY), so the area test always passes
+    # them even when the wall is well inside a trap or water cutout.
+    # This pass catches those by checking whether ≥ 2 of the face's 3 XY
+    # vertices fall strictly inside an inward-buffered version of each cutout
+    # polygon.  The −0.05 mm inward buffer excludes legitimate boundary walls
+    # whose vertices sit right at the (raw_trap.buffer(+TRAP_FRINGE_GAP_MM))
+    # cutout edge — those walls are expected and must be preserved.
+    if _final_sweep_polys and len(mesh.faces) > 0:
+        from shapely.geometry import Point as _SP_Point_v
+        _verts_v = mesh.vertices
+        _fv_v = mesh.faces
+        _vx_v = _verts_v[:, 0]
+        _vy_v = _verts_v[:, 1]
+        _vmask_v = np.zeros(len(mesh.faces), dtype=bool)
+        _vtotal_removed = 0
+        for _poly_v, _label_v in _final_sweep_polys:
+            _inner_v = _poly_v.buffer(-0.05)
+            if _inner_v.is_empty:
+                continue
+            _ibx1, _iby1, _ibx2, _iby2 = _inner_v.bounds
+            # Candidate vertices: inside bounding box of inner polygon
+            _cand_vi = np.where(
+                (_vx_v >= _ibx1) & (_vx_v <= _ibx2) &
+                (_vy_v >= _iby1) & (_vy_v <= _iby2)
+            )[0]
+            _vert_in_v = np.zeros(len(_verts_v), dtype=bool)
+            for _vi in _cand_vi:
+                if _inner_v.contains(_SP_Point_v(float(_vx_v[_vi]), float(_vy_v[_vi]))):
+                    _vert_in_v[_vi] = True
+            # Faces with >= 2 vertices strictly inside inner polygon
+            _face_in_cnt = _vert_in_v[_fv_v].sum(axis=1)
+            _new_v = np.where((_face_in_cnt >= 2) & (~_vmask_v))[0]
+            if len(_new_v) > 0:
+                _vmask_v[_new_v] = True
+                _vtotal_removed += len(_new_v)
+                print(f"  [{_label_v}] VERTEX SWEEP removed {len(_new_v)} face(s) "
+                      f"with >=2 XY verts inside inner buffer (task 722)")
+        if _vtotal_removed > 0:
+            _vkeep = np.where(~_vmask_v)[0]
+            mesh = mesh.submesh([_vkeep], append=True)
+            print(f"  Fringe: VERTEX SWEEP removed {_vtotal_removed} total intruding "
+                  f"wall face(s) across {len(_final_sweep_polys)} cutout(s) (task 722)")
+            # Post-removal component cleanup to evict any newly stranded fragments
+            try:
+                _vsweep_comps = mesh.split(only_watertight=False)
+                if len(_vsweep_comps) > 1:
+                    _vmain = max(_vsweep_comps, key=lambda c: len(c.faces))
+                    _vdropped = [c for c in _vsweep_comps if c is not _vmain]
+                    _vnd = sum(len(c.faces) for c in _vdropped)
+                    print(f"  Fringe: post-vertex-sweep dropped {len(_vdropped)} "
+                          f"straggler component(s) ({_vnd} faces)")
+                    mesh = _vmain
+            except Exception as _exc_vsweep:
+                print(f"  Fringe: post-vertex-sweep component cleanup skipped ({_exc_vsweep})")
+
+    # ── NEGATIVE-EXTRUSION SWEEP (task 734, Topo 2026-09-05) ─────────────────
+    # Thomas's directive: treat the union of ALL raw carve polygons (green +
+    # every trap + every water) as a HARD EXCLUSION ZONE for the fringe. Any
+    # fringe geometry whose XY footprint has ANY interior overlap with those
+    # polygons is REMOVED — no inward buffer, no protection for boundary walls,
+    # no tolerance. Fringe filament is ABSENT inside those regions, period.
+    #
+    # Rationale: 8 prior rounds tuned inward buffers / gap constants and still
+    # tripped Bambu Studio's "conflict of gcode paths" warning. Rather than
+    # trusting the carve to leave a clean hole, we now enforce the clearance by
+    # post-assembly negative extrusion — anything overlapping the raw carve
+    # union gets stripped from the fringe filament regardless of provenance.
+    #
+    # Two-filter union of dropped faces:
+    #   (a) XY-triangle-interior overlaps hard_exclusion_zone with area > 0.0001
+    #   (b) ANY 1 of the 3 XY vertices lies strictly inside hard_exclusion_zone
+    #       (catches vertical wall faces whose XY area is zero — the area test
+    #       misses those because their triangle degenerates to a segment).
+    #
+    # Supersedes task 728 (which used a −0.15 mm inward buffer to protect
+    # boundary walls); with the walls now legitimately expected to sit outside
+    # the exclusion zone by TRAP_FRINGE_GAP_MM / WATER_FRINGE_GAP_MM (both
+    # 1.0 mm), no such protection is needed.
+    _hard_exclusion_zone = None
+    if _final_sweep_polys or ('green_shapely' in locals() and green_shapely is not None):
+        try:
+            from shapely.ops import unary_union as _unary_union_hard
+            _hard_polys: list = []
+            if 'green_shapely' in locals() and green_shapely is not None and not green_shapely.is_empty:
+                _hard_polys.append(green_shapely)
+            for _pp, _lbl in _final_sweep_polys:
+                if _pp is not None and not _pp.is_empty:
+                    _hard_polys.append(_pp)
+            if _hard_polys:
+                _hard_exclusion_zone = _unary_union_hard(_hard_polys)
+                if _hard_exclusion_zone is not None and not _hard_exclusion_zone.is_valid:
+                    _hard_exclusion_zone = _hard_exclusion_zone.buffer(0)
+        except Exception as _exc_hard:
+            print(f"  [negative_extrusion] hard_exclusion_zone build FAILED: {_exc_hard}")
+            _hard_exclusion_zone = None
+
+    if _hard_exclusion_zone is not None and not _hard_exclusion_zone.is_empty and len(mesh.faces) > 0:
+        from shapely.geometry import Polygon as _SP_nuke
+        from shapely.geometry import Point as _SP_Point_nuke
+        try:
+            from shapely.strtree import STRtree as _STRtree_nuke
+        except Exception:
+            _STRtree_nuke = None
+
+        _nuke_verts = mesh.vertices
+        _nuke_faces = mesh.faces
+        _nuke_ax = _nuke_verts[_nuke_faces[:, 0], 0]
+        _nuke_ay = _nuke_verts[_nuke_faces[:, 0], 1]
+        _nuke_bx = _nuke_verts[_nuke_faces[:, 1], 0]
+        _nuke_by = _nuke_verts[_nuke_faces[:, 1], 1]
+        _nuke_cx = _nuke_verts[_nuke_faces[:, 2], 0]
+        _nuke_cy = _nuke_verts[_nuke_faces[:, 2], 1]
+        _nuke_drop = np.zeros(len(mesh.faces), dtype=bool)
+
+        # Bounding-box narrow to the union bounds first — faces entirely outside
+        # the zone bbox can't intrude.
+        _nxmin, _nymin, _nxmax, _nymax = _hard_exclusion_zone.bounds
+        _face_maxx = np.maximum(np.maximum(_nuke_ax, _nuke_bx), _nuke_cx)
+        _face_minx = np.minimum(np.minimum(_nuke_ax, _nuke_bx), _nuke_cx)
+        _face_maxy = np.maximum(np.maximum(_nuke_ay, _nuke_by), _nuke_cy)
+        _face_miny = np.minimum(np.minimum(_nuke_ay, _nuke_by), _nuke_cy)
+        _bbox_cand = np.where(
+            (_face_maxx >= _nxmin) & (_face_minx <= _nxmax) &
+            (_face_maxy >= _nymin) & (_face_miny <= _nymax)
+        )[0]
+
+        # ── Filter (a): XY-interior overlap area > 0.0001 mm² ──
+        _dropped_by_area = 0
+        for _nk in _bbox_cand:
+            _ntri = _SP_nuke([
+                (float(_nuke_ax[_nk]), float(_nuke_ay[_nk])),
+                (float(_nuke_bx[_nk]), float(_nuke_by[_nk])),
+                (float(_nuke_cx[_nk]), float(_nuke_cy[_nk])),
+            ])
+            if not _ntri.is_valid:
+                _ntri = _ntri.buffer(0)
+                if _ntri.is_empty:
+                    continue
+            try:
+                if _hard_exclusion_zone.intersects(_ntri):
+                    _ninter = _hard_exclusion_zone.intersection(_ntri)
+                    if _ninter.area > 0.0001:
+                        _nuke_drop[_nk] = True
+                        _dropped_by_area += 1
+            except Exception:
+                continue
+
+        # ── Filter (b): ANY vertex strictly inside hard_exclusion_zone ──
+        # (catches degenerate vertical-wall triangles whose XY area is zero)
+        _all_vx = _nuke_verts[:, 0]
+        _all_vy = _nuke_verts[:, 1]
+        _vert_in_bbox = np.where(
+            (_all_vx >= _nxmin) & (_all_vx <= _nxmax) &
+            (_all_vy >= _nymin) & (_all_vy <= _nymax)
+        )[0]
+        _vert_in_zone = np.zeros(len(_nuke_verts), dtype=bool)
+        for _vi in _vert_in_bbox:
+            if _hard_exclusion_zone.contains(
+                _SP_Point_nuke(float(_all_vx[_vi]), float(_all_vy[_vi]))
+            ):
+                _vert_in_zone[_vi] = True
+        _face_vert_hits = _vert_in_zone[_nuke_faces].any(axis=1)
+        _dropped_by_vertex_only = int(np.sum(_face_vert_hits & ~_nuke_drop))
+        _nuke_drop |= _face_vert_hits
+
+        _nuke_total = int(_nuke_drop.sum())
+        print(f"[negative_extrusion] dropped {_nuke_total} fringe faces inside "
+              f"union(green, traps, water) raw polygons "
+              f"(area-hit={_dropped_by_area}, vertex-only-hit={_dropped_by_vertex_only}) "
+              f"(task 734)")
+
+        if _nuke_total > 0:
+            _nuke_keep = np.where(~_nuke_drop)[0]
+            mesh = mesh.submesh([_nuke_keep], append=True)
+            # Rerun largest-component cleanup after negative-extrusion drop so any
+            # newly orphaned fragments are pruned before return.
+            try:
+                _nuke_comps = mesh.split(only_watertight=False)
+                if len(_nuke_comps) > 1:
+                    # Keep main body PLUS any large collar-ish components (>= 5%
+                    # of main). This preserves the outer fringe ring if the drop
+                    # separated it from the inner collar around the green.
+                    _nuke_comps_sorted = sorted(_nuke_comps, key=lambda c: len(c.faces), reverse=True)
+                    _nuke_main = _nuke_comps_sorted[0]
+                    _main_faces = len(_nuke_main.faces)
+                    _keep_comps = [_nuke_main]
+                    for _c in _nuke_comps_sorted[1:]:
+                        if len(_c.faces) >= max(50, int(0.05 * _main_faces)):
+                            _keep_comps.append(_c)
+                    _dropped_comps = [c for c in _nuke_comps if c not in _keep_comps]
+                    if _dropped_comps:
+                        _nd = sum(len(c.faces) for c in _dropped_comps)
+                        print(f"  Fringe: post-negative-extrusion dropped {len(_dropped_comps)} "
+                              f"straggler component(s) ({_nd} faces); kept {len(_keep_comps)} component(s)")
+                    if len(_keep_comps) == 1:
+                        mesh = _keep_comps[0]
+                    else:
+                        mesh = trimesh.util.concatenate(_keep_comps)
+            except Exception as _exc_nuke_split:
+                print(f"  Fringe: post-negative-extrusion component cleanup skipped ({_exc_nuke_split})")
+
+    # ── WATERTIGHT REWRITE (task 742, Topo 2026-09-05) ──────────────────────
+    # 9+ prior rounds of surgical trap/water carve fixes still left the fringe
+    # mesh fundamentally non-manifold (1115 open edges, negative volume,
+    # is_watertight=False on DeLaveaga H11 — task 738 diagnosis). Bambu Studio
+    # auto-repairs the broken mesh, inserting phantom filament in visually
+    # unpredictable places (visible in Thomas's screenshots of H11 [237] top-
+    # left trap area).
+    #
+    # Replace the assembled mesh with a `trimesh.creation.extrude_polygon`-
+    # based version of the SAME polygon-with-holes we just built for the
+    # bottom cap. The extrusion guarantees watertightness (positive volume,
+    # 0 open edges, is_volume=True). We then displace the top vertices to
+    # sample the sculpted terrain Z from the old mesh so per-cell terrain
+    # variation is preserved. Walls & bottom stay untouched → watertight.
+    #
+    # Gated by env var FRINGE_WATERTIGHT_REWRITE (default "1"=ON). Set to "0"
+    # to fall back to the legacy assembly for regression comparison.
+    import os as _os_wr
+    if _os_wr.environ.get("FRINGE_WATERTIGHT_REWRITE", "1") == "1":
+        try:
+            _old_top_z = float(mesh.vertices[:, 2].max()) if len(mesh.vertices) else 0.0
+            _new_mesh = _replace_fringe_with_watertight_extrusion(
+                mesh, bottom_poly, fringe_max_z=_old_top_z, label="fringe",
+            )
+            if _new_mesh is not None and len(_new_mesh.faces) > 0:
+                mesh = _new_mesh
+        except Exception as _exc_wr:
+            print(f"  [fringe watertight-rewrite] pass FAILED ({_exc_wr}) — "
+                  f"keeping legacy assembly")
+
+    return mesh
+
+
+def _verify_fringe_boundary(
+    fringe_mesh: trimesh.Trimesh,
+    _Z_mm: np.ndarray,
+    xs_grid: np.ndarray,
+    ys_grid: np.ndarray,
+    _inside_mask: np.ndarray,
+    green_boundary_px: np.ndarray,
+    egm_data: dict,
+) -> None:
+    """
+    Spot-check fringe Z values near the green boundary and rectangle edge.
+    Prints a brief report.
+    """
+    scale, centroid_px = _compute_px_to_mm(green_boundary_px, egm_data)
+    half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0  # matches build_fringe_mesh; signed offset
+
+    verts = fringe_mesh.vertices  # (N, 3)
+
+    # Near-green verts: within 1mm of the green boundary in XY
+    _xs_mm_green = (xs_grid - centroid_px[0]) * scale
+    _ys_mm_green = -(ys_grid - centroid_px[1]) * scale
+    green_bnd_mm = _px_to_mm_2d(green_boundary_px.copy(), scale, centroid_px)
+
+    # Find fringe verts closest to the green boundary
+    from scipy.spatial import cKDTree
+    kd = cKDTree(green_bnd_mm)
+    dists_to_green, _ = kd.query(verts[:, :2])
+    # Only consider top-surface verts (z > 0.5 mm) to exclude wall bottom verts
+    top_verts_mask = verts[:, 2] > 0.5
+    top_verts_only = verts[top_verts_mask]
+
+    near_green_top = top_verts_only[dists_to_green[top_verts_mask] < 3.0]
+
+    # Find fringe top verts near rectangle edge
+    rect_dists_top = np.minimum.reduce([
+        top_verts_only[:, 0] - (-half),
+        half - top_verts_only[:, 0],
+        top_verts_only[:, 1] - (-half),
+        half - top_verts_only[:, 1],
+    ])
+    near_rect_top = top_verts_only[rect_dists_top < 3.0]
+
+    if len(near_green_top) > 0:
+        print(f"  Fringe top-surface Z near green boundary (should match green edge): "
+              f"mean={near_green_top[:, 2].mean():.2f} "
+              f"min={near_green_top[:, 2].min():.2f} "
+              f"max={near_green_top[:, 2].max():.2f} mm")
+    else:
+        print("  No fringe top-surface verts near green boundary found")
+
+    # Task 483 regression assertion: fringe holds green-edge Z flat to the
+    # frame. Near-rect Z should be inside the green Z envelope
+    # ([BASE_THICKNESS_MM, BASE_THICKNESS_MM + elevation_range_mm]) and,
+    # more importantly, should NOT sit at BASE_THICKNESS_MM — that would
+    # mean the old ramp-to-base behavior has regressed. We only warn (not
+    # raise) because the near-green stats above already tell the reader
+    # what the green-edge Z is, and this scans the raw mesh vertices.
+    if len(near_rect_top) > 0:
+        rect_min = float(near_rect_top[:, 2].min())
+        rect_max = float(near_rect_top[:, 2].max())
+        rect_mean = float(near_rect_top[:, 2].mean())
+        print(f"  Fringe top-surface Z near rect boundary (should match "
+              f"green-edge Z — task 483, flat to frame): "
+              f"mean={rect_mean:.2f} "
+              f"min={rect_min:.2f} "
+              f"max={rect_max:.2f} mm")
+        # Regression check: if the near-rect Z envelope collapses to the
+        # base slab thickness, the old ramp-to-BASE_THICKNESS behavior has
+        # snuck back in. We flag it loudly but do not raise, because a
+        # legitimate uniform-green + BASE_THICKNESS clamp path can put a
+        # cell at that height when green_edge_h == BASE_THICKNESS_MM.
+        if len(near_green_top) > 0:
+            green_edge_mean = float(near_green_top[:, 2].mean())
+            delta = rect_mean - green_edge_mean
+            print(f"  Fringe flat-to-frame delta (rect_mean − green_mean): "
+                  f"{delta:+.2f} mm  (task 483: should be ≈ 0)")
+            if abs(delta) > 1.0 and rect_mean < green_edge_mean:
+                print("  WARNING: task 483 regression — near-rect Z is more "
+                      "than 1 mm BELOW green-edge Z; the fringe appears to "
+                      "be ramping down to the frame again.")
+    else:
+        print("  No fringe top-surface verts near rect boundary found")
+
+
+def build_mount_pipe_mesh(
+    cx: float,
+    cy: float,
+    inner_radius: float,
+    outer_radius: float,
+    z_top: float,
+    n_seg: int = 64,
+) -> trimesh.Trimesh:
+    """
+    Build a watertight hollow cylinder ("pipe") for the upper-left mounting
+    bore: a vertical annulus extruded from z=0 to z=z_top, with a clean
+    through-bore at radius `inner_radius` and an outer wall at `outer_radius`.
+
+    The mesh has four surfaces, all closed and CCW-outward:
+      - outer cylinder wall (radius=outer_radius, z in [0, z_top])
+      - inner cylinder wall (radius=inner_radius, z in [0, z_top])
+      - top annulus cap at z=z_top (between inner and outer radius)
+      - bottom annulus cap at z=0 (between inner and outer radius)
+
+    The bore (radius < inner_radius) is open from top to bottom, exactly as a
+    pipe should be. Designed for task #335: a structural wall around a 3/16"
+    mounting bore in the upper-left fringe corner.
+    """
+    if z_top <= 0.0:
+        raise ValueError(f"build_mount_pipe_mesh: z_top must be > 0 (got {z_top})")
+    if inner_radius >= outer_radius:
+        raise ValueError(
+            f"build_mount_pipe_mesh: inner_radius ({inner_radius}) must be < "
+            f"outer_radius ({outer_radius})"
+        )
+
+    angles = np.linspace(0.0, 2.0 * np.pi, n_seg, endpoint=False)
+    cos_a = np.cos(angles)
+    sin_a = np.sin(angles)
+
+    # Vertex layout: 4 rings of n_seg vertices each.
+    # Ring 0: outer-bottom (radius=outer_radius, z=0)
+    # Ring 1: outer-top    (radius=outer_radius, z=z_top)
+    # Ring 2: inner-bottom (radius=inner_radius, z=0)
+    # Ring 3: inner-top    (radius=inner_radius, z=z_top)
+    verts: list[list[float]] = []
+    for j in range(n_seg):
+        verts.append([cx + outer_radius * cos_a[j], cy + outer_radius * sin_a[j], 0.0])
+    for j in range(n_seg):
+        verts.append([cx + outer_radius * cos_a[j], cy + outer_radius * sin_a[j], z_top])
+    for j in range(n_seg):
+        verts.append([cx + inner_radius * cos_a[j], cy + inner_radius * sin_a[j], 0.0])
+    for j in range(n_seg):
+        verts.append([cx + inner_radius * cos_a[j], cy + inner_radius * sin_a[j], z_top])
+
+    def ob(j): return j                    # outer-bottom index
+    def ot(j): return n_seg + j            # outer-top index
+    def ib(j): return 2 * n_seg + j        # inner-bottom index
+    def it(j): return 3 * n_seg + j        # inner-top index
+
+    faces: list[list[int]] = []
+    for j in range(n_seg):
+        j1 = (j + 1) % n_seg
+
+        # Outer wall — outward normal points away from axis (+radial).
+        # Quad (ob[j], ob[j1], ot[j1], ot[j]) → 2 CCW tris when viewed from +radial.
+        faces.append([ob(j),  ob(j1), ot(j1)])
+        faces.append([ob(j),  ot(j1), ot(j)])
+
+        # Inner wall — outward normal points TOWARD axis (−radial), since the
+        # bore is a void inside the pipe. Reverse winding vs outer wall.
+        faces.append([ib(j),  it(j1), ib(j1)])
+        faces.append([ib(j),  it(j),  it(j1)])
+
+        # Top annulus cap at z=z_top — outward normal is +Z.
+        # Quad outer-top j → outer-top j1 → inner-top j1 → inner-top j.
+        faces.append([ot(j),  it(j1), ot(j1)])
+        faces.append([ot(j),  it(j),  it(j1)])
+
+        # Bottom annulus cap at z=0 — outward normal is −Z (reverse winding).
+        faces.append([ob(j),  ob(j1), ib(j1)])
+        faces.append([ob(j),  ib(j1), ib(j)])
+
+    mesh = trimesh.Trimesh(
+        vertices=np.asarray(verts, dtype=np.float64),
+        faces=np.asarray(faces, dtype=np.int64),
+        process=True,
+    )
+    trimesh.repair.fix_normals(mesh)
+    return mesh
+
+
+# ---------------------------------------------------------------------------
+# Step 9: Contour lines debug image
+# ---------------------------------------------------------------------------
+
+def save_contour_debug_image(
+    Z_grid: np.ndarray,
+    xs_grid: np.ndarray,
+    ys_grid: np.ndarray,
+    inside_mask: np.ndarray,
+    img: np.ndarray,
+    green_boundary_px: np.ndarray,
+    out_path: str,
+) -> None:
+    """
+    Draw contour lines on the source image within the green boundary.
+    Each of N_CONTOUR_LEVELS levels gets a distinct colour.
+    """
+    valid = Z_grid[inside_mask]
+    z_min, z_max = valid.min(), valid.max()
+
+    # Replace NaN with z_min for find_contours (outside cells)
+    Z_filled = np.where(inside_mask, Z_grid, z_min)
+
+    levels = np.linspace(z_min, z_max, N_CONTOUR_LEVELS + 2)[1:-1]  # exclude exact min/max
+
+    # Build colour palette
+    cmap = plt.get_cmap("turbo", len(levels))
+    colours_bgr = []
+    for i in range(len(levels)):
+        r, g, b, _ = cmap(i)
+        colours_bgr.append((int(b * 255), int(g * 255), int(r * 255)))
+
+    # Map grid coordinates back to pixel coords for drawing
+    # xs_grid[col] = x_pixel, ys_grid[row] = y_pixel
+    x0, x1 = xs_grid[0], xs_grid[-1]
+    y0, y1 = ys_grid[0], ys_grid[-1]
+    grid_res = Z_grid.shape[0]
+
+    vis = img.copy()
+
+    # Draw green boundary
+    boundary_i = green_boundary_px.astype(np.int32)
+    cv2.polylines(vis, [boundary_i], isClosed=True, color=(0, 220, 0), thickness=2)
+
+    for i, level in enumerate(levels):
+        contours = measure.find_contours(Z_filled, level=level)
+        colour = colours_bgr[i]
+        for contour in contours:
+            # contour is (N, 2) array in (row, col) order (floating point)
+            pts = []
+            for (row_f, col_f) in contour:
+                # Interpolate pixel position
+                px = x0 + (col_f / (grid_res - 1)) * (x1 - x0)
+                py = y0 + (row_f / (grid_res - 1)) * (y1 - y0)
+                pts.append((int(round(px)), int(round(py))))
+            if len(pts) >= 2:
+                for j in range(len(pts) - 1):
+                    cv2.line(vis, pts[j], pts[j+1], colour, thickness=2)
+
+    # Legend: colour swatch + level value
+    legend_x, legend_y = 10, 10
+    swatch_h, swatch_w = 16, 24
+    for i, level in enumerate(levels):
+        y = legend_y + i * (swatch_h + 2)
+        colour = colours_bgr[i]
+        cv2.rectangle(vis, (legend_x, y), (legend_x + swatch_w, y + swatch_h), colour, -1)
+        cv2.putText(
+            vis, f"{level:.1f}",
+            (legend_x + swatch_w + 4, y + swatch_h - 3),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1, cv2.LINE_AA
+        )
+
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    cv2.imwrite(out_path, vis)
+    print(f"  Saved: {out_path}")
+
+
+# ---------------------------------------------------------------------------
+# Step 10: Export sand trap STLs
+# ---------------------------------------------------------------------------
+
+TRAP_THICKNESS_MM: float = 10.0     # flat slab thickness for traps (fallback when no fringe)
+PRINT_TOLERANCE_MM: float = 0.03125  # inset each piece for easier fit
+# Task #604 (Topo, 2026-09-26): trap top height = adjoining fringe max Z
+# within TRAP_FRINGE_BOUNDARY_BAND_MM of the trap perimeter, offset by
+# TRAP_FRINGE_OFFSET_MM.
+# Task #606 (Topo, 2026-09-26): offset changed -2.0 → -4.0 mm per Thomas's
+# request: trap now sits 4 mm below the fringe rim instead of 2 mm.
+TRAP_FRINGE_BOUNDARY_BAND_MM: float = 6.0   # XY band width around trap perimeter to sample fringe Z
+TRAP_FRINGE_OFFSET_MM:        float = -2.0  # mm offset applied to fringe boundary min → trap height
+                                            # v0.04: -2.0 (max), v0.05–v0.09: -4.0 (max),
+                                            # v0.11: -2.0 (min) — full circle per Thomas.
+# Task v0.11 (Topo, 2026-09-30): flat scalar surface was default.
+# Task v0.12 (Topo, 2026-09-30): per-point curved surface is now the default.
+# When True (default): _compute_trap_surface_from_fringe uses nearest-neighbor
+#   fringe Z per boundary ring sample → trap_Z = fringe_Z_nearest + offset.
+#   Each boundary point tracks its local fringe Z; interior via griddata cubic.
+# When False: reverts to v0.11 flat scalar = min(fringe boundary Z) + offset.
+# Same flag pattern as SAND_RAKE_ALIGN_TO_MAJOR_AXIS — cheap insurance.
+TRAP_SURFACE_CURVED: bool = False  # False = flat min (default v0.19/task 708); True = per-point curved (task 662 path, preserved)
+# Task 708 (Topo, 2026-10-04): sand chunks (SAND_CHUNK_*), floor guard
+# (SAND_CHUNK_FLOOR_THICKNESS_MM), and the curved-surface path are all stripped
+# from the active trap pipeline.  Only rake lines + flat slab remain.
+# SAND_CHUNK_* constants removed; _scatter_sand_chunks() removed.
+# Task #610 (Topo, 2026-09-26): rake direction reverted to fixed Y-axis.  When
+# False (default), rake ridges run parallel to Y for every trap regardless of
+# shape.  Set True to re-enable PCA major-axis orientation from task #606.
+SAND_RAKE_ALIGN_TO_MAJOR_AXIS:  bool  = False  # False = fixed Y-axis; True = PCA major axis
+
+# ---------------------------------------------------------------------------
+# Water hazard ripple texture — sinusoidal "wind chop" displacement
+# ---------------------------------------------------------------------------
+#
+# Approach A from owner_inbox/golf_water_ripple_proposal.md, tuned for
+# medium-blue PLA filament (between translucent — where ripples read
+# beautifully at low amplitude — and opaque deep blue, which swallows
+# subtle texture).  Two superposed sine waves at near-perpendicular angles
+# produce an interference pattern that reads as choppy water at print scale.
+#
+# Per-pond seeding: angles + phases are derived from a hash of the water
+# polygon's control-point coordinates so the same pond regenerates the same
+# ripple every build (reproducibility) but adjacent ponds look different.
+#
+# Print constraint: top of the ripple is clamped at the unrippled water
+# height — displacement is **downward only** so peaks never poke above the
+# surrounding fringe terrain (which would create overhangs and make the
+# water slab visually float above its socket).
+WATER_RIPPLE_ENABLED: bool = False  # Disabled (fix #600, 2026-09-26): water must be
+                                    # a smooth flat slab.  The ripple displaced the
+                                    # top surface downward by up to ~0.28 mm and the
+                                    # post-ripple flatten then set the slab height to
+                                    # that minimum rather than the intended fringe-
+                                    # sampled height, causing the water mesh to sit
+                                    # visibly below its fringe socket.  The toggle is
+                                    # left in place so the ripple can be re-enabled
+                                    # if the height-error is resolved separately.
+WATER_RIPPLE_A1: float = 0.20       # primary wave amplitude, mm
+                                    #   (was 0.25 default; bumped down a touch
+                                    #   for medium-blue filament — still visible
+                                    #   but doesn't fight the colour)
+WATER_RIPPLE_A2: float = 0.08       # secondary wave amplitude, mm (interference detail)
+WATER_RIPPLE_LAMBDA1: float = 4.0   # primary wavelength, mm — choppy end of the 3–5 mm range
+WATER_RIPPLE_LAMBDA2: float = 2.5   # secondary wavelength, mm — high-frequency cross-chop
+WATER_RIPPLE_GRID_STEP: float = 0.5 # XY sampling step, mm
+                                    #   (~5 samples per primary period; one nozzle
+                                    #   width-ish.  Vertex budget ≈ 60×172/0.5² ≈
+                                    #   41 K verts per pond — well under 150 K cap.)
+
+
+def _clip_polygon_to_fringe_rect(
+    poly: ShapelyPolygon,
+    label: str,
+) -> "ShapelyPolygon | None":
+    """
+    Clip a trap or water polygon to the fringe rectangle bounding the
+    printable assembly. Thomas's rule: any trap or water shape that crosses
+    the fringe rectangle's straight edges must be cut at the rectangle so
+    nothing pokes past the frame.
+
+    The rectangle is centred at the origin in mm space and uses the same
+    half-extent as the fringe builder:
+
+        _half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0
+
+    Returns:
+      * The clipped Polygon if the input intersects the rectangle (possibly
+        equal to the input if it was already entirely inside).
+      * None if the input lies entirely outside the rectangle (caller should
+        skip emitting any mesh for it). A skip log is printed here.
+
+    If the intersection produces a MultiPolygon (rare — only if a thin
+    trap/water shape is sliced in two by the rectangle), the largest piece
+    by area is returned and the discarded pieces are logged.
+    """
+    _half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0
+    fringe_rect = shapely_box(-_half, -_half, +_half, +_half)
+    if not poly.is_valid:
+        poly = poly.buffer(0)
+    clipped = poly.intersection(fringe_rect)
+    if clipped.is_empty:
+        print(f"  skipped {label}: entirely outside fringe rectangle")
+        return None
+    if isinstance(clipped, ShapelyMultiPolygon):
+        parts = sorted(list(clipped.geoms), key=lambda g: g.area, reverse=True)
+        kept = parts[0]
+        dropped = parts[1:]
+        if dropped:
+            dropped_areas = ", ".join(f"{p.area:.2f}" for p in dropped)
+            print(f"  {label}: clip produced MultiPolygon — kept largest "
+                  f"({kept.area:.2f} mm^2), discarded {len(dropped)} part(s) "
+                  f"with areas [{dropped_areas}] mm^2")
+        return kept
+    if isinstance(clipped, ShapelyPolygon):
+        return clipped
+    # Fallback: GeometryCollection or other — try to extract polygon area
+    try:
+        polys = [g for g in clipped.geoms if isinstance(g, ShapelyPolygon) and not g.is_empty]
+        if not polys:
+            print(f"  skipped {label}: clip yielded no polygon geometry")
+            return None
+        polys.sort(key=lambda g: g.area, reverse=True)
+        return polys[0]
+    except Exception:
+        print(f"  skipped {label}: unrecognised clip geometry {type(clipped).__name__}")
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Water-containing-hole helpers (Topo, 2026-05-01)
+# ---------------------------------------------------------------------------
+
+def _hole_has_water(egm_data: dict) -> bool:
+    """True iff the EGM defines one or more polygons of type 'water'."""
+    return any(p.get("type") == "water" for p in egm_data.get("polygons", []))
+
+
+def _polygon_touches_frame_boundary(
+    poly: ShapelyPolygon,
+    tol_mm: float = BOUNDARY_TOUCH_TOL_MM,
+) -> bool:
+    """
+    Return True iff *poly* has any exterior vertex within ``tol_mm`` of the
+    fringe rectangle perimeter (±_half per axis). The fringe rectangle is the
+    same one used by ``_clip_polygon_to_fringe_rect``.
+    """
+    _half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0
+    coords = np.asarray(poly.exterior.coords, dtype=np.float64)
+    if coords.size == 0:
+        return False
+    near_x = (np.abs(np.abs(coords[:, 0]) - _half) <= tol_mm)
+    near_y = (np.abs(np.abs(coords[:, 1]) - _half) <= tol_mm)
+    return bool(np.any(near_x | near_y))
+
+
+def _apply_lift_and_cap(
+    mesh: "trimesh.Trimesh",
+    lift_mm: float,
+    cap_mm: float | None,
+    cap_mode: str = BOUNDARY_HEIGHT_CAP_MODE,
+    label: str = "",
+) -> dict:
+    """
+    Lift the *top-surface* vertices of ``mesh`` by ``lift_mm`` mm and
+    optionally cap them at ``cap_mm`` mm.
+
+    "Top-surface vertex" = any vertex with z > 0 in the input mesh. Bottom
+    vertices (z == 0) stay pinned to z=0 so the wall stretches by ``lift_mm``,
+    materialising the new 2 mm base. Mesh topology and watertight-ness are
+    unchanged because the wall stitch is preserved.
+
+    Cap modes (only applied when ``cap_mm`` is not None):
+      - "hard"     : per-vertex EDGE-BAND cap. Only top-surface vertices within
+        BOUNDARY_CAP_BAND_MM (XY distance) of the plaque frame perimeter and
+        whose z exceeds cap_mm are clipped to cap_mm. Interior vertices keep
+        their natural relief regardless of height. (Topo, 2026-05-05.)
+      - "compress" : top z values are linearly squashed so max(z) == cap_mm.
+        Whole-element behaviour preserved here (no homeowner request to revisit).
+        If max(z) <= cap_mm, no compression is applied.
+
+    Returns a small stats dict: {applied, cap_triggered, vertices_clipped,
+    max_clip_mm, z_top_before, z_top_after, band_verts, uncapped_above_cap}.
+    """
+    verts = mesh.vertices  # live reference
+    top_mask = verts[:, 2] > 1e-6
+    if not top_mask.any():
+        return {
+            "applied": False,
+            "cap_triggered": False,
+            "vertices_clipped": 0,
+            "max_clip_mm": 0.0,
+            "z_top_before": (0.0, 0.0),
+            "z_top_after":  (0.0, 0.0),
+            "band_verts": 0,
+            "uncapped_above_cap": 0,
+        }
+
+    z_before_min = float(verts[top_mask, 2].min())
+    z_before_max = float(verts[top_mask, 2].max())
+
+    # Lift top surface uniformly. Bottom (z==0) stays at z=0; walls stretch.
+    if lift_mm:
+        verts[top_mask, 2] += lift_mm
+
+    cap_triggered = False
+    n_clipped = 0
+    max_clip = 0.0
+    band_verts = 0
+    uncapped_above_cap = 0
+    # Task #606: BOUNDARY_HEIGHT_CAP_ENABLED=False suspends the cap step.
+    # The lift above still applies (water-hole raise); only the height ceiling
+    # is bypassed.  Callers that pass cap_mm=None are already a no-op; this
+    # gate makes cap_mm values irrelevant when the toggle is off.
+    if cap_mm is not None and BOUNDARY_HEIGHT_CAP_ENABLED:
+        z_top = verts[top_mask, 2]
+        if cap_mode == "hard":
+            # Per-vertex edge-band cap (Topo, 2026-05-05, tapered 2026-07-11).
+            # Compute each top vertex's XY distance to the nearest edge of
+            # the plaque frame rectangle (axis-aligned, centred at origin,
+            # ±_half per axis). For an interior point: dist = min(x - x_min,
+            # x_max - x, y - y_min, y_max - y).
+            #
+            # Cap strength is a piecewise-linear function of dist_to_edge:
+            #   * d ≤ BAND         → strength = 1.0 (hard cap: Z clipped to cap_mm)
+            #   * BAND < d < TOTAL → strength linearly ramps 1.0 → 0.0
+            #   * d ≥ TOTAL        → strength = 0.0 (untouched)
+            # where TOTAL = BAND + TAPER. The tapered clip is applied as
+            #   Z_new = Z - strength * max(Z - cap_mm, 0)
+            # so cells at Z ≤ cap_mm are never touched, and cells with Z > cap_mm
+            # have their EXCESS above the cap scaled by `strength`. This avoids
+            # the hard cliff that showed up when a water/trap polygon reached
+            # the outer edge (task #488).
+            _half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0
+            xy_top = verts[top_mask, :2]
+            dx = np.minimum(xy_top[:, 0] - (-_half), _half - xy_top[:, 0])
+            dy = np.minimum(xy_top[:, 1] - (-_half), _half - xy_top[:, 1])
+            dist_to_edge = np.minimum(dx, dy)
+            total_mm = BOUNDARY_CAP_BAND_MM + BOUNDARY_CAP_TAPER_MM
+            if BOUNDARY_CAP_TAPER_MM > 0:
+                strength = np.clip(
+                    (total_mm - dist_to_edge) / BOUNDARY_CAP_TAPER_MM,
+                    0.0, 1.0,
+                )
+            else:
+                strength = (dist_to_edge <= BOUNDARY_CAP_BAND_MM).astype(np.float64)
+            above_cap = z_top > cap_mm
+            excess = np.maximum(z_top - cap_mm, 0.0)
+            band_verts = int((dist_to_edge <= BOUNDARY_CAP_BAND_MM).sum())
+            uncapped_above_cap = int(
+                (above_cap & (dist_to_edge > total_mm)).sum()
+            )
+            affected = above_cap & (strength > 0.0)
+            n_clipped = int(affected.sum())
+            if n_clipped:
+                cap_triggered = True
+                z_top_new = z_top - strength * excess
+                clip_amounts = (z_top - z_top_new)[affected]
+                max_clip = float(clip_amounts.max()) if clip_amounts.size else 0.0
+                verts[top_mask, 2] = z_top_new
+        elif cap_mode == "compress":
+            zmax = float(z_top.max())
+            if zmax > cap_mm:
+                cap_triggered = True
+                # Compress around the bottom (z=0): scale top z's by cap/zmax.
+                scale = cap_mm / zmax
+                # "Vertices clipped" here = vertices whose z was lowered.
+                lowered = z_top * scale
+                n_clipped = int((z_top - lowered > 1e-6).sum())
+                max_clip = float((z_top - lowered).max())
+                verts[top_mask, 2] = lowered
+        else:
+            raise ValueError(
+                f"BOUNDARY_HEIGHT_CAP_MODE={cap_mode!r} not in {{'hard','compress'}}"
+            )
+
+    z_after_min = float(verts[top_mask, 2].min())
+    z_after_max = float(verts[top_mask, 2].max())
+
+    if label:
+        extra = ""
+        if cap_mm is not None and cap_mode == "hard":
+            n_top = int(top_mask.sum())
+            extra = (f", band_verts={band_verts}/{n_top} "
+                     f"(band={BOUNDARY_CAP_BAND_MM:.2f}mm, "
+                     f"taper={BOUNDARY_CAP_TAPER_MM:.2f}mm), "
+                     f"uncapped_above_cap={uncapped_above_cap}")
+        print(f"    lift+cap [{label}]: lift={lift_mm:.2f} mm, "
+              f"cap={'-' if cap_mm is None else f'{cap_mm:.1f} mm ({cap_mode})'}, "
+              f"z_top {z_before_min:.2f}-{z_before_max:.2f} → "
+              f"{z_after_min:.2f}-{z_after_max:.2f}, "
+              f"clipped {n_clipped} vert(s), max_clip {max_clip:.2f} mm" + extra)
+
+    return {
+        "applied": True,
+        "cap_triggered": cap_triggered,
+        "vertices_clipped": n_clipped,
+        "max_clip_mm": max_clip,
+        "z_top_before": (z_before_min, z_before_max),
+        "z_top_after":  (z_after_min, z_after_max),
+        "band_verts": band_verts,
+        "uncapped_above_cap": uncapped_above_cap,
+    }
+
+
+def _trap_grid_override(
+    trap_poly_mm: "ShapelyPolygon",
+    grid_cell_heights: dict,
+    cell_side: float,
+    half: float,
+    grid_size: int = 20,
+) -> "float | None":
+    """Return mean of user-set grid-cell values whose centre is inside the trap
+    polygon, or ``None`` if no user-set cells fall inside the polygon.
+
+    Only cells explicitly listed in ``grid_cell_heights`` (the user-set sparse
+    dict from ``egm["gridCellHeights"]``) are tested.  Cells that are absent
+    carry Poisson-default Z values and must **not** trigger the override —
+    otherwise every trap would always be overridden.
+
+    Cell-centre coordinates (world mm, origin at centre of frame):
+
+        cx = -half + (col + 0.5) * cell_side
+        cy = -half + (row + 0.5) * cell_side
+
+    where ``half = PRINT_SIZE_MM/2 + FRINGE_XY_EXPANSION_MM/2`` and
+    ``cell_side = (2 * half) / grid_size``.
+
+    Containment uses Shapely's ``Polygon.contains(Point)`` which is strict
+    interior — cell centres exactly on the polygon boundary are excluded.
+
+    Parameters
+    ----------
+    trap_poly_mm : ShapelyPolygon
+        Trap footprint in world mm coords (may be pre-inset or raw; caller
+        decides; export_trap_stls passes the raw shapely_trap so that the
+        geometric test is on the full footprint, consistent with the editor).
+    grid_cell_heights : dict
+        Sparse dict of ``{str(cell_index): mm_value}`` from
+        ``egm["gridCellHeights"]``.  Empty dict → returns None immediately.
+    cell_side : float
+        Side length (mm) of each square grid cell.
+    half : float
+        Half-frame size in mm: ``PRINT_SIZE_MM/2 + FRINGE_XY_EXPANSION_MM/2``.
+    grid_size : int
+        Number of cells per axis (default 20 → 20×20 = 400 cells).
+
+    Returns
+    -------
+    float or None
+        Mean of the contained cell values, or None when no user-set cell falls
+        inside the trap polygon.  As of v5.19 (project-grid-cell-elevation-
+        mechanism), ``gridCellHeights`` values are **signed delta offsets** (mm)
+        relative to the fringe-based default trap height — not absolute Z values.
+    """
+    if not grid_cell_heights:
+        return None
+    from shapely.geometry import Point as _ShapelyPoint
+    hits: list[float] = []
+    for cell_idx_str, mm in grid_cell_heights.items():
+        try:
+            cell_idx = int(cell_idx_str)
+            val = float(mm)
+        except (TypeError, ValueError):
+            continue
+        row = cell_idx // grid_size
+        col = cell_idx % grid_size
+        cx = -half + (col + 0.5) * cell_side
+        cy = -half + (row + 0.5) * cell_side
+        if trap_poly_mm.contains(_ShapelyPoint(cx, cy)):
+            hits.append(val)
+    if hits:
+        return float(np.mean(hits))
+    return None
+
+
+def _compute_trap_height_from_fringe(
+    trap_poly_mm: "ShapelyPolygon",
+    fringe_mesh: "trimesh.Trimesh | None",
+    boundary_band_mm: float = TRAP_FRINGE_BOUNDARY_BAND_MM,
+    offset_mm: float = TRAP_FRINGE_OFFSET_MM,
+) -> float:
+    """
+    Return the target top-surface height for a trap slab (mm).
+
+    v0.11 rule (flat-min, TRAP_SURFACE_CURVED=False):
+        find the MINIMUM Z of fringe-mesh top-surface vertices within
+        ``boundary_band_mm`` of the trap polygon's exterior ring, then
+        add ``offset_mm`` (= -2.0 → 2 mm below the lowest fringe point).
+
+    v0.04/v0.05/v0.09 rule (max-based, used when TRAP_SURFACE_CURVED=True):
+        find the MAXIMUM Z in the band (preserves historic per-side behavior
+        of the scalar helper in curved mode).
+
+    "Adjoining fringe" is defined as fringe vertices within
+    TRAP_FRINGE_BOUNDARY_BAND_MM of the trap exterior.  This correctly
+    captures the fringe surface that immediately borders the trap without
+    pulling in far-interior fringe cells or the opposite-side fringe.
+
+    Sequencing note: ``fringe_mesh`` must be the FLAT (pre-texture,
+    pre-lift) fringe so the height comparison is in the same coordinate
+    frame as the un-lifted trap slab.  The water-hole lift is applied to
+    both fringe and trap uniformly AFTER this function has sized the slab.
+
+    Fallback: when ``fringe_mesh`` is None (no fringe available), returns
+    ``TRAP_THICKNESS_MM`` (existing fixed-height behaviour).
+
+    Parameters
+    ----------
+    trap_poly_mm : ShapelyPolygon
+        Trap footprint in world mm coords (post-inset).
+    fringe_mesh : trimesh.Trimesh or None
+        Flat fringe mesh in world mm coords.  Top-surface verts have z > 0.
+    boundary_band_mm : float
+        XY distance from trap exterior within which fringe verts are
+        considered "adjoining".
+    offset_mm : float
+        Height delta applied to fringe boundary min (or max in curved mode).
+        Negative means trap top sits below the fringe rim (default -2.0 mm).
+
+    Returns
+    -------
+    float : trap slab height in mm (>= 1.0).
+    """
+    from scipy.spatial import cKDTree as _cKDTree
+
+    if fringe_mesh is None:
+        return float(TRAP_THICKNESS_MM)
+
+    all_verts = fringe_mesh.vertices
+    top_mask = all_verts[:, 2] > 0.0
+    fringe_verts_top = all_verts[top_mask]
+    if len(fringe_verts_top) == 0:
+        return float(TRAP_THICKNESS_MM)
+
+    # Build a KD-tree over fringe top-surface XY positions.
+    fringe_kd = _cKDTree(fringe_verts_top[:, :2])
+
+    # Sample points along the trap exterior ring (and a slightly expanded
+    # ring) to capture the fringe vertices immediately bordering the trap.
+    # We densify the exterior ring so spacing is ≤ 1 mm.
+    exterior_coords = np.asarray(trap_poly_mm.exterior.coords, dtype=np.float64)
+    n_ext = len(exterior_coords)
+    ring_pts = []
+    for j in range(n_ext - 1):
+        p0 = exterior_coords[j]
+        p1 = exterior_coords[(j + 1) % (n_ext - 1)]
+        seg_len = float(np.linalg.norm(p1 - p0))
+        n_interp = max(2, int(np.ceil(seg_len / 1.0)))
+        for t in np.linspace(0.0, 1.0, n_interp, endpoint=False):
+            ring_pts.append(p0 + t * (p1 - p0))
+    if not ring_pts:
+        return float(TRAP_THICKNESS_MM)
+
+    ring_pts = np.array(ring_pts, dtype=np.float64)  # (M, 2)
+
+    # For each ring sample, query all fringe verts within boundary_band_mm.
+    # We collect indices of fringe verts within the band radius.
+    nearby_indices = fringe_kd.query_ball_point(ring_pts, r=boundary_band_mm)
+    # Flatten and deduplicate
+    flat_indices = set()
+    for idxs in nearby_indices:
+        flat_indices.update(idxs)
+
+    if not flat_indices:
+        # Boundary band produced no hits — fall back to nearest-neighbour per
+        # ring point (handles very sparse fringe meshes).
+        _, nn_idxs = fringe_kd.query(ring_pts)
+        flat_indices = set(nn_idxs.tolist())
+
+    boundary_z = fringe_verts_top[np.array(sorted(flat_indices), dtype=int), 2]
+    if TRAP_SURFACE_CURVED:
+        # Curved mode (task 654): use max so each side tracks its local fringe peak.
+        fringe_boundary_ref = float(boundary_z.max())
+    else:
+        # Flat-min mode (v0.11 default): use min so the trap sits below the
+        # lowest fringe interface point around its entire perimeter.
+        fringe_boundary_ref = float(boundary_z.min())
+    trap_height = fringe_boundary_ref + offset_mm
+    if trap_height < 1.0:
+        # Guard: never produce a slab thinner than 1 mm regardless of offset.
+        trap_height = 1.0
+    return trap_height
+
+
+def _compute_trap_surface_from_fringe(
+    trap_poly_mm: "ShapelyPolygon",
+    fringe_mesh: "trimesh.Trimesh | None",
+    query_xy: "np.ndarray",
+    boundary_band_mm: float = TRAP_FRINGE_BOUNDARY_BAND_MM,
+    offset_mm: float = TRAP_FRINGE_OFFSET_MM,
+) -> "np.ndarray":
+    """
+    Return per-point trap surface Z values (mm) for an arbitrary set of XY
+    query points.
+
+    Dispatch
+    --------
+    Behaviour is controlled by the module-level flag ``TRAP_SURFACE_CURVED``:
+
+    **TRAP_SURFACE_CURVED = True** (default, v0.12):
+        Per-point curved surface.  For each boundary ring sample the **nearest**
+        fringe vertex Z is found (nearest-neighbour lookup), giving a true per-point
+        offset: ``trap_Z = fringe_Z_nearest + offset_mm``.  Interior points are
+        filled via ``scipy.interpolate.griddata`` cubic + linear fallback.
+        Gap between trap edge and fringe is uniform (``|offset_mm|`` mm) at every
+        boundary point, regardless of fringe slope.
+
+    **TRAP_SURFACE_CURVED = False** (v0.11 fallback):
+        Flat scalar surface.  All query points return the same value:
+            Z = min(fringe boundary Z within band) + offset_mm
+        This is the "flat min" rule: trap sits ``|offset_mm|`` mm below the
+        *lowest* fringe point around its perimeter.  On sloped fringe, the gap
+        at the high end is larger than offset_mm.
+
+    Caller stability
+    ----------------
+    Both paths return ``np.ndarray`` of shape ``(N,)`` — the flat path fills
+    every element with the scalar, so the caller signature is identical.
+
+    Fallback
+    --------
+    If ``fringe_mesh`` is None, or the fringe mesh has no top-surface vertices,
+    every query point returns ``TRAP_THICKNESS_MM`` (flat slab fallback).
+    The ``boundary_band_mm`` parameter is only used by the flat (False) path.
+
+    Parameters
+    ----------
+    trap_poly_mm : ShapelyPolygon
+        Trap footprint in world mm coords (post-inset).
+    fringe_mesh : trimesh.Trimesh or None
+        Flat (pre-texture, pre-lift) fringe mesh in world mm coords.
+        Top-surface verts have z > 0.
+    query_xy : np.ndarray, shape (N, 2)
+        XY positions at which to evaluate the trap surface Z.
+    boundary_band_mm : float
+        XY distance from trap exterior within which fringe verts are sampled
+        (flat path only; curved path uses NN regardless of band).
+    offset_mm : float
+        Signed depth offset applied to the boundary anchor Z.
+        Negative → trap below fringe.
+
+    Returns
+    -------
+    np.ndarray, shape (N,)
+        Trap surface Z in mm at each query point.
+    """
+    from scipy.spatial import cKDTree as _cKDTree
+
+    query_xy = np.asarray(query_xy, dtype=np.float64)
+    n_query  = len(query_xy)
+    fallback = float(TRAP_THICKNESS_MM)
+
+    # --- Fallback path 1: no fringe mesh ---
+    if fringe_mesh is None:
+        return np.full(n_query, fallback, dtype=np.float64)
+
+    all_verts = fringe_mesh.vertices
+    top_mask  = all_verts[:, 2] > 0.0
+    fringe_top = all_verts[top_mask]
+
+    if len(fringe_top) == 0:
+        return np.full(n_query, fallback, dtype=np.float64)
+
+    fringe_kd = _cKDTree(fringe_top[:, :2])
+
+    # --- Step 1: densify trap exterior ring ---
+    exterior_coords = np.asarray(trap_poly_mm.exterior.coords, dtype=np.float64)
+    n_ext = len(exterior_coords)
+    ring_pts = []
+    for j in range(n_ext - 1):
+        p0 = exterior_coords[j]
+        p1 = exterior_coords[(j + 1) % (n_ext - 1)]
+        seg_len = float(np.linalg.norm(p1 - p0))
+        n_interp = max(2, int(np.ceil(seg_len / 1.0)))
+        for t in np.linspace(0.0, 1.0, n_interp, endpoint=False):
+            ring_pts.append(p0 + t * (p1 - p0))
+    if not ring_pts:
+        return np.full(n_query, fallback, dtype=np.float64)
+
+    ring_pts = np.array(ring_pts, dtype=np.float64)  # (M, 2)
+
+    # --- Step 2: per ring-sample, collect fringe Z within the band ---
+    nearby_indices = fringe_kd.query_ball_point(ring_pts, r=boundary_band_mm)
+
+    if TRAP_SURFACE_CURVED:
+        # Curved path (task 666, v0.12): per-sample NEAREST fringe Z.
+        # For each ring sample, query the single nearest fringe vertex and use
+        # its Z value.  This gives a true per-point 2 mm offset at every
+        # boundary sample, regardless of fringe slope.
+        # (Old v0.09 path used max(within band) which over-lifted the trap on
+        # the low side of a sloped fringe — gap could exceed 2 mm there.)
+        _, nn_idxs = fringe_kd.query(ring_pts)
+        ring_z_boundary = fringe_top[nn_idxs, 2].copy().astype(np.float64)
+        # NN query always returns a valid index when fringe_top is non-empty
+        # (guaranteed above), so ring_z_boundary is always fully finite.
+
+        # Apply offset: trap Z at each ring sample = fringe boundary Z + offset_mm.
+        ring_z_trap = ring_z_boundary + offset_mm
+        # Guard: no sample below 1 mm.
+        ring_z_trap = np.maximum(ring_z_trap, 1.0)
+
+        # --- Step 3: interpolate interior points from boundary constraints ---
+        from scipy.interpolate import griddata as _griddata
+        mean_boundary_z = float(ring_z_trap.mean())
+        z_out = _griddata(ring_pts, ring_z_trap, query_xy, method="cubic")
+
+        # NaN from cubic outside convex hull → fill with linear.
+        nan_mask = ~np.isfinite(z_out)
+        if nan_mask.any():
+            z_linear = _griddata(ring_pts, ring_z_trap, query_xy[nan_mask], method="linear")
+            still_nan = ~np.isfinite(z_linear)
+            z_linear[still_nan] = mean_boundary_z
+            z_out[nan_mask] = z_linear
+
+        return z_out
+
+    else:
+        # Flat min path (v0.11 default):
+        # Collect ALL fringe Z values from the entire boundary band across all
+        # ring samples, then take the global minimum.  This ensures the trap
+        # top never exceeds the lowest fringe interface point.
+        all_boundary_z = []
+        for idxs in nearby_indices:
+            if idxs:
+                all_boundary_z.extend(
+                    fringe_top[np.array(idxs, dtype=int), 2].tolist()
+                )
+
+        if not all_boundary_z:
+            # Fallback path 2: no boundary fringe within band.
+            return np.full(n_query, fallback, dtype=np.float64)
+
+        fringe_boundary_min = float(np.min(all_boundary_z))
+        trap_scalar_z = max(fringe_boundary_min + offset_mm, 1.0)
+        return np.full(n_query, trap_scalar_z, dtype=np.float64)
+
+
+
+def export_trap_stls(
+    egm_data: dict,
+    green_boundary_px: np.ndarray,
+    slug: str,
+    fringe_mesh: "trimesh.Trimesh | None" = None,
+    stl_dir: str | None = None,
+    write_stls: bool = True,
+    pipe_circle: "ShapelyPolygon | None" = None,
+    apply_fringe_frame_cap: bool = True,
+) -> list:
+    """
+    For every polygon of type 'trap' in egm_data, build a flat inset slab.
+
+    When ``write_stls`` is True (default), each trap is exported to
+    {stl_dir}/{slug}_trap_N.stl and a list of file paths is returned. When
+    ``write_stls`` is False, no disk I/O is performed and a list of
+    ``(node_name, trimesh.Trimesh)`` tuples is returned instead — the pipeline
+    consumes those directly for the 3MF without round-tripping through disk.
+
+    stl_dir defaults to the course's STLs/ folder (via course_paths), falling
+    back to OWNER_INBOX if the course is unknown. It is only used when
+    ``write_stls`` is True.
+
+    Uses Catmull-Rom interpolation (matching the editor), applies the same
+    px→mm transform as the green, insets by PRINT_TOLERANCE_MM, and extrudes
+    to a height derived from the fringe boundary (falls back to TRAP_THICKNESS_MM
+    if fringe_mesh is unavailable).
+
+    Task #604 changes
+    -----------------
+    * Trap height: now computed by _compute_trap_height_from_fringe, which
+      samples fringe Z within TRAP_FRINGE_BOUNDARY_BAND_MM of the trap
+      perimeter and subtracts TRAP_FRINGE_OFFSET_MM (2 mm), placing the trap
+      top 2 mm below the adjoining fringe rim.
+
+    * Frame-edge cap: ``_apply_lift_and_cap`` is now called unconditionally
+      (not only on water holes), gated by ``apply_fringe_frame_cap``.  When
+      True, top-surface vertices within BOUNDARY_CAP_BAND_MM of the plaque
+      frame are clipped to BOUNDARY_HEIGHT_CAP_MM with a BOUNDARY_CAP_TAPER_MM
+      taper — exactly matching fringe behaviour.  When False, no cap is applied
+      (mirrors ``applyFringeFrameCap=False`` on fringe).
+
+    Parameters
+    ----------
+    apply_fringe_frame_cap : bool
+        Mirror of the EGM-level applyFringeFrameCap flag.  Default True.
+        When False, the boundary-band cap is skipped for traps (same as fringe).
+    """
+    from shapely.geometry import Point as ShapelyPoint
+
+    if write_stls:
+        if stl_dir is None:
+            course = egm_data.get("course", "")
+            if course:
+                stl_dir = course_paths(course)["stls"]
+            else:
+                stl_dir = OWNER_INBOX
+        os.makedirs(stl_dir, exist_ok=True)
+
+    scale, centroid_px = _compute_px_to_mm(green_boundary_px, egm_data)
+
+    trap_polygons = [p for p in egm_data.get("polygons", []) if p.get("type") == "trap"]
+    if not trap_polygons:
+        print("  No trap polygons found in EGM data.")
+        return []
+
+    # Water-containing-hole rule (Topo 2026-05-01): if the EGM contains any
+    # water polygon, every trap is lifted by WATER_HOLE_LIFT_MM.
+    _hole_water = WATER_HOLE_LIFT_ENABLED and _hole_has_water(egm_data)
+    if _hole_water:
+        print(f"  Water-hole rule active: lift={WATER_HOLE_LIFT_MM} mm")
+
+    # Task #604: frame-edge cap is now applied unconditionally (not only on
+    # water holes), mirroring fringe behaviour and gated by apply_fringe_frame_cap.
+    _trap_cap_mm = BOUNDARY_HEIGHT_CAP_MM if apply_fringe_frame_cap else None
+    if apply_fringe_frame_cap:
+        print(f"  Trap frame cap: {BOUNDARY_HEIGHT_CAP_MM} mm "
+              f"(band={BOUNDARY_CAP_BAND_MM} mm, taper={BOUNDARY_CAP_TAPER_MM} mm, "
+              f"mode={BOUNDARY_HEIGHT_CAP_MODE})")
+    else:
+        print("  Trap frame cap: DISABLED (apply_fringe_frame_cap=False)")
+
+    results: list = []
+    for i, trap_poly in enumerate(trap_polygons, start=1):
+        try:
+            # Route through _poly_to_dense_px so smoothed points from load_egm
+            # (task 705) are consumed as-is; falls back to Catmull-Rom for any
+            # legacy code path that skipped smoothing (defensive — should not
+            # happen in the run_pipeline flow).
+            pts_px = _poly_to_dense_px(trap_poly)
+
+            # Convert pixel coords → mm, Y-flipped
+            pts_mm = _px_to_mm_2d(pts_px, scale, centroid_px)
+
+            shapely_trap = ShapelyPolygon(pts_mm)
+
+            # #347: subtract the mount-pipe footprint BEFORE the fringe-rect
+            # clip so the rectangle clip sees the post-subtraction shape and
+            # the trap mesh doesn't overlap the pipe column.
+            if pipe_circle is not None:
+                shapely_trap = _subtract_pipe_from_polygon(
+                    shapely_trap, pipe_circle, f"Trap {i}"
+                )
+                if shapely_trap is None:
+                    continue
+
+            # Clip to fringe rectangle so the trap never extends past the
+            # printable frame edges (Thomas's rule, see #343).
+            shapely_trap = _clip_polygon_to_fringe_rect(shapely_trap, f"Trap {i}")
+            if shapely_trap is None:
+                continue
+
+            # Apply tolerance inset using Shapely
+            if not shapely_trap.is_valid:
+                shapely_trap = shapely_trap.buffer(0)
+            shapely_inset = shapely_trap.buffer(-PRINT_TOLERANCE_MM)
+
+            if shapely_inset.is_empty:
+                print(f"  Trap {i}: inset produced empty polygon — skipping.")
+                continue
+
+            # Task v0.11 (Topo, 2026-09-30): flat-min trap surface.
+            # TRAP_SURFACE_CURVED=False (default): trap top is a flat scalar at
+            #   min(fringe boundary Z) + TRAP_FRINGE_OFFSET_MM (-2mm).
+            # TRAP_SURFACE_CURVED=True: per-point curved surface (task 654).
+            # In both cases _compute_trap_surface_from_fringe returns a Z-map
+            # of shape (N,); the flat path fills every element with the scalar.
+            from generate_stl_3mf import _build_slab_from_shapely
+
+            # Build the interior grid for base-Z sampling (used only on curved path;
+            # on flat path the grid is still passed in for a uniform-Z result which
+            # detects the fringe-min height).
+            _gstep = 0.225   # matches apply_sand_texture default grain_spacing*0.2
+            _minx_t, _miny_t, _maxx_t, _maxy_t = shapely_inset.bounds
+            _gxs = np.arange(_minx_t, _maxx_t + _gstep, _gstep)
+            _gys = np.arange(_miny_t, _maxy_t + _gstep, _gstep)
+            _gx, _gy = np.meshgrid(_gxs, _gys)
+            _grid_xy = np.column_stack([_gx.ravel(), _gy.ravel()])
+
+            _base_z_vals = _compute_trap_surface_from_fringe(
+                shapely_inset, fringe_mesh, _grid_xy
+            )
+            _computed_height = float(_base_z_vals.max())  # scalar on flat, max on curved
+            _is_fallback = (fringe_mesh is None or
+                            abs(_computed_height - TRAP_THICKNESS_MM) < 0.05)
+
+            if not _is_fallback:
+                if TRAP_SURFACE_CURVED:
+                    print(f"  Trap {i}: curved surface, base Z range "
+                          f"[{_base_z_vals.min():.2f}, {_base_z_vals.max():.2f}] mm "
+                          f"(fringe - {abs(TRAP_FRINGE_OFFSET_MM):.0f} mm)")
+                    trap_height  = _computed_height
+                    _trap_base_z_map: "tuple | None" = (_grid_xy, _base_z_vals)
+                else:
+                    # Flat-min path: uniform Z scalar from _compute_trap_surface_from_fringe.
+                    # base_z_map is not needed — apply_sand_texture uses uniform z_max.
+                    trap_height  = _computed_height
+                    _trap_base_z_map = None
+                    print(f"  Trap {i}: flat surface, height = {trap_height:.2f} mm "
+                          f"(fringe_boundary_min + {TRAP_FRINGE_OFFSET_MM:.1f} mm offset)")
+            else:
+                # Fallback: no adjoining fringe → fixed TRAP_THICKNESS_MM.
+                trap_height  = _compute_trap_height_from_fringe(shapely_inset, fringe_mesh)
+                _trap_base_z_map = None
+                if fringe_mesh is not None:
+                    print(f"  Trap {i}: height from fringe boundary = {trap_height:.2f} mm "
+                          f"(fringe_boundary_min + {TRAP_FRINGE_OFFSET_MM:.1f} mm offset)")
+                else:
+                    print(f"  Trap {i}: no fringe mesh — using fixed height {trap_height:.2f} mm")
+
+            # Task v0.20 (Topo, 2026-10-05): grid-cell altitude override.
+            # If any user-set gridCellHeights entry has its cell centre inside
+            # this trap polygon, use mean(values) as the flat trap Z.
+            # Only applies on the flat path (TRAP_SURFACE_CURVED=False).
+            # The curved path sets trap_height per-point above; override not applied.
+            if not TRAP_SURFACE_CURVED:
+                _gch = egm_data.get("gridCellHeights") or {}
+                _grid_half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0
+                _grid_cell_side = (2.0 * _grid_half) / 20
+                _grid_override_delta = _trap_grid_override(
+                    shapely_trap, _gch, _grid_cell_side, _grid_half
+                )
+                if _grid_override_delta is not None:
+                    _new_height = trap_height + _grid_override_delta
+                    # Floor at BASE_THICKNESS_MM so a strong negative delta can't push
+                    # the trap below the base plate (unprintable geometry).
+                    _new_height = max(BASE_THICKNESS_MM, _new_height)
+                    print(f"  Trap {i}: grid-cell delta override active — "
+                          f"height {trap_height:.2f} mm + mean delta "
+                          f"{_grid_override_delta:+.2f} mm → {_new_height:.2f} mm "
+                          f"(mean of user-set delta cells inside trap polygon)")
+                    trap_height = _new_height
+                    _trap_base_z_map = None  # override is flat scalar; discard curved map
+
+            # Build slab at the (possibly curved) maximum height.
+            mesh = _build_slab_from_shapely(shapely_inset, trap_height)
+
+            # Apply sand grain texture to the top face (must precede lift; the
+            # texture detects the top via z_max-relative threshold so it works
+            # at any base height, but applying it first means the lift moves a
+            # finished textured surface as one block).
+            # When base_z_map is provided, apply_sand_texture uses per-point
+            # curved base Z for the rake displacement and per-vertex floor guard.
+            apply_sand_texture(mesh, trap_index=i, base_z_map=_trap_base_z_map)
+
+            # NOTE (Topo, 2026-09-26 — fix #600): the post-texture flatten that
+            # previously lived here was erroneously wiping the sinusoidal
+            # rake-line Z variation that apply_sand_texture just built.
+            # apply_sand_texture rebuilds the entire top surface as a regular
+            # Delaunay grid with the cosine-wave displacement already baked in;
+            # collapsing all top verts to min-Z afterwards destroyed the texture.
+            # The flatten is removed; the trap slab height is set correctly by
+            # _build_slab_from_shapely and the rake amplitude is small (≤0.35 mm)
+            # relative to the slab height (~9 mm), so no height-guardrail is needed.
+
+            # Task #604 (Topo, 2026-09-26): frame-edge cap is applied
+            # UNCONDITIONALLY (not only on water holes), matching fringe behaviour.
+            # _apply_lift_and_cap with cap_mm=None is a no-op for the cap logic
+            # but still applies the water-hole lift when _hole_water is True.
+            # Per-vertex: only verts within BOUNDARY_CAP_BAND_MM of the frame are
+            # clipped, so interior-only traps are unaffected by the cap.
+            touches = _polygon_touches_frame_boundary(shapely_inset)
+            _apply_lift_and_cap(
+                mesh,
+                lift_mm=WATER_HOLE_LIFT_MM if _hole_water else 0.0,
+                cap_mm=_trap_cap_mm,
+                label=(f"trap_{i}"
+                       + (" (boundary)" if touches else "")
+                       + (" cap=disabled" if _trap_cap_mm is None else "")),
+            )
+
+            bb = mesh.bounds
+            print(f"  Trap {i}: {len(mesh.vertices)} verts, {len(mesh.faces)} faces, "
+                  f"watertight={mesh.is_watertight}, "
+                  f"X[{bb[0,0]:.1f},{bb[1,0]:.1f}] Y[{bb[0,1]:.1f},{bb[1,1]:.1f}] "
+                  f"Z[{bb[0,2]:.2f},{bb[1,2]:.2f}] mm")
+
+            if write_stls:
+                out_path = os.path.join(stl_dir, f"{slug}_trap_{i}.stl")
+                mesh.export(out_path)
+                print(f"  Saved: {out_path}")
+                results.append(out_path)
+            else:
+                results.append((f"trap_{i}", mesh))
+
+        except Exception as exc:
+            import traceback
+            print(f"  ERROR exporting trap {i}: {exc}")
+            traceback.print_exc()
+
+    return results
+
+
+def export_water_meshes(
+    egm_data: dict,
+    green_boundary_px: np.ndarray,
+    slug: str,
+    fringe_mesh: "trimesh.Trimesh | None" = None,
+    stl_dir: str | None = None,
+    write_stls: bool = True,
+    pipe_circle: "ShapelyPolygon | None" = None,
+) -> list:
+    """
+    Build flat slab meshes for every polygon of type 'water' in egm_data.
+
+    Mirrors export_trap_stls: same px→mm transform, same Catmull-Rom interp,
+    same PRINT_TOLERANCE_MM inset, same fringe-Z minimum sampling for the
+    deck height. The only differences:
+      * Skips the sand-grain rake texture (water is a smooth flat slab).
+      * Scene node name uses ``water_N`` so _filament_for_scene_name routes
+        the geometry to extruder 4.
+      * STL files (when written) use ``{slug}_water_N.stl``.
+
+    Returns the same shape as export_trap_stls: list of file paths when
+    ``write_stls`` is True, else list of (node_name, trimesh.Trimesh).
+    """
+    from scipy.spatial import cKDTree as _cKDTree
+    from shapely.geometry import Point as ShapelyPoint
+
+    if write_stls:
+        if stl_dir is None:
+            course = egm_data.get("course", "")
+            if course:
+                stl_dir = course_paths(course)["stls"]
+            else:
+                stl_dir = OWNER_INBOX
+        os.makedirs(stl_dir, exist_ok=True)
+
+    scale, centroid_px = _compute_px_to_mm(green_boundary_px, egm_data)
+
+    water_polygons = [p for p in egm_data.get("polygons", []) if p.get("type") == "water"]
+    if not water_polygons:
+        print("  No water polygons found in EGM data.")
+        return []
+
+    fringe_kd = None
+    fringe_verts_top = None
+    if fringe_mesh is not None:
+        all_verts = fringe_mesh.vertices
+        top_mask = all_verts[:, 2] > 0.0
+        fringe_verts_top = all_verts[top_mask]
+        if len(fringe_verts_top) > 0:
+            fringe_kd = _cKDTree(fringe_verts_top[:, :2])
+        else:
+            print("  WARNING: fringe mesh has no top-surface vertices (Z>0); water heights will fall back to fixed.")
+
+    results: list = []
+    for i, water_poly in enumerate(water_polygons, start=1):
+        try:
+            pts_px = _poly_to_dense_px(water_poly)
+            pts_mm = _px_to_mm_2d(pts_px, scale, centroid_px)
+
+            shapely_water = ShapelyPolygon(pts_mm)
+
+            # #347: subtract the mount-pipe footprint BEFORE the fringe-rect
+            # clip so the rectangle clip sees the post-subtraction shape and
+            # the water mesh doesn't overlap the pipe column. PGA West-Arnold
+            # Palmer #5 — water polygon spans the upper-left fringe corner.
+            if pipe_circle is not None:
+                shapely_water = _subtract_pipe_from_polygon(
+                    shapely_water, pipe_circle, f"Water {i}"
+                )
+                if shapely_water is None:
+                    continue
+
+            # Clip to fringe rectangle (#343) — water hazards on hole 5 of
+            # PGA West-Arnold Palmer were leaking past the frame edge.
+            shapely_water = _clip_polygon_to_fringe_rect(shapely_water, f"Water {i}")
+            if shapely_water is None:
+                continue
+
+            if not shapely_water.is_valid:
+                shapely_water = shapely_water.buffer(0)
+            shapely_inset = shapely_water.buffer(-PRINT_TOLERANCE_MM)
+
+            if shapely_inset.is_empty:
+                print(f"  Water {i}: inset produced empty polygon — skipping.")
+                continue
+
+            # Sample fringe Z over the water footprint, take the minimum so the
+            # slab never pokes above the surrounding surface.
+            if fringe_kd is not None:
+                minx, miny, maxx, maxy = shapely_inset.bounds
+                n_sample = 12
+                xs_s = np.linspace(minx, maxx, n_sample)
+                ys_s = np.linspace(miny, maxy, n_sample)
+                sample_pts = []
+                for sx in xs_s:
+                    for sy in ys_s:
+                        if shapely_inset.contains(ShapelyPoint(sx, sy)):
+                            sample_pts.append([sx, sy])
+                cx, cy = shapely_inset.centroid.x, shapely_inset.centroid.y
+                if not sample_pts:
+                    sample_pts = [[cx, cy]]
+                sample_pts = np.array(sample_pts)
+                _, idxs = fringe_kd.query(sample_pts)
+                sampled_z = fringe_verts_top[idxs, 2]
+                water_height = float(sampled_z.min())
+                print(f"  Water {i}: fringe Z min over {len(sample_pts)} samples = {water_height:.2f} mm")
+            else:
+                water_height = TRAP_THICKNESS_MM
+                print(f"  Water {i}: no fringe mesh — using fixed height {water_height} mm")
+
+            from generate_stl_3mf import _build_slab_from_shapely
+            mesh = _build_slab_from_shapely(shapely_inset, water_height)
+
+            # Sinusoidal "wind chop" ripple displacement on the top face.
+            # Gated by WATER_RIPPLE_ENABLED for easy on/off.  Per-pond seed
+            # comes from the polygon's control points so the same pond always
+            # regenerates the same ripple but different ponds look different.
+            if WATER_RIPPLE_ENABLED:
+                apply_water_ripple_texture(
+                    mesh,
+                    water_index=i,
+                    control_points_px=water_poly.get("points", []),
+                )
+
+            # NOTE (Topo, 2026-09-26 — fix #600): post-ripple flatten removed.
+            # The ripple was disabled (WATER_RIPPLE_ENABLED = False) because it
+            # displaced the top surface downward and the flatten then set the
+            # slab height to the ripple minimum rather than the fringe-sampled
+            # height — causing the water mesh to sit ~0.28 mm too low.  With the
+            # ripple off, _build_slab_from_shapely produces a perfectly flat slab
+            # at the correct height; no post-processing flatten is needed.
+            # If WATER_RIPPLE_ENABLED is re-enabled in the future, a height-
+            # preserving approach (e.g. clamp dz upward so the top stays at
+            # water_height) should be used instead of post-hoc flattening.
+
+            bb = mesh.bounds
+            print(f"  Water {i}: {len(mesh.vertices)} verts, {len(mesh.faces)} faces, "
+                  f"watertight={mesh.is_watertight}, "
+                  f"X[{bb[0,0]:.1f},{bb[1,0]:.1f}] Y[{bb[0,1]:.1f},{bb[1,1]:.1f}] mm")
+
+            if write_stls:
+                out_path = os.path.join(stl_dir, f"{slug}_water_{i}.stl")
+                mesh.export(out_path)
+                print(f"  Saved: {out_path}")
+                results.append(out_path)
+            else:
+                # Scene name MUST start with "water" so _filament_for_scene_name
+                # routes it to extruder 4 (per the convention in #329).
+                results.append((f"water_{i}", mesh))
+
+        except Exception as exc:
+            import traceback
+            print(f"  ERROR exporting water {i}: {exc}")
+            traceback.print_exc()
+
+    return results
+
+
+def export_boulders_meshes(
+    egm_data: dict,
+    green_boundary_px: np.ndarray,
+    slug: str,
+    fringe_mesh: "trimesh.Trimesh | None" = None,
+    stl_dir: str | None = None,
+    write_stls: bool = True,
+    pipe_circle: "ShapelyPolygon | None" = None,
+) -> list:
+    """
+    Build meshes for every polygon of type 'boulders' in egm_data.
+
+    Two modes, chosen per-polygon:
+
+    **Annulus mode** (water-carved): when a boulders polygon geometrically
+    encloses at least one water polygon (full-ring containment —
+    `boulders_sp.covers(water_sp)` — never a centroid-only check), the
+    boulders mesh is the difference boulders_poly MINUS the union of those
+    enclosed water polygons. `covers` (not `contains`) is the predicate of
+    record so frame-edge-sharing water polygons (the standard output of the
+    boundary-region derivation in task #463) still register as enclosed.
+    The resulting Shapely polygon has one or more interior rings (holes).
+    `_build_slab_from_shapely` / `trimesh.creation.extrude_polygon` handle
+    holed polygons natively.  Height treatment mirrors water: fringe-Z minimum
+    over the annulus footprint so the slab sits flush in the carved recess.
+    Scene name starts with "boulders" → extruder 5.
+
+    **On-top mode** (v3.20 fallback): when no water polygon is enclosed, the
+    boulders mesh is a filled flat slab sitting above the surface at the fringe
+    Z minimum, same as the previous implementation.
+
+    The fringe carving for annulus-mode boulders is handled in
+    `build_fringe_mesh`, which collects boulders-annuli in the same
+    `_carve_shapely` list as traps and water.
+
+    Returns list of (node_name, trimesh.Trimesh) when write_stls=False, else
+    list of file paths.
+    """
+    from scipy.spatial import cKDTree as _cKDTree
+    from shapely.geometry import Point as ShapelyPoint
+    from shapely.ops import unary_union as _unary_union
+
+    if write_stls:
+        if stl_dir is None:
+            course = egm_data.get("course", "")
+            if course:
+                stl_dir = course_paths(course)["stls"]
+            else:
+                stl_dir = OWNER_INBOX
+        os.makedirs(stl_dir, exist_ok=True)
+
+    scale, centroid_px = _compute_px_to_mm(green_boundary_px, egm_data)
+
+    boulders_polygons = [p for p in egm_data.get("polygons", []) if p.get("type") == "boulders"]
+    if not boulders_polygons:
+        print("  No boulders polygons found in EGM data.")
+        return []
+
+    # Pre-build Shapely water polygons in mm coords for containment checks.
+    water_shapely_mm: list[ShapelyPolygon] = []
+    for wp in egm_data.get("polygons", []):
+        if wp.get("type") != "water":
+            continue
+        try:
+            w_pts_px = _poly_to_dense_px(wp)
+        except Exception:
+            w_pts_px = np.array([[p["x"], p["y"]] for p in wp["points"]], dtype=np.float64)
+        w_pts_mm = _px_to_mm_2d(w_pts_px, scale, centroid_px)
+        try:
+            wsp = ShapelyPolygon(w_pts_mm)
+            if not wsp.is_valid:
+                wsp = wsp.buffer(0)
+            water_shapely_mm.append(wsp)
+        except Exception:
+            pass
+
+    fringe_kd = None
+    fringe_verts_top = None
+    if fringe_mesh is not None:
+        all_verts = fringe_mesh.vertices
+        top_mask = all_verts[:, 2] > 0.0
+        fringe_verts_top = all_verts[top_mask]
+        if len(fringe_verts_top) > 0:
+            fringe_kd = _cKDTree(fringe_verts_top[:, :2])
+        else:
+            print("  WARNING: fringe mesh has no top-surface vertices (Z>0); boulders heights will fall back to fixed.")
+
+    results: list = []
+    for i, boulders_poly in enumerate(boulders_polygons, start=1):
+        try:
+            pts_px = _poly_to_dense_px(boulders_poly)
+            pts_mm = _px_to_mm_2d(pts_px, scale, centroid_px)
+
+            shapely_boulders = ShapelyPolygon(pts_mm)
+            if not shapely_boulders.is_valid:
+                shapely_boulders = shapely_boulders.buffer(0)
+
+            # --- Determine mode: annulus or on-top slab ---
+            # Full-ring containment: water polygon counts as enclosed when
+            # boulders_sp.covers(water_sp) is True — the entire water ring
+            # must lie inside the boulders polygon, not just its centroid.
+            # `covers` is used instead of `contains` (task #466) so that
+            # water polygons sharing frame-edge boundary with the boulders
+            # polygon (the normal case after the boundary-region derivation
+            # in task #463) still register as enclosed and trigger annulus
+            # mode. `contains` would return False on boundary-touching pairs
+            # and fall back to the on-top slab path, placing the boulders
+            # ribbon in the fringe area instead of inside the water.
+            shapely_boulders_padded = shapely_boulders.buffer(
+                BOUNDARY_REGION_COVERS_TOL_MM
+            )
+            enclosed_water = [wsp for wsp in water_shapely_mm
+                              if shapely_boulders_padded.covers(wsp)]
+            annulus_mode = len(enclosed_water) > 0
+            if annulus_mode:
+                water_union = _unary_union(enclosed_water)
+                shapely_boulders = shapely_boulders.difference(water_union)
+                if not shapely_boulders.is_valid:
+                    shapely_boulders = shapely_boulders.buffer(0)
+                print(f"  Boulders {i}: ANNULUS mode — {len(enclosed_water)} enclosed water polygon(s) subtracted.")
+            else:
+                print(f"  Boulders {i}: ON-TOP mode — no enclosed water polygon found.")
+
+            if pipe_circle is not None:
+                shapely_boulders = _subtract_pipe_from_polygon(
+                    shapely_boulders, pipe_circle, f"Boulders {i}"
+                )
+                if shapely_boulders is None:
+                    continue
+
+            if annulus_mode:
+                shapely_boulders = _clip_polygon_to_fringe_rect(shapely_boulders, f"Boulders {i}")
+            else:
+                shapely_boulders = _clip_polygon_to_fringe_rect(shapely_boulders, f"Boulders {i}")
+            if shapely_boulders is None:
+                continue
+
+            if not shapely_boulders.is_valid:
+                shapely_boulders = shapely_boulders.buffer(0)
+            shapely_inset = shapely_boulders.buffer(-PRINT_TOLERANCE_MM)
+
+            if shapely_inset.is_empty:
+                print(f"  Boulders {i}: inset produced empty polygon — skipping.")
+                continue
+
+            # Sample fringe Z over the boulders footprint (same recipe as water).
+            if fringe_kd is not None:
+                minx, miny, maxx, maxy = shapely_inset.bounds
+                n_sample = 12
+                xs_s = np.linspace(minx, maxx, n_sample)
+                ys_s = np.linspace(miny, maxy, n_sample)
+                sample_pts = []
+                for sx in xs_s:
+                    for sy in ys_s:
+                        if shapely_inset.contains(ShapelyPoint(sx, sy)):
+                            sample_pts.append([sx, sy])
+                cx, cy = shapely_inset.centroid.x, shapely_inset.centroid.y
+                if not sample_pts:
+                    sample_pts = [[cx, cy]]
+                sample_pts = np.array(sample_pts)
+                _, idxs = fringe_kd.query(sample_pts)
+                sampled_z = fringe_verts_top[idxs, 2]
+                boulders_height = float(sampled_z.min())
+                print(f"  Boulders {i}: fringe Z min over {len(sample_pts)} samples = {boulders_height:.2f} mm")
+            else:
+                boulders_height = TRAP_THICKNESS_MM
+                print(f"  Boulders {i}: no fringe mesh — using fixed height {boulders_height} mm")
+
+            from generate_stl_3mf import _build_slab_from_shapely
+            mesh = _build_slab_from_shapely(shapely_inset, boulders_height)
+
+            bb = mesh.bounds
+            n_interior = 0
+            from shapely.geometry import MultiPolygon as _MP
+            if isinstance(shapely_inset, _MP):
+                for _g in shapely_inset.geoms:
+                    n_interior += len(list(_g.interiors))
+            else:
+                n_interior = len(list(shapely_inset.interiors))
+            mode_tag = f"annulus ({n_interior} hole(s))" if annulus_mode else "on-top slab"
+            print(f"  Boulders {i} [{mode_tag}]: {len(mesh.vertices)} verts, {len(mesh.faces)} faces, "
+                  f"watertight={mesh.is_watertight}, "
+                  f"X[{bb[0,0]:.1f},{bb[1,0]:.1f}] Y[{bb[0,1]:.1f},{bb[1,1]:.1f}] mm")
+
+            if write_stls:
+                out_path = os.path.join(stl_dir, f"{slug}_boulders_{i}.stl")
+                mesh.export(out_path)
+                print(f"  Saved: {out_path}")
+                results.append(out_path)
+            else:
+                results.append((f"boulders_{i}", mesh))
+
+        except Exception as exc:
+            import traceback
+            print(f"  ERROR exporting boulders {i}: {exc}")
+            traceback.print_exc()
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Boundary-region derivation (task #460): auto-derive boulders ring from water
+# ---------------------------------------------------------------------------
+
+# Width of the auto-derived boulders ring just inside each water polygon's
+# original outer edge. Five millimetres matches the manual riprap band Thomas
+# was previously annotating by hand.
+BOUNDARY_REGION_BAND_MM: float = 5.0
+
+# Outward buffer applied to the boulders polygon ONLY for the
+# `boulders.covers(water)` predicate that picks annulus vs on-top mode.
+# After _apply_boundary_region_derivation runs, the shrunken-water polygon
+# can have a few vertices a hair (≤ snap tol = 0.02 mm) outside the original
+# water outline, which makes strict `.covers()` return False and silently
+# falls the boulders polygon back to on-top mode — a full slab placed on
+# the fringe instead of the intended 5 mm ring carved into the water.
+BOUNDARY_REGION_COVERS_TOL_MM: float = 0.1
+
+
+def _poly_to_dense_px(poly: dict) -> np.ndarray:
+    """Return an Nx2 dense pixel polyline for a polygon.
+
+    For polygons synthesised by ``_apply_boundary_region_derivation``
+    (flagged with ``"_dense_px_points": True``), the stored ``points`` are
+    already a dense pre-interpolated outline produced by Shapely's
+    buffer/simplify pipeline — passing them through Catmull-Rom again would
+    introduce overshoot wiggles that desynchronise the boulders / shrunken-
+    water outlines, breaking the ``shapely_boulders.covers(water_sp)``
+    check in :func:`export_boulders_meshes` and producing an on-top slab
+    instead of the intended annular ring.
+
+    For all other polygons, fall back to the editor's Catmull-Rom spline
+    (matching the editor's preview).
+    """
+    if poly.get("_dense_px_points"):
+        pts = np.array(
+            [[p["x"], p["y"]] for p in poly.get("points", [])],
+            dtype=np.float64,
+        )
+        return pts
+    return interpolate_catmull_rom(poly["points"])
+
+
+def _poly_to_raw_catmull_px(poly: dict) -> np.ndarray:
+    """Return the RAW Catmull-Rom polyline for a polygon (task 723).
+
+    After ``load_egm`` smoothing, ``poly["points"]`` contains the smoothed
+    polyline.  The fringe carve-out and snap target must reference the
+    un-smoothed (raw Catmull-Rom) boundary so fringe walls are never placed
+    in the gap zone between the smoothed and raw polygon boundaries — that gap
+    causes slicer gcode-path conflicts between the fringe layer and the trap
+    slab layer.
+
+    ``load_egm`` stashes the pre-smoothing Catmull-Rom result in
+    ``poly["_raw_catmull_px"]`` (task 723).  If that key is absent (boulders,
+    water not processed through the smoothing loop, or very old code paths),
+    fall back to ``_poly_to_dense_px`` which returns the smoothed version.
+    """
+    raw = poly.get("_raw_catmull_px")
+    if raw is not None:
+        return np.asarray(raw, dtype=np.float64)
+    return _poly_to_dense_px(poly)
+
+
+def _mm_to_px_2d(pts_mm: np.ndarray, scale: float, centroid_px: np.ndarray) -> np.ndarray:
+    """Inverse of ``_px_to_mm_2d``: convert Nx2 mm coords back to image pixels.
+
+    The forward transform is ``mm_xy = (px - centroid) * scale`` with Y flipped.
+    The inverse un-flips Y first, then divides by scale and re-adds the centroid.
+    """
+    xy = pts_mm.copy().astype(np.float64)
+    xy[:, 1] = -xy[:, 1]  # un-flip Y
+    return xy / scale + centroid_px
+
+
+def _shapely_outer_coords_to_px(
+    poly_mm: ShapelyPolygon,
+    scale: float,
+    centroid_px: np.ndarray,
+    simplify_tol_mm: float = 0.25,
+) -> list[dict]:
+    """Convert the EXTERIOR ring of a Shapely polygon (mm) to the px-dict format
+    EGM polygons use (``[{"x": float, "y": float}, ...]``).
+
+    Drops the duplicated closing vertex Shapely produces — EGM control points
+    are an open ring (the editor and downstream code close it implicitly).
+    Lightly simplifies the polygon first (``simplify_tol_mm``) so the dense
+    buffer output doesn't feed thousands of near-collinear "control points"
+    into the downstream Catmull-Rom interpolator (which would produce minor
+    spline wiggles between near-duplicate vertices).
+    """
+    if simplify_tol_mm > 0:
+        try:
+            simplified = poly_mm.simplify(simplify_tol_mm, preserve_topology=True)
+            if isinstance(simplified, ShapelyPolygon) and not simplified.is_empty:
+                poly_mm = simplified
+        except Exception:
+            pass
+    coords = np.asarray(poly_mm.exterior.coords, dtype=np.float64)
+    # Shapely's `exterior.coords` repeats the first point at the end.
+    if len(coords) >= 2 and np.allclose(coords[0], coords[-1]):
+        coords = coords[:-1]
+    pts_px = _mm_to_px_2d(coords, scale, centroid_px)
+    return [{"x": float(p[0]), "y": float(p[1])} for p in pts_px]
+
+
+def _apply_boundary_region_derivation(
+    egm_data: dict,
+    green_boundary_px: np.ndarray,
+    band_mm: float = BOUNDARY_REGION_BAND_MM,
+) -> None:
+    """In-place: replace boulders polygons with auto-derived rings around water.
+
+    For each ``water`` polygon in ``egm_data["polygons"]``:
+      1. Convert its (Catmull-Rom interpolated) outline to mm.
+      2. Compute ``water_shrunk = water_orig.buffer(-band_mm)``.
+      3. If ``water_shrunk`` is empty (the water is already smaller than the
+         band), log a warning and leave that water polygon untouched — no
+         ring is synthesised for it.
+      4. Otherwise:
+           * Replace the water polygon's stored points with the shrunken
+             outline (so export_water_meshes and the fringe carve see the
+             smaller water).
+           * Add a NEW ``boulders`` polygon whose outer ring equals the
+             ORIGINAL water outline. The downstream annulus-mode logic
+             (``boulders_sp.covers(water_sp)``) will then subtract the
+             shrunken water to produce the actual ring shape.
+
+    All synthesised geometry is clipped to the printable fringe rectangle so
+    nothing leaks past the plaque frame. Any pre-existing boulders polygon is
+    dropped to prevent double-counting.
+
+    Mutates ``egm_data["polygons"]`` in place.
+    """
+    polygons = egm_data.get("polygons", [])
+    water_polys = [p for p in polygons if p.get("type") == "water"]
+    print(
+        f"[BOUNDARY_REGION] _apply_boundary_region_derivation called: "
+        f"band_mm={band_mm:.2f}, water_polygons={len(water_polys)}, "
+        f"existing_boulders="
+        f"{sum(1 for p in polygons if p.get('type') == 'boulders')}"
+    )
+    if not water_polys:
+        print("  boundary region: no water polygons — nothing to derive.")
+        return
+
+    scale, centroid_px = _compute_px_to_mm(green_boundary_px, egm_data)
+    _half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0
+    fringe_rect = shapely_box(-_half, -_half, +_half, +_half)
+
+    # Frame-edge band: a ``band_mm``-wide corridor running along the inside of
+    # the plaque/frame perimeter. Wherever the original water polygon touches
+    # the frame edge, we want the water mesh to remain flush with the frame —
+    # NOT shrunk inward by ``band_mm``. So we restore that corridor to the
+    # shrunken water (Option A) and the boulders ring derives naturally from
+    # ``water_orig.difference(water_shrunk)`` without any frame-flush strip.
+    # Guarded against degenerate frame rectangles (< 2*band_mm in either axis).
+    _frame_inner = fringe_rect.buffer(-band_mm)
+    if _frame_inner.is_empty or not _frame_inner.is_valid:
+        frame_edge_band = None  # frame too small — skip suppression
+    else:
+        frame_edge_band = fringe_rect.difference(_frame_inner)
+        if frame_edge_band.is_empty or not frame_edge_band.is_valid:
+            frame_edge_band = None
+
+    n_existing_boulders = sum(1 for p in polygons if p.get("type") == "boulders")
+    if n_existing_boulders:
+        print(
+            f"  boundary region: replacing {n_existing_boulders} existing "
+            "boulders polygon(s) with auto-derived ring(s)."
+        )
+
+    new_polygons: list[dict] = []
+    n_rings = 0
+    n_skipped = 0
+    for poly in polygons:
+        ptype = poly.get("type")
+        if ptype == "boulders":
+            # Drop existing boulders polygons — the derivation replaces them.
+            continue
+        if ptype != "water":
+            new_polygons.append(poly)
+            continue
+
+        # ── Build mm-space shapes for this water polygon ──
+        try:
+            pts_px = interpolate_catmull_rom(poly["points"])
+        except Exception:
+            pts_px = np.array([[p["x"], p["y"]] for p in poly["points"]],
+                              dtype=np.float64)
+        pts_mm = _px_to_mm_2d(pts_px, scale, centroid_px)
+        try:
+            water_orig = ShapelyPolygon(pts_mm)
+            if not water_orig.is_valid:
+                water_orig = water_orig.buffer(0)
+        except Exception as exc:
+            print(f"  boundary region: water polygon → Shapely failed: {exc}. "
+                  "Keeping original water polygon unchanged.")
+            new_polygons.append(poly)
+            continue
+
+        # Clip the original water shape to the printable rectangle so the
+        # synthesised boulders polygon never extends past the plaque frame.
+        water_orig_clipped = water_orig.intersection(fringe_rect)
+        if not water_orig_clipped.is_valid:
+            water_orig_clipped = water_orig_clipped.buffer(0)
+        # If clipping produced a MultiPolygon, keep the largest piece (the
+        # downstream slab builder is single-polygon).
+        if isinstance(water_orig_clipped, ShapelyMultiPolygon):
+            water_orig_clipped = max(water_orig_clipped.geoms, key=lambda g: g.area)
+        if water_orig_clipped.is_empty or not isinstance(water_orig_clipped, ShapelyPolygon):
+            print("  boundary region: water polygon lies entirely outside fringe "
+                  "rectangle — skipping.")
+            new_polygons.append(poly)
+            continue
+
+        # Compute the shrunken water. buffer(-band) can yield empty or
+        # multi-piece results when the water is smaller than ~2*band on any
+        # axis; we treat that as a skip.
+        water_shrunk = water_orig_clipped.buffer(-band_mm)
+        if not water_shrunk.is_valid:
+            water_shrunk = water_shrunk.buffer(0)
+        # Option A: restore the frame-edge corridor to the shrunken water so
+        # the water remains flush with the plaque frame wherever it already
+        # touched the frame. The resulting boulders ring
+        # (= water_orig.difference(water_shrunk)) therefore has zero width
+        # along frame-flush boundaries and the full ``band_mm`` along
+        # interior (fringe-adjacent) boundaries. No-op if water_orig doesn't
+        # touch the frame at all (intersection is empty).
+        if frame_edge_band is not None:
+            try:
+                frame_overlap = water_orig_clipped.intersection(frame_edge_band)
+                if not frame_overlap.is_empty:
+                    water_shrunk = water_shrunk.union(frame_overlap)
+                    # Fix A (task #465): the union of an inward-buffered polygon
+                    # with a frame-flush band often introduces T-junctions /
+                    # collinear runs / sliver seams that survive into the
+                    # Delaunay water mesh as edges shared by 3+ faces. Heal with
+                    # buffer(0) + simplify before the outline is consumed.
+                    water_shrunk = water_shrunk.buffer(0)
+                    water_shrunk = water_shrunk.simplify(0.01, preserve_topology=True)
+                    # Fix (task #466): simplify(0.01) can nudge vertices up to
+                    # 0.01 mm outward, pushing water_shrunk just outside
+                    # water_orig_clipped. Snap shared vertices back so the
+                    # downstream ``boulders_sp.covers(water_sp)`` check in
+                    # export_boulders_meshes / build_fringe_mesh actually
+                    # returns True (otherwise annulus mode is skipped and the
+                    # boulders ring falls back to the on-top slab path,
+                    # appearing as a ribbon in the fringe instead of inside
+                    # the water polygon).
+                    from shapely import snap as _shapely_snap
+                    water_shrunk = _shapely_snap(
+                        water_shrunk, water_orig_clipped, 0.02
+                    )
+                    if not water_shrunk.is_valid:
+                        water_shrunk = water_shrunk.buffer(0)
+            except Exception as exc:
+                print(f"  boundary region: frame-edge suppression failed "
+                      f"({exc}); falling back to uniform 5 mm ring.")
+        if water_shrunk.is_empty:
+            print(
+                f"  boundary region: water polygon too small to shrink by "
+                f"{band_mm:.1f} mm — leaving water unchanged and skipping ring."
+            )
+            new_polygons.append(poly)
+            n_skipped += 1
+            continue
+        if isinstance(water_shrunk, ShapelyMultiPolygon):
+            # Keep the largest connected piece — the slab builder is
+            # single-polygon and split water would otherwise become
+            # several mismatched pieces.
+            water_shrunk = max(water_shrunk.geoms, key=lambda g: g.area)
+        if not isinstance(water_shrunk, ShapelyPolygon) or water_shrunk.is_empty:
+            print(
+                f"  boundary region: water polygon shrink → non-polygon "
+                f"({type(water_shrunk).__name__}). Skipping ring."
+            )
+            new_polygons.append(poly)
+            n_skipped += 1
+            continue
+
+        # Replace this water polygon's points with the shrunken outline.
+        # Skip simplification — these points are consumed directly (no
+        # Catmull-Rom re-interp), so dense buffer output is fine. A sparse
+        # 0.25 mm-simplified ring would also leave the water ripple Delaunay
+        # with too few rim verts (61 boundary edges fail manifold check).
+        new_water_pts = _shapely_outer_coords_to_px(
+            water_shrunk, scale, centroid_px, simplify_tol_mm=0.0,
+        )
+        if len(new_water_pts) < 3:
+            print("  boundary region: shrunken water polygon has < 3 points — "
+                  "skipping ring and leaving water unchanged.")
+            new_polygons.append(poly)
+            n_skipped += 1
+            continue
+        new_water = dict(poly)
+        new_water["points"] = new_water_pts
+        # The new water points are a dense exterior outline straight from
+        # Shapely (post-buffer + simplify). They MUST NOT be passed through
+        # Catmull-Rom again — that would re-introduce overshoot bulges that
+        # desynchronise the water outline from the matching boulders ring.
+        # See _poly_to_dense_px and task #461.
+        new_water["_dense_px_points"] = True
+        new_polygons.append(new_water)
+
+        # Synthesise the boulders polygon = ORIGINAL water (clipped). The
+        # downstream annulus-mode carve will subtract water_shrunk to obtain
+        # the actual ring shape. Skip simplification for the same reason as
+        # the water polygon above — dense points are consumed directly.
+        boulders_outer_pts = _shapely_outer_coords_to_px(
+            water_orig_clipped, scale, centroid_px, simplify_tol_mm=0.0,
+        )
+        if len(boulders_outer_pts) < 3:
+            print("  boundary region: boulders outer ring has < 3 points — "
+                  "skipping ring.")
+            n_skipped += 1
+            continue
+        new_polygons.append({
+            "name": f"boulders_auto_{n_rings + 1}",
+            "type": "boulders",
+            "closed": True,
+            "points": boulders_outer_pts,
+            "auto_derived": True,
+            # Dense pre-interpolated outline straight from Shapely — skip the
+            # Catmull-Rom pass downstream so the boulders polygon stays in
+            # lock-step with the matching shrunken water polygon and
+            # ``shapely_boulders.covers(water_sp)`` reliably holds. See
+            # _poly_to_dense_px and task #461.
+            "_dense_px_points": True,
+        })
+        n_rings += 1
+        print(
+            f"  boundary region: derived ring around water polygon "
+            f"'{poly.get('name', '?')}' — water shrunk by {band_mm:.1f} mm, "
+            f"ring area ≈ {(water_orig_clipped.area - water_shrunk.area):.2f} mm^2."
+        )
+
+    egm_data["polygons"] = new_polygons
+    print(
+        f"[BOUNDARY_REGION] derivation done: derived {n_rings} ring(s); "
+        f"skipped {n_skipped}; dropped {n_existing_boulders} manual boulders polygon(s); "
+        f"post-derivation polygon count={len(new_polygons)} "
+        f"(water={sum(1 for p in new_polygons if p.get('type')=='water')}, "
+        f"boulders={sum(1 for p in new_polygons if p.get('type')=='boulders')})."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Sand grain texture
+# ---------------------------------------------------------------------------
+
+def _fill_missing_ring_edges(
+    top_faces: "np.ndarray",
+    loops_local: "list[list[int]]",
+    all_xy: "np.ndarray",
+    n_ring: int,
+    shapely_poly,
+) -> "np.ndarray":
+    """Guarantee every boundary-ring edge appears in the top-face triangulation.
+
+    After Delaunay + centroid-clip, some ring edges (loop[i], loop[i+1]) may be
+    missing because Delaunay bridged ring[i]→ring[i+2] with a thin skip-triangle
+    that then got dropped. Those gaps leave pinhole holes that `fill_holes()`
+    can't close.
+
+    Strategy (Topo, 2026-10-14 — second pass): for each missing ring edge A-B,
+    find a vertex X that is ALREADY connected to BOTH A and B in `top_faces`.
+    Adding triangle (A, B, X) then closes the hole with ZERO new boundary edges
+    (since A-X and B-X already exist). If no such shared neighbour exists, fall
+    back to the nearest-interior-vertex fan (which may create new interior
+    boundary edges — captured by the caller's watertight assertion).
+    """
+    import numpy as np
+    from shapely import contains_xy
+
+    if top_faces.size == 0 or not loops_local:
+        return top_faces
+
+    # Existing undirected edges in top faces.
+    e_all = np.sort(
+        np.vstack([top_faces[:, [0, 1]], top_faces[:, [1, 2]], top_faces[:, [2, 0]]]),
+        axis=1,
+    )
+    present = {(int(a), int(b)) for a, b in e_all}
+    # Vertex adjacency: for each vertex, set of neighbours.
+    n_verts = int(top_faces.max()) + 1
+    adj: list[set[int]] = [set() for _ in range(n_verts)]
+    for u, v in e_all:
+        adj[int(u)].add(int(v))
+        adj[int(v)].add(int(u))
+
+    # Fallback KD-tree over interior points.
+    interior_xy = all_xy[n_ring:]
+    n_interior = len(interior_xy)
+    from scipy.spatial import cKDTree
+    kd = cKDTree(interior_xy) if n_interior else None
+
+    def _signed_area(ax, ay, bx, by, cx, cy):
+        return 0.5 * ((bx - ax) * (cy - ay) - (cx - ax) * (by - ay))
+
+    added: list[tuple[int, int, int]] = []
+    missing_count = 0
+    closed_via_shared = 0
+    closed_via_fan = 0
+    for loop in loops_local:
+        if len(loop) < 2:
+            continue
+        for i in range(len(loop)):
+            a = int(loop[i])
+            b = int(loop[(i + 1) % len(loop)])
+            key = (min(a, b), max(a, b))
+            if key in present:
+                continue
+            missing_count += 1
+            ax, ay = all_xy[a]
+            bx, by = all_xy[b]
+
+            # Preferred: find a vertex X already adjacent to BOTH A and B.
+            # Adding (A,B,X) adds no new boundary edges.
+            shared = adj[a] & adj[b] if a < n_verts and b < n_verts else set()
+            chosen = None
+            for xi in shared:
+                cx, cy = all_xy[xi]
+                cent = ((ax + bx + cx) / 3.0, (ay + by + cy) / 3.0)
+                if not bool(contains_xy(shapely_poly, cent[0], cent[1])):
+                    continue
+                # Winding — pick order producing CCW (positive) for Delaunay convention.
+                if _signed_area(ax, ay, bx, by, cx, cy) > 0.0:
+                    chosen = (a, b, int(xi))
+                elif _signed_area(bx, by, ax, ay, cx, cy) > 0.0:
+                    chosen = (b, a, int(xi))
+                else:
+                    continue
+                closed_via_shared += 1
+                break
+
+            # Fallback: nearest-interior fan (may add new boundary edges).
+            if chosen is None and kd is not None:
+                mid = np.array([(ax + bx) * 0.5, (ay + by) * 0.5])
+                k_try = min(32, n_interior)
+                _, nn = kd.query(mid, k=k_try)
+                nn_arr = np.atleast_1d(nn)
+                for ci in nn_arr:
+                    cx, cy = interior_xy[int(ci)]
+                    if _signed_area(ax, ay, bx, by, cx, cy) > 0.0:
+                        cent = ((ax + bx + cx) / 3.0, (ay + by + cy) / 3.0)
+                        if bool(contains_xy(shapely_poly, cent[0], cent[1])):
+                            chosen = (a, b, n_ring + int(ci))
+                            closed_via_fan += 1
+                            break
+                    if _signed_area(bx, by, ax, ay, cx, cy) > 0.0:
+                        cent = ((ax + bx + cx) / 3.0, (ay + by + cy) / 3.0)
+                        if bool(contains_xy(shapely_poly, cent[0], cent[1])):
+                            chosen = (b, a, n_ring + int(ci))
+                            closed_via_fan += 1
+                            break
+
+            if chosen is not None:
+                added.append(chosen)
+                present.add((min(chosen[0], chosen[1]), max(chosen[0], chosen[1])))
+                present.add((min(chosen[1], chosen[2]), max(chosen[1], chosen[2])))
+                present.add((min(chosen[0], chosen[2]), max(chosen[0], chosen[2])))
+                # Update adjacency so a subsequent missing edge can see this triangle.
+                adj[chosen[0]].add(chosen[1]); adj[chosen[1]].add(chosen[0])
+                adj[chosen[0]].add(chosen[2]); adj[chosen[2]].add(chosen[0])
+                adj[chosen[1]].add(chosen[2]); adj[chosen[2]].add(chosen[1])
+
+    if missing_count or added:
+        ring_edges_total = sum(len(lp) for lp in loops_local if len(lp) >= 2)
+        print(f"    Sand ring-stitch: ring_edges={ring_edges_total} "
+              f"present_before={ring_edges_total - missing_count} "
+              f"missing={missing_count} added={len(added)} "
+              f"(shared_vertex={closed_via_shared} nearest_fan={closed_via_fan})")
+    if not added:
+        return top_faces
+    return np.vstack([top_faces, np.array(added, dtype=top_faces.dtype)])
+
+
+def _close_interior_boundary_edges(
+    top_faces: "np.ndarray",
+    tri_faces_all: "np.ndarray",
+    all_xy: "np.ndarray",
+    shapely_poly,
+    ring_edges_set: "set[tuple[int, int]]",
+) -> "np.ndarray":
+    """Resurrect dropped Delaunay triangles that close INTERIOR boundary holes.
+
+    Any count=1 edge in `top_faces` that is NOT a ring edge is an interior
+    pinhole — likely a Delaunay edge whose other-side triangle got dropped by
+    the centroid-outside clip. Ring edges are naturally count=1 in the top
+    surface alone (they're closed later by the wall faces in step 6), so we
+    skip them.
+
+    For each interior boundary edge A-B, scan `tri_faces_all` for a triangle
+    that both contains this edge AND lies inside the polygon by centroid test.
+    Add it, bounded by iterations.
+    """
+    import numpy as np
+    from shapely import contains_xy
+
+    if top_faces.size == 0:
+        return top_faces
+
+    tri_arr = np.asarray(tri_faces_all)
+    edge_to_tris: dict[tuple[int, int], list[int]] = {}
+    for ti, (u, v, w) in enumerate(tri_arr):
+        for a, b in ((u, v), (v, w), (w, u)):
+            key = (min(int(a), int(b)), max(int(a), int(b)))
+            edge_to_tris.setdefault(key, []).append(ti)
+
+    def _tri_edges_set(face_set):
+        return np.sort(
+            np.vstack([face_set[:, [0, 1]], face_set[:, [1, 2]], face_set[:, [2, 0]]]),
+            axis=1,
+        )
+
+    added_rows: list[np.ndarray] = []
+    present_tris: set[tuple[int, int, int]] = {
+        tuple(sorted(int(x) for x in row)) for row in top_faces
+    }
+    for _ in range(8):
+        current = np.vstack([top_faces] + added_rows) if added_rows else top_faces
+        es = _tri_edges_set(current)
+        uniq, cnt = np.unique(es, axis=0, return_counts=True)
+        bedges = uniq[cnt == 1]
+        if len(bedges) == 0:
+            break
+        # Interior bedges only: those NOT in ring_edges_set.
+        interior_bedges = [
+            (int(a), int(b)) for a, b in bedges
+            if (int(a), int(b)) not in ring_edges_set
+        ]
+        if not interior_bedges:
+            break
+        present = {(int(a), int(b)) for a, b in uniq}
+        made_progress = False
+        for a, b in interior_bedges:
+            key = (int(a), int(b))
+            best_tri = None
+            best_new = 999
+            for ti in edge_to_tris.get(key, []):
+                tri = tri_arr[ti]
+                tri_key = tuple(sorted(int(x) for x in tri))
+                if tri_key in present_tris:
+                    continue
+                tri_edges = [
+                    (min(int(tri[0]), int(tri[1])), max(int(tri[0]), int(tri[1]))),
+                    (min(int(tri[1]), int(tri[2])), max(int(tri[1]), int(tri[2]))),
+                    (min(int(tri[0]), int(tri[2])), max(int(tri[0]), int(tri[2]))),
+                ]
+                cent = all_xy[tri].mean(axis=0)
+                if not bool(contains_xy(shapely_poly, cent[0], cent[1])):
+                    continue
+                new_edges = sum(1 for e in tri_edges if e not in present)
+                if new_edges < best_new:
+                    best_new = new_edges
+                    best_tri = tri
+                    if new_edges == 0:
+                        break
+            if best_tri is not None:
+                added_rows.append(np.asarray(best_tri).reshape(1, 3))
+                present_tris.add(tuple(sorted(int(x) for x in best_tri)))
+                for e in [
+                    (min(int(best_tri[0]), int(best_tri[1])), max(int(best_tri[0]), int(best_tri[1]))),
+                    (min(int(best_tri[1]), int(best_tri[2])), max(int(best_tri[1]), int(best_tri[2]))),
+                    (min(int(best_tri[0]), int(best_tri[2])), max(int(best_tri[0]), int(best_tri[2]))),
+                ]:
+                    present.add(e)
+                made_progress = True
+        if not made_progress:
+            break
+
+    if not added_rows:
+        return top_faces
+    print(f"    Sand interior-stitch: resurrected {len(added_rows)} Delaunay triangle(s)")
+    return np.vstack([top_faces, np.vstack(added_rows).astype(top_faces.dtype)])
+
+
+def _earcut_interior_pinholes(
+    top_faces: "np.ndarray",
+    ring_edges_set: "set[tuple[int, int]]",
+    all_xy: "np.ndarray",
+    dtype=None,
+) -> "np.ndarray":
+    """Find interior boundary-edge chains and earcut-triangulate them.
+
+    A boundary edge is count=1 in `top_faces`. We split them into ring edges
+    (left for the wall to close) and interior edges. Interior edges form one
+    or more closed chains (each surrounding a pinhole) — walk each chain and
+    earcut-triangulate it in 2D using the vertex XY positions.
+
+    Returns the augmented face array (possibly unchanged).
+    """
+    import numpy as np
+
+    if top_faces.size == 0:
+        return top_faces
+    if dtype is None:
+        dtype = top_faces.dtype
+
+    # 1. Collect interior boundary edges.
+    es = np.sort(
+        np.vstack([top_faces[:, [0, 1]], top_faces[:, [1, 2]], top_faces[:, [2, 0]]]),
+        axis=1,
+    )
+    uniq, cnt = np.unique(es, axis=0, return_counts=True)
+    bedges = uniq[cnt == 1]
+    interior_bedges = [
+        (int(a), int(b)) for a, b in bedges
+        if (int(a), int(b)) not in ring_edges_set
+    ]
+    if not interior_bedges:
+        return top_faces
+
+    # 2. Group into chains by vertex adjacency.
+    nbr: dict[int, list[int]] = {}
+    for a, b in interior_bedges:
+        nbr.setdefault(a, []).append(b)
+        nbr.setdefault(b, []).append(a)
+
+    visited_edges: set[tuple[int, int]] = set()
+    chains: list[list[int]] = []
+    for start in list(nbr.keys()):
+        # Walk connected edges from `start`.
+        if all(((min(start, v), max(start, v)) in visited_edges) for v in nbr.get(start, [])):
+            continue
+        comp_verts: set[int] = {start}
+        stack = [start]
+        while stack:
+            u = stack.pop()
+            for v in nbr.get(u, []):
+                key = (min(u, v), max(u, v))
+                if key in visited_edges:
+                    continue
+                visited_edges.add(key)
+                if v not in comp_verts:
+                    comp_verts.add(v)
+                    stack.append(v)
+        # Try to walk a closed loop over this component.
+        comp_edges = [
+            (a, b) for a, b in interior_bedges
+            if a in comp_verts and b in comp_verts
+        ]
+        if len(comp_edges) < 3:
+            continue
+        # Order the vertices into a cycle (greedy walker).
+        local_nbr: dict[int, list[int]] = {}
+        for a, b in comp_edges:
+            local_nbr.setdefault(a, []).append(b)
+            local_nbr.setdefault(b, []).append(a)
+        start_v = comp_edges[0][0]
+        chain = [start_v]
+        used_edges: set[tuple[int, int]] = set()
+        cur = start_v
+        prev = None
+        while True:
+            nxts = [n for n in local_nbr.get(cur, []) if (min(cur, n), max(cur, n)) not in used_edges]
+            if not nxts:
+                break
+            nxt = nxts[0]
+            used_edges.add((min(cur, nxt), max(cur, nxt)))
+            if nxt == start_v:
+                break
+            chain.append(nxt)
+            prev = cur
+            cur = nxt
+            if len(chain) > len(comp_edges) + 2:
+                break  # safety
+        # Only accept if we closed the loop (last-to-first edge exists).
+        if (min(chain[-1], chain[0]), max(chain[-1], chain[0])) not in {
+            (min(a, b), max(a, b)) for a, b in comp_edges
+        }:
+            continue
+        chains.append(chain)
+
+    if not chains:
+        return top_faces
+
+    # Build edge-count index for diagonal selection in quad cases.
+    _ec_init: dict[tuple[int, int], int] = {
+        (int(a), int(b)): int(c) for (a, b), c in zip(uniq, cnt)
+    }
+
+    # 3. Earcut each chain in 2D.
+    added_tris: list[list[int]] = []
+    for chain in chains:
+        pts = all_xy[chain]  # (K, 2)
+        area2 = 0.0
+        for i in range(len(chain)):
+            x1, y1 = pts[i]
+            x2, y2 = pts[(i + 1) % len(chain)]
+            area2 += (x1 * y2 - x2 * y1)
+        if area2 < 0:
+            chain = list(reversed(chain))
+            pts = all_xy[chain]
+        # Special case: quadrilateral — pick the diagonal with count 0 in top_faces
+        # so neither resulting triangle creates a non-manifold edge.
+        if len(chain) == 4:
+            a, b, c, d = chain
+            diag1 = (min(int(a), int(c)), max(int(a), int(c)))
+            diag2 = (min(int(b), int(d)), max(int(b), int(d)))
+            d1_c = _ec_init.get(diag1, 0)
+            d2_c = _ec_init.get(diag2, 0)
+            if d1_c < d2_c:
+                added_tris.extend([[a, b, c], [a, c, d]])
+                continue
+            if d2_c < d1_c or d1_c == 0:
+                added_tris.extend([[b, c, d], [b, d, a]])
+                continue
+        tris = _earcut_simple_polygon(pts, chain)
+        if tris:
+            added_tris.extend(tris)
+
+    if not added_tris:
+        return top_faces
+
+    # Dedup: skip earcut triangles whose edges are already count=2 in top_faces
+    # (adding them would create non-manifold edges). Also skip if the exact
+    # triangle (same 3 verts) already exists.
+    present_count: dict[tuple[int, int], int] = {}
+    for a, b in uniq:
+        present_count[(int(a), int(b))] = int(cnt[np.where((uniq == (a, b)).all(axis=1))[0][0]])
+    existing_tris = {tuple(sorted(int(x) for x in f)) for f in top_faces}
+
+    kept: list[list[int]] = []
+    for tri in added_tris:
+        t = tuple(sorted(int(x) for x in tri))
+        if t in existing_tris:
+            continue
+        tri_es = [
+            (min(int(tri[0]), int(tri[1])), max(int(tri[0]), int(tri[1]))),
+            (min(int(tri[1]), int(tri[2])), max(int(tri[1]), int(tri[2]))),
+            (min(int(tri[0]), int(tri[2])), max(int(tri[0]), int(tri[2]))),
+        ]
+        # Reject if any of this triangle's edges is already count=2 in top_faces
+        # (adding would make it count=3, i.e. non-manifold).
+        if any(present_count.get(e, 0) >= 2 for e in tri_es):
+            continue
+        kept.append(tri)
+        existing_tris.add(t)
+        for e in tri_es:
+            present_count[e] = present_count.get(e, 0) + 1
+
+    rejected = len(added_tris) - len(kept)
+    if not kept:
+        if rejected:
+            print(f"    Sand earcut-interior: rejected all {rejected} candidate triangle(s) (dup/non-manifold)")
+        return top_faces
+    print(f"    Sand earcut-interior: closed {len(chains)} pinhole(s) with "
+          f"{len(kept)} triangle(s) ({rejected} rejected)")
+    return np.vstack([top_faces, np.asarray(kept, dtype=dtype)])
+
+
+def _prune_non_manifold_additions(top_faces: "np.ndarray") -> "np.ndarray":
+    """Dedupe identical triangles and drop any triangle whose addition
+    would push an edge past count=2 (non-manifold).
+
+    The three repair passes (ring-stitch, Delaunay-resurrection, earcut) can
+    occasionally propose the same triangle twice, or two triangles that
+    together push an edge count to 3+. Walk `top_faces` in order and keep
+    only triangles that don't trip either invariant.
+    """
+    import numpy as np
+
+    if top_faces.size == 0:
+        return top_faces
+    seen_tris: set[tuple[int, int, int]] = set()
+    edge_count: dict[tuple[int, int], int] = {}
+    kept_mask = np.zeros(len(top_faces), dtype=bool)
+    for i, f in enumerate(top_faces):
+        t = tuple(sorted(int(x) for x in f))
+        if t in seen_tris:
+            continue
+        es = [
+            (min(int(f[0]), int(f[1])), max(int(f[0]), int(f[1]))),
+            (min(int(f[1]), int(f[2])), max(int(f[1]), int(f[2]))),
+            (min(int(f[0]), int(f[2])), max(int(f[0]), int(f[2]))),
+        ]
+        if any(edge_count.get(e, 0) >= 2 for e in es):
+            continue
+        seen_tris.add(t)
+        for e in es:
+            edge_count[e] = edge_count.get(e, 0) + 1
+        kept_mask[i] = True
+    pruned = int((~kept_mask).sum())
+    if pruned:
+        print(f"    Sand prune non-manifold: dropped {pruned} overlapping triangle(s)")
+    return top_faces[kept_mask]
+
+
+def _earcut_simple_polygon(pts_xy: "np.ndarray", vert_ids: "list[int]") -> "list[list[int]]":
+    """Simple ear-clipping triangulation of a CCW 2D polygon.
+
+    `pts_xy` is (K, 2) in CCW order; `vert_ids` are the corresponding global
+    vertex indices to emit in the result triangles. Returns a list of
+    [a, b, c] global-index triangles.
+    """
+    import numpy as np
+
+    n = len(vert_ids)
+    if n < 3:
+        return []
+    ids = list(vert_ids)
+    xy = {i: pts_xy[k] for k, i in enumerate(vert_ids)}
+
+    def _cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+    def _point_in_tri(p, a, b, c):
+        d1 = _cross(a, b, p)
+        d2 = _cross(b, c, p)
+        d3 = _cross(c, a, p)
+        has_neg = (d1 < 0) or (d2 < 0) or (d3 < 0)
+        has_pos = (d1 > 0) or (d2 > 0) or (d3 > 0)
+        return not (has_neg and has_pos)
+
+    tris: list[list[int]] = []
+    guard = 2 * n
+    while len(ids) >= 3 and guard > 0:
+        guard -= 1
+        if len(ids) == 3:
+            tris.append([ids[0], ids[1], ids[2]])
+            break
+        for i in range(len(ids)):
+            a = ids[(i - 1) % len(ids)]
+            b = ids[i]
+            c = ids[(i + 1) % len(ids)]
+            A, B, C = xy[a], xy[b], xy[c]
+            if _cross(A, B, C) <= 0:
+                continue  # reflex or collinear
+            # Check no other vertex is inside this triangle.
+            ok = True
+            for other in ids:
+                if other in (a, b, c):
+                    continue
+                if _point_in_tri(xy[other], A, B, C):
+                    ok = False
+                    break
+            if not ok:
+                continue
+            tris.append([a, b, c])
+            ids.remove(b)
+            break
+        else:
+            break
+    return tris
+
+
+def apply_sand_texture(
+    mesh: "trimesh.Trimesh",
+    amplitude: float = 1.0,
+    grain_spacing: float = 1.125,
+    trap_index: int = 0,
+    base_z_map: "tuple[np.ndarray, np.ndarray] | None" = None,
+) -> "trimesh.Trimesh":
+    """
+    Apply parallel rake-line displacement to the top surface of a trap slab mesh.
+
+    Simulates a freshly raked sand trap: evenly spaced parallel ridges and
+    grooves running across the flat top face, matching the look of a wide-toothed
+    rake pulled across real golf course sand.
+
+    The top surface is REBUILT as a regular rectangular grid rather than
+    subdividing the original irregular triangle mesh.  A regular grid guarantees
+    that vertices are evenly spaced along the minor axis, so the cosine wave is
+    sampled cleanly and produces perfectly parallel rake lines with no herringbone
+    artifacts.
+
+    Task #606 changes
+    -----------------
+    * **Rake direction = trap major axis** (PCA-derived per trap).  The cosine
+      wave varies along the *minor* axis (across the trap's short dimension) so
+      ridges run parallel to the *major* axis (along the trap's long dimension).
+      This is the "raked across the narrow direction" look.
+
+      Implementation: SVD on exterior-ring vertices gives the PCA axes.  The
+      minor axis projection drives the cosine; major axis projection is constant
+      within each ridge.
+
+    Task #610 changes
+    -----------------
+    * **Rake direction reverted to fixed Y-axis** (SAND_RAKE_ALIGN_TO_MAJOR_AXIS
+      = False).  Ridges run parallel to Y for every trap regardless of shape.
+      The PCA path is preserved behind the flag for future re-enablement.
+
+    Task 708 changes (2026-10-04)
+    -----------------------------
+    * **Sand chunks stripped** — _scatter_sand_chunks removed; step 7 is gone.
+      Trap top is now flat base + cosine rake only.  No Gaussian bumps, no floor guard.
+    * **base_z_map** still accepted (API stable) for the curved-surface code path
+      (TRAP_SURFACE_CURVED=True), but the chunk floor guard that used it is gone.
+
+    Algorithm
+    ---------
+    1. Extract the original top-face boundary as a Shapely polygon.
+    2. Generate a regular (x, y) grid over the bounding box; keep only points
+       inside the polygon.
+    3. Determine rake axis: fixed Y (default) or PCA major axis (flag).
+    4. Project grid/ring points onto minor axis → cosine displacement dz.
+       Z = base_Z + dz.
+    5. Delaunay-triangulate the grid points; discard triangles whose centroid
+       falls outside the polygon.
+    6. Reassemble: new grid top + original wall/base faces; merge boundary
+       vertices with trimesh process=True to restore watertightness.
+
+    Parameters
+    ----------
+    mesh         : trimesh.Trimesh — closed watertight trap slab in mm coords.
+    amplitude    : peak-to-trough height of rake ridges in mm (default 0.35 mm).
+    grain_spacing: centre-to-centre distance between rake-line peaks in mm
+                   (default 1.5 mm).
+    trap_index   : integer — reserved; chunk RNG removed (task 708).
+    base_z_map   : tuple (base_xy, base_z) or None.  When provided, supplies
+                   a curved base surface; grid points sample from it via
+                   nearest-neighbor lookup.  When None, the flat z_max is used
+                   (flat-slab behaviour, same as before).
+
+    Returns the mesh modified in place (also returns it for convenience).
+    """
+    import trimesh
+    import numpy as np
+    from scipy.spatial import Delaunay
+    from shapely.geometry import Polygon as ShapelyPolygon
+
+    all_verts = mesh.vertices.copy()   # (N, 3)
+    all_faces = mesh.faces.copy()      # (F, 3)
+
+    # ------------------------------------------------------------------
+    # 1. Identify top faces and wall/base faces
+    # ------------------------------------------------------------------
+    z_max    = all_verts[:, 2].max()
+    z_thresh = z_max - 0.1            # within 0.1 mm counts as "top"
+
+    face_v_z      = all_verts[all_faces, 2]              # (F, 3)
+    top_face_mask = (face_v_z >= z_thresh).all(axis=1)   # (F,) bool
+
+    top_faces_global   = all_faces[top_face_mask]
+    other_faces_global = all_faces[~top_face_mask]
+
+    if top_faces_global.shape[0] == 0:
+        print(f"    apply_sand_texture: no top-surface faces found (Z near {z_max:.2f} mm), skipping.")
+        return mesh
+
+    # ------------------------------------------------------------------
+    # 2. Build a Shapely polygon from the top-face boundary edges
+    # ------------------------------------------------------------------
+    # Collect every directed edge of the top faces, then keep only those
+    # that appear exactly once (boundary edges).
+    edges = np.vstack([
+        top_faces_global[:, [0, 1]],
+        top_faces_global[:, [1, 2]],
+        top_faces_global[:, [2, 0]],
+    ])
+    # Represent each edge as a sorted pair so we can count occurrences.
+    edges_sorted = np.sort(edges, axis=1)
+    edge_tuples  = [tuple(e) for e in edges_sorted]
+    from collections import Counter
+    edge_counts  = Counter(edge_tuples)
+    boundary_set = {e for e, cnt in edge_counts.items() if cnt == 1}
+
+    # Rebuild directed boundary edges (original orientation, not sorted).
+    boundary_edges = [e for e in edges if tuple(sorted(e)) in boundary_set]
+
+    # ------------------------------------------------------------------
+    # Multi-loop boundary walker (mirrors apply_water_ripple_texture).
+    #
+    # A trap polygon could in principle have interior holes (e.g. a future
+    # trap with a pipe footprint subtracted from its interior).  The old
+    # single-loop walker would drop every ring after the first, leaving
+    # dangling boundary verts and a non-manifold mesh.  Walk an UNDIRECTED
+    # adjacency (also fixes a latent secondary bug: directed-edge dead-ends
+    # mid-loop), collect ALL closed loops, sort by |signed area|: largest
+    # = outer ring, rest = holes.  Build ShapelyPolygon(outer, holes=[...])
+    # so prepared-geometry containment correctly excludes hole interiors.
+    # ------------------------------------------------------------------
+    undirected: dict = {}
+    for a, b in boundary_edges:
+        undirected.setdefault(int(a), set()).add(int(b))
+        undirected.setdefault(int(b), set()).add(int(a))
+
+    loops: list[list[int]] = []
+    seen: set[int] = set()
+    for seed_vert in undirected.keys():
+        if seed_vert in seen:
+            continue
+        loop: list[int] = []
+        current = seed_vert
+        prev = -1
+        while True:
+            loop.append(current)
+            seen.add(current)
+            nbrs = [n for n in undirected.get(current, ()) if n != prev]
+            unvisited = [n for n in nbrs if n not in seen]
+            if unvisited:
+                nxt = unvisited[0]
+            elif nbrs and nbrs[0] == seed_vert and len(loop) > 2:
+                break
+            else:
+                break
+            prev = current
+            current = nxt
+        if len(loop) >= 3:
+            loops.append(loop)
+
+    if not loops:
+        print(f"    apply_sand_texture: no closed boundary loops found, skipping.")
+        return mesh
+
+    def _signed_area(idx_list: list[int]) -> float:
+        pts = all_verts[idx_list, :2]
+        x = pts[:, 0]; y = pts[:, 1]
+        return 0.5 * float(np.sum(x * np.roll(y, -1) - np.roll(x, -1) * y))
+
+    loops.sort(key=lambda lp: abs(_signed_area(lp)), reverse=True)
+    outer_loop = loops[0]
+    hole_loops = loops[1:]
+    ring = outer_loop  # legacy name retained downstream
+    all_loops = [outer_loop] + hole_loops
+
+    ring_xy   = all_verts[outer_loop, :2]             # (R, 2) — XY of outer boundary
+    holes_xy  = [all_verts[lp, :2] for lp in hole_loops]
+    shapely_poly = ShapelyPolygon(ring_xy, holes=holes_xy)
+    if not shapely_poly.is_valid:
+        shapely_poly = shapely_poly.buffer(0)         # fix self-intersections
+    if len(hole_loops) > 0:
+        print(f"    Sand boundary: 1 outer ring ({len(outer_loop)} verts) "
+              f"+ {len(hole_loops)} hole(s) "
+              f"({', '.join(str(len(lp)) for lp in hole_loops)} verts)")
+
+    # ------------------------------------------------------------------
+    # 2b. Rake axis — fixed Y or PCA major axis
+    #
+    # Task #610 reverts the rake direction to fixed Y-axis (ridges parallel
+    # to Y, cosine wave keyed on X), which Thomas prefers over the per-trap
+    # PCA alignment added in task #606.  The PCA code is preserved behind
+    # SAND_RAKE_ALIGN_TO_MAJOR_AXIS so it can be re-enabled by flipping the
+    # constant to True without editing this function.
+    #
+    # Fixed-Y path (SAND_RAKE_ALIGN_TO_MAJOR_AXIS = False):
+    #   major_axis = (0, 1)  — Y direction (ridge runs along Y)
+    #   minor_axis = (1, 0)  — X direction (cosine wave varies with X)
+    #   _ring_c    = origin  (centroid offset not needed for global X key)
+    #
+    # PCA path (SAND_RAKE_ALIGN_TO_MAJOR_AXIS = True, task #606 behaviour):
+    #   SVD on centered outer-ring vertices; major_axis = first right singular
+    #   vector; minor_axis perpendicular.  Ridges run along major axis.
+    # ------------------------------------------------------------------
+    _ring_pts = ring_xy[:-1] if len(ring_xy) > 1 else ring_xy  # drop closing dup
+    _ring_c   = _ring_pts.mean(axis=0)
+
+    if SAND_RAKE_ALIGN_TO_MAJOR_AXIS:
+        # PCA path — preserved from task #606 for future use.
+        _, _S_vals, _Vt = np.linalg.svd(_ring_pts - _ring_c, full_matrices=False)
+        major_axis = _Vt[0]  # unit vector along trap long axis
+        minor_axis = _Vt[1]  # unit vector perpendicular (drives cosine wave)
+        # cosine wave s = (xy - centroid) · minor_axis
+        _proj_offset = _ring_c   # subtract centroid before projecting
+        _rake_angle_deg = float(np.degrees(np.arctan2(major_axis[1], major_axis[0])) % 180.0)
+    else:
+        # Fixed-Y path (task #610 default): ridges parallel to Y, wave on X.
+        major_axis = np.array([0.0, 1.0])  # ridge direction = Y
+        minor_axis = np.array([1.0, 0.0])  # wave direction  = X
+        # cosine wave s = xy[:, 0]  (global X, no centroid subtraction needed)
+        _proj_offset = np.zeros(2)          # no centroid subtraction
+        _rake_angle_deg = 90.0              # ridges are Y-parallel
+
+    # ------------------------------------------------------------------
+    # 3. Build a regular grid over the bounding box; filter inside polygon
+    # ------------------------------------------------------------------
+    grid_step = grain_spacing * 0.2                   # ~0.3 mm → ~5 pts per period
+
+    x_min, x_max = ring_xy[:, 0].min(), ring_xy[:, 0].max()
+    y_min, y_max = ring_xy[:, 1].min(), ring_xy[:, 1].max()
+
+    xs = np.arange(x_min, x_max + grid_step, grid_step)
+    ys = np.arange(y_min, y_max + grid_step, grid_step)
+    gx, gy = np.meshgrid(xs, ys)
+    grid_xy = np.column_stack([gx.ravel(), gy.ravel()])  # (G, 2)
+
+    # Vectorised point-in-polygon using shapely prepared geometry.
+    #
+    # Inset the polygon by one grid_step before filtering: interior grid points
+    # that land on or very close to the rim (especially along long near-straight
+    # edges) cause Delaunay to bridge consecutive rim verts with thin triangles
+    # that skip ahead, leaving rim edges (i, i+1) without a matching top face
+    # and producing a non-manifold seam after wall merge. Buffering the
+    # filter-polygon inward keeps grid points clear of the rim, so Delaunay
+    # mates rim points directly to nearby interior verts and every rim edge
+    # is preserved. (Topo, task #339 — fixes PGA West Hole 5 Trap 1: 141 → 15
+    # boundary edges, well below the tol=30 manifold gate.)
+    from shapely import prepare, contains_xy
+    SAND_GRID_BOUNDARY_INSET_FACTOR = 1.0  # in units of grid_step
+    shapely_inner = shapely_poly.buffer(-grid_step * SAND_GRID_BOUNDARY_INSET_FACTOR)
+    if shapely_inner.is_empty:
+        # Polygon too thin for the inset — fall back to the un-inset polygon.
+        # Better to risk a few boundary edges than skip the texture entirely.
+        shapely_inner = shapely_poly
+    prepare(shapely_inner)
+    inside_mask = contains_xy(shapely_inner, grid_xy[:, 0], grid_xy[:, 1])
+    grid_xy_in  = grid_xy[inside_mask]                # (M, 2) — interior grid pts
+
+    if len(grid_xy_in) < 3:
+        print(f"    apply_sand_texture: too few grid points inside polygon ({len(grid_xy_in)}), skipping.")
+        return mesh
+
+    n_grid = len(grid_xy_in)
+    print(f"    Sand texture grid: step={grid_step:.3f} mm, "
+          f"bbox {x_max-x_min:.1f}×{y_max-y_min:.1f} mm → "
+          f"{len(xs)}×{len(ys)} candidates → {n_grid} inside polygon "
+          f"(boundary inset = {grid_step * SAND_GRID_BOUNDARY_INSET_FACTOR:.3f} mm)")
+
+    # Enforce vertex budget: 150 K per trap.
+    MAX_GRID_PTS = 150_000
+    if n_grid > MAX_GRID_PTS:
+        scale    = math.sqrt(n_grid / MAX_GRID_PTS)
+        new_step = grid_step * scale
+        print(f"    Sand texture: grid too large ({n_grid} pts); "
+              f"increasing step {grid_step:.3f} → {new_step:.3f} mm")
+        grid_step = new_step
+        # Re-inset with the new grid_step so the boundary clearance scales with it.
+        shapely_inner = shapely_poly.buffer(-grid_step * SAND_GRID_BOUNDARY_INSET_FACTOR)
+        if shapely_inner.is_empty:
+            shapely_inner = shapely_poly
+        prepare(shapely_inner)
+        xs = np.arange(x_min, x_max + grid_step, grid_step)
+        ys = np.arange(y_min, y_max + grid_step, grid_step)
+        gx, gy = np.meshgrid(xs, ys)
+        grid_xy = np.column_stack([gx.ravel(), gy.ravel()])
+        inside_mask = contains_xy(shapely_inner, grid_xy[:, 0], grid_xy[:, 1])
+        grid_xy_in  = grid_xy[inside_mask]
+        n_grid = len(grid_xy_in)
+        print(f"    Sand texture: after step increase → {n_grid} grid points")
+
+    # ------------------------------------------------------------------
+    # 4. Compute Z for every grid point
+    # ------------------------------------------------------------------
+    # The cosine wave is driven by each point's projection onto minor_axis.
+    # Ridges are iso-contours (constant projection onto minor_axis), so they
+    # run parallel to major_axis.
+    #
+    # s = (xy - _proj_offset) · minor_axis  → scalar position across trap
+    # dz_rake = amplitude * 0.5 * (1 + cos(2π * s / grain_spacing))
+    #
+    # _proj_offset is the centroid for the PCA path (task #606), or zero
+    # for the fixed-Y path (task #610) so global X is used directly.
+    #
+    # Task #608: sinusoidal jitter removed; discrete Gaussian chunk bumps are
+    # applied AFTER mesh reassembly (step 7) instead.
+
+    def _proj_minor(xy_arr: np.ndarray) -> np.ndarray:
+        """Project 2-D XY points onto the minor axis (relative to _proj_offset)."""
+        return (xy_arr - _proj_offset) @ minor_axis
+
+    def _rake_dz(xy_arr: np.ndarray) -> np.ndarray:
+        """Cosine rake displacement keyed on minor-axis projection."""
+        s = _proj_minor(xy_arr)
+        return amplitude * 0.5 * (1.0 + np.cos(2.0 * math.pi * s / grain_spacing))
+
+    # ------------------------------------------------------------------
+    # Task (2026-09-28): curved base surface support.
+    # When base_z_map is provided, each grid point gets its own base Z
+    # looked up by nearest-neighbor from the supplied (xy, z) map instead
+    # of the uniform z_max.  This makes the trap surface follow the fringe
+    # topology (4 mm below it everywhere).
+    # ------------------------------------------------------------------
+    if base_z_map is not None:
+        from scipy.spatial import cKDTree as _cKDTree_sand
+        _bmap_xy, _bmap_z = base_z_map
+        _bmap_xy = np.asarray(_bmap_xy, dtype=np.float64)
+        _bmap_z  = np.asarray(_bmap_z,  dtype=np.float64)
+        _bkd     = _cKDTree_sand(_bmap_xy)
+
+        def _base_z_at(xy_arr: np.ndarray) -> np.ndarray:
+            """Nearest-neighbor lookup into the curved base map."""
+            _, _nn = _bkd.query(xy_arr)
+            return _bmap_z[_nn]
+    else:
+        def _base_z_at(xy_arr: np.ndarray) -> np.ndarray:  # type: ignore[misc]
+            """Flat base: uniform z_max for all points."""
+            return np.full(len(xy_arr), z_max, dtype=np.float64)
+
+    # Interior grid points.
+    dz_rake = _rake_dz(grid_xy_in)
+    dz      = dz_rake
+    grid_z  = _base_z_at(grid_xy_in) + dz              # (M,) curved or flat
+
+    # Boundary ring points: include in Delaunay so the triangulation
+    # reaches the polygon edge exactly, sharing XY with the wall rim.
+    # Concatenate outer ring + every interior hole ring so EVERY boundary
+    # vertex is represented (multi-loop walker output).
+    all_ring_idx = [int(v) for lp in all_loops for v in lp]
+    ring_xy_arr  = all_verts[all_ring_idx, :2]                                 # (R, 2)
+    ring_z       = _base_z_at(ring_xy_arr) + _rake_dz(ring_xy_arr)             # (R,)
+
+    # Combined point set for Delaunay: boundary ring first, then interior.
+    n_ring   = len(ring_xy_arr)
+    all_xy   = np.vstack([ring_xy_arr, grid_xy_in])   # (R+M, 2)
+    all_z    = np.concatenate([ring_z, grid_z])       # (R+M,)
+    grid_pts = np.column_stack([all_xy, all_z])       # (R+M, 3)
+
+    n_lines = int(math.ceil(
+        np.ptp((grid_xy_in - _proj_offset) @ minor_axis) / grain_spacing
+    )) + 1
+    print(f"    Sand texture: rake lines, major_axis_angle={_rake_angle_deg:.1f}°, "
+          f"pca_aligned={SAND_RAKE_ALIGN_TO_MAJOR_AXIS}, "
+          f"spacing={grain_spacing:.2f} mm, "
+          f"amplitude={amplitude:.3f} mm, "
+          f"~{n_lines} lines, "
+          f"dz range [{dz.min():.3f}, {dz.max():.3f}] mm on {n_grid} grid verts "
+          f"+ {n_ring} boundary ring verts")
+
+    # ------------------------------------------------------------------
+    # 5. Delaunay-triangulate the grid points; clip to polygon interior
+    # ------------------------------------------------------------------
+    tri = Delaunay(all_xy)
+    tri_faces = tri.simplices                          # (T, 3)
+
+    # Discard any triangle whose centroid falls outside the polygon.
+    centroids   = all_xy[tri_faces].mean(axis=1)      # (T, 2)
+    cent_inside = contains_xy(shapely_poly, centroids[:, 0], centroids[:, 1])
+    top_new_faces = tri_faces[cent_inside]             # (K, 3)
+
+    print(f"    Sand texture: Delaunay → {len(tri_faces)} triangles, "
+          f"{cent_inside.sum()} kept after centroid clipping")
+
+    # Fan-stitch any ring edge that Delaunay/centroid-clip dropped.
+    _loops_local: list[list[int]] = []
+    _off = 0
+    for lp in all_loops:
+        _loops_local.append(list(range(_off, _off + len(lp))))
+        _off += len(lp)
+    top_new_faces = _fill_missing_ring_edges(
+        top_new_faces, _loops_local, all_xy, n_ring, shapely_poly
+    )
+    # Build the ring-edge set so interior-stitch skips ring edges (they're
+    # legitimately count=1 in the top mesh — the wall faces close them later).
+    _ring_edges_set: set[tuple[int, int]] = set()
+    for _lp in _loops_local:
+        if len(_lp) < 2:
+            continue
+        for _i in range(len(_lp)):
+            _u, _v = int(_lp[_i]), int(_lp[(_i + 1) % len(_lp)])
+            _ring_edges_set.add((min(_u, _v), max(_u, _v)))
+    # Resurrect dropped Delaunay triangles that would close interior pinholes.
+    top_new_faces = _close_interior_boundary_edges(
+        top_new_faces, tri_faces, all_xy, shapely_poly, _ring_edges_set
+    )
+    # Final pass: find any INTERIOR boundary-edge chain in the top mesh
+    # (count=1 edges NOT part of the ring-edge set) and earcut-triangulate it.
+    # Interior pinholes left over from Delaunay + centroid-clip + ring-stitch
+    # + Delaunay-resurrection show up here. Each small chain is closed by
+    # ear-clipping its vertex sequence in 2D (XY plane). Iterate up to 5
+    # passes so partially-closed chains converge.
+    for _ in range(5):
+        _before = len(top_new_faces)
+        top_new_faces = _earcut_interior_pinholes(
+            top_new_faces, _ring_edges_set, all_xy, dtype=top_new_faces.dtype
+        )
+        if len(top_new_faces) == _before:
+            break
+    # Dedup + non-manifold-edge-prune: dedupe identical triangles, then drop
+    # any extra triangle sharing an edge that already appears in >=2 faces
+    # (would create a count=3+ non-manifold edge). Cleans up residual overlap.
+    top_new_faces = _prune_non_manifold_additions(top_new_faces)
+
+    # ------------------------------------------------------------------
+    # 6. Reassemble: new grid top + original wall/base faces
+    # ------------------------------------------------------------------
+    # Compact the wall/base vertex set (vertices used by non-top faces).
+    other_vert_indices, other_faces_local = np.unique(
+        other_faces_global, return_inverse=True
+    )
+    other_faces_local = other_faces_local.reshape(-1, 3)
+    other_verts_arr   = all_verts[other_vert_indices].copy()   # (W, 3) — mutable copy
+
+    # --- Snap wall rim vertices to the displaced boundary ring Z ----------
+    # The boundary ring vertices (global indices in `ring`) appear in both
+    # the new top mesh (as rows 0..n_ring-1 of grid_pts) and in the wall/base
+    # mesh (as some rows of other_verts_arr).  For process=True to merge them
+    # they must be identical in 3D.  Update the wall rim rows to use the same
+    # displaced Z as the corresponding boundary ring grid_pts rows.
+    #
+    # Build a lookup: global_index → displaced Z for every boundary ring vertex.
+    ring_global   = np.array(all_ring_idx)                     # (R,) global indices (all loops)
+    ring_disp_z   = ring_z                                     # (R,) displaced Z
+    rim_z_lookup  = dict(zip(ring_global.tolist(), ring_disp_z.tolist()))
+
+    # Find which rows of other_vert_indices are rim vertices and update Z.
+    for local_i, global_i in enumerate(other_vert_indices):
+        if global_i in rim_z_lookup:
+            other_verts_arr[local_i, 2] = rim_z_lookup[global_i]
+
+    n_top = len(grid_pts)
+    combined_verts = np.vstack([grid_pts, other_verts_arr])
+    combined_faces = np.vstack([
+        top_new_faces,
+        other_faces_local + n_top,
+    ])
+
+    # process=True merges boundary vertices (grid edge ↔ wall top rim).
+    # Both sides now share exact 3D coordinates at the seam, so the merge
+    # succeeds and the mesh is watertight.
+    new_mesh = trimesh.Trimesh(
+        vertices=combined_verts,
+        faces=combined_faces,
+        process=True,
+    )
+    _e_pre = np.sort(new_mesh.edges, axis=1)
+    _u_pre, _c_pre = np.unique(_e_pre, axis=0, return_counts=True)
+    _nm_pre = int((_c_pre > 2).sum())
+    _be_pre_count = int((_c_pre == 1).sum())
+    if _nm_pre or _be_pre_count:
+        print(f"    Sand post-Trimesh(process=True): bedges={_be_pre_count} "
+              f"nmedges={_nm_pre} faces={len(new_mesh.faces)} verts={len(new_mesh.vertices)}")
+
+    # Final non-manifold prune on the FULL mesh (top + walls + base): if any
+    # face has an edge count=3+ (shared with 2 other faces), drop it. Only drop
+    # the earliest-encountered duplicate for each edge; walls take precedence.
+    _e2 = np.sort(new_mesh.edges, axis=1)
+    _u2, _c2 = np.unique(_e2, axis=0, return_counts=True)
+    _nm_edges = {(int(a), int(b)) for a, b in _u2[_c2 > 2]}
+    if _nm_edges:
+        edge_count = {(int(a), int(b)): int(c) for (a, b), c in zip(_u2, _c2) if c <= 2}
+        for e in _nm_edges:
+            edge_count[e] = 2  # pin manifold-ok at 2
+        kept = []
+        for f in new_mesh.faces:
+            es = [
+                (min(int(f[0]), int(f[1])), max(int(f[0]), int(f[1]))),
+                (min(int(f[1]), int(f[2])), max(int(f[1]), int(f[2]))),
+                (min(int(f[0]), int(f[2])), max(int(f[0]), int(f[2]))),
+            ]
+            # If adding this face would push a currently-manifold-pinned edge over, drop.
+            touches_nm = any(e in _nm_edges for e in es)
+            if touches_nm:
+                # Check: does the face use the NM edge AND is there already an alternate
+                # closure? If the edge is at count 2 (already satisfied by other faces),
+                # drop this face.
+                would_exceed = False
+                for e in es:
+                    if e in _nm_edges and edge_count.get(e, 0) >= 2:
+                        would_exceed = True
+                        break
+                if would_exceed:
+                    continue
+            for e in es:
+                if e in _nm_edges:
+                    edge_count[e] = edge_count.get(e, 0) + 1
+            kept.append(f)
+        kept_arr = np.asarray(kept, dtype=new_mesh.faces.dtype)
+        dropped = len(new_mesh.faces) - len(kept_arr)
+        if dropped:
+            new_mesh = trimesh.Trimesh(vertices=new_mesh.vertices, faces=kept_arr, process=False)
+            print(f"    Sand post-Trimesh NM prune: dropped {dropped} face(s)")
+
+    # Repair any remaining tiny seam gaps from floating-point mismatch.
+    # Avoid trimesh.repair.fill_holes here — it can add overlapping triangles
+    # that create non-manifold (count>=3) edges on this topology. Instead,
+    # merge coincident vertices and let the mesh settle; the earlier earcut
+    # pass handled interior pinholes.
+    if not new_mesh.is_watertight:
+        _nfaces_before_repair = len(new_mesh.faces)
+        new_mesh.merge_vertices(digits_vertex=3)
+        trimesh.repair.fix_normals(new_mesh)
+        # Only run fill_holes if there are no non-manifold edges to worry about.
+        _er = np.sort(new_mesh.edges, axis=1)
+        _ur, _cr = np.unique(_er, axis=0, return_counts=True)
+        if int((_cr > 2).sum()) == 0 and int((_cr == 1).sum()) > 0:
+            trimesh.repair.fill_holes(new_mesh)
+            # Verify fill_holes didn't introduce NM edges; roll back if so.
+            _er2 = np.sort(new_mesh.edges, axis=1)
+            _ur2, _cr2 = np.unique(_er2, axis=0, return_counts=True)
+            if int((_cr2 > 2).sum()) > 0:
+                print(f"    Sand repair rollback: fill_holes added NM edges "
+                      f"(nm={int((_cr2>2).sum())}); reverting fill_holes.")
+                # Keep only the original faces (strip the added trailing ones).
+                new_mesh.faces = new_mesh.faces[:_nfaces_before_repair]
+        trimesh.repair.fix_winding(new_mesh)
+
+    # Final diagnosis line.
+    _e = np.sort(new_mesh.edges, axis=1)
+    _uniq, _cnt = np.unique(_e, axis=0, return_counts=True)
+    _bedges = int((_cnt == 1).sum())
+    _nmedges = int((_cnt > 2).sum())
+    print(f"    Sand texture: reassembled mesh — "
+          f"{len(new_mesh.vertices)} verts, {len(new_mesh.faces)} faces, "
+          f"watertight={new_mesh.is_watertight} bedges={_bedges} nmedges={_nmedges}")
+
+    # Task 708 (Topo, 2026-10-04): sand-chunk scatter pass removed.
+    # Trap top is now flat base + rake lines only.  No Gaussian bumps, no floor guard.
+
+    # Copy rebuilt geometry back into the caller's mesh object.
+    mesh.vertices = new_mesh.vertices
+    mesh.faces    = new_mesh.faces
+
+    if not new_mesh.is_watertight:
+        raise RuntimeError(
+            f"apply_sand_texture produced non-watertight trap mesh "
+            f"(trap_index={trap_index}, euler={new_mesh.euler_number})"
+        )
+
+    return mesh
+
+
+# ---------------------------------------------------------------------------
+# Water ripple texture
+# ---------------------------------------------------------------------------
+
+def apply_water_ripple_texture(
+    mesh: "trimesh.Trimesh",
+    water_index: int = 0,
+    control_points_px: list | None = None,
+    A1: float | None = None,
+    A2: float | None = None,
+    lambda1: float | None = None,
+    lambda2: float | None = None,
+    grid_step: float | None = None,
+) -> "trimesh.Trimesh":
+    """
+    Apply two-superposed-sine "wind chop" displacement to a water slab top face.
+
+    Cloned from :func:`apply_sand_texture` (same 6-stage pipeline: rebuild top
+    as a regular grid → displace Z → Delaunay re-triangulate → stitch boundary
+    ring → reassemble + watertight repair).  Two changes vs. sand:
+
+      * **Displacement formula** — sum of two sine waves at near-perpendicular
+        angles with per-pond random phases:
+
+            dz(x,y) = A1 * sin(2π * (x·cosθ1 + y·sinθ1) / λ1 + φ1)
+                    + A2 * sin(2π * (x·cosθ2 + y·sinθ2) / λ2 + φ2)
+
+        Then **clamped to dz ≤ 0** so peaks never poke above the unrippled
+        water height (which would create overhangs and let the slab visually
+        float above its fringe socket).  Net displacement is downward only,
+        with the original water_z as the calm-water "high tide" line.
+
+      * **Per-pond seed** — derived from a hash of the polygon's control-point
+        coordinates so the same pond regenerates the same ripple every build,
+        but adjacent ponds in the same hole look different.  θ1 ∈ [0, 2π),
+        θ2 ≈ θ1 + π/2 with small jitter, φ1, φ2 ∈ [0, 2π).
+
+    Parameters
+    ----------
+    mesh             : trimesh.Trimesh — closed watertight water slab in mm coords.
+    water_index      : 1-based pond index (used as a fallback seed if no
+                       control points are provided).
+    control_points_px: optional list of {"x","y"} dicts from the EGM polygon.
+                       Hashed to seed the per-pond RNG.  Falls back to
+                       water_index if missing/empty.
+    A1, A2           : peak amplitudes in mm (defaults: WATER_RIPPLE_A1/A2).
+    lambda1, lambda2 : wavelengths in mm (defaults: WATER_RIPPLE_LAMBDA1/2).
+    grid_step        : XY sampling step in mm (default WATER_RIPPLE_GRID_STEP).
+
+    Returns the mesh modified in place (also returns it for convenience).
+    """
+    import hashlib
+    import trimesh
+    import numpy as np
+    from scipy.spatial import Delaunay
+    from shapely.geometry import Polygon as ShapelyPolygon
+
+    # Resolve parameters from module-level constants if caller didn't override.
+    A1        = WATER_RIPPLE_A1       if A1        is None else A1
+    A2        = WATER_RIPPLE_A2       if A2        is None else A2
+    lambda1   = WATER_RIPPLE_LAMBDA1  if lambda1   is None else lambda1
+    lambda2   = WATER_RIPPLE_LAMBDA2  if lambda2   is None else lambda2
+    grid_step = WATER_RIPPLE_GRID_STEP if grid_step is None else grid_step
+
+    # ------------------------------------------------------------------
+    # 0. Per-pond deterministic seed: hash control-point coords (fallback
+    #    to water_index if EGM didn't pass them through).
+    # ------------------------------------------------------------------
+    if control_points_px:
+        coord_bytes = b",".join(
+            f"{p.get('x', 0):.4f},{p.get('y', 0):.4f}".encode("ascii")
+            for p in control_points_px
+        )
+        seed = int(hashlib.md5(coord_bytes).hexdigest()[:8], 16)
+    else:
+        seed = 0xA17EB10B + water_index  # deterministic fallback (no control pts)
+    rng = np.random.default_rng(seed)
+
+    theta1 = float(rng.uniform(0.0, 2.0 * math.pi))
+    # θ2 roughly perpendicular to θ1, with ±15° jitter so the cross-chop
+    # doesn't look stamped from a template.
+    theta2 = theta1 + math.pi / 2.0 + float(rng.uniform(-math.pi / 12.0, math.pi / 12.0))
+    phi1   = float(rng.uniform(0.0, 2.0 * math.pi))
+    phi2   = float(rng.uniform(0.0, 2.0 * math.pi))
+
+    all_verts = mesh.vertices.copy()
+    all_faces = mesh.faces.copy()
+
+    # ------------------------------------------------------------------
+    # 1. Identify top faces and wall/base faces (same as sand)
+    # ------------------------------------------------------------------
+    z_max    = all_verts[:, 2].max()
+    z_thresh = z_max - 0.1
+
+    face_v_z      = all_verts[all_faces, 2]
+    top_face_mask = (face_v_z >= z_thresh).all(axis=1)
+
+    top_faces_global   = all_faces[top_face_mask]
+    other_faces_global = all_faces[~top_face_mask]
+
+    if top_faces_global.shape[0] == 0:
+        print(f"    apply_water_ripple_texture: no top-surface faces found "
+              f"(Z near {z_max:.2f} mm), skipping.")
+        return mesh
+
+    # ------------------------------------------------------------------
+    # 2. Recover the top-face boundary as a Shapely polygon
+    # ------------------------------------------------------------------
+    edges = np.vstack([
+        top_faces_global[:, [0, 1]],
+        top_faces_global[:, [1, 2]],
+        top_faces_global[:, [2, 0]],
+    ])
+    edges_sorted = np.sort(edges, axis=1)
+    edge_tuples  = [tuple(e) for e in edges_sorted]
+    from collections import Counter
+    edge_counts  = Counter(edge_tuples)
+    boundary_set = {e for e, cnt in edge_counts.items() if cnt == 1}
+
+    boundary_edges = [e for e in edges if tuple(sorted(e)) in boundary_set]
+
+    # ------------------------------------------------------------------
+    # Multi-loop boundary walker.
+    #
+    # Pipe-subtract on a moat-style water polygon (e.g. PGA West Stadium
+    # Clubhouse Hole 17) produces a top face that is a polygon-with-holes:
+    # one outer ring + N interior rings around each pipe footprint.  A
+    # single-loop walker silently drops every ring after the first, leaving
+    # all the unwalked boundary verts dangling and the manifold post-check
+    # fails (424 boundary edges on Hole 17).
+    #
+    # We walk an UNDIRECTED adjacency (also fixes a latent secondary bug:
+    # `boundary_edges` were directed, so the original walker could dead-end
+    # mid-loop on the wrong-direction edge).  Each iteration picks an
+    # unvisited boundary vertex, walks its loop, marks all its verts
+    # visited, and records the loop.  Loops are then sorted by absolute
+    # signed area: the largest is the outer ring, the rest are holes.
+    # ------------------------------------------------------------------
+    undirected: dict = {}
+    for a, b in boundary_edges:
+        undirected.setdefault(int(a), set()).add(int(b))
+        undirected.setdefault(int(b), set()).add(int(a))
+
+    loops: list[list[int]] = []
+    seen: set[int] = set()
+    for seed_vert in undirected.keys():
+        if seed_vert in seen:
+            continue
+        loop: list[int] = []
+        current = seed_vert
+        prev = -1
+        while True:
+            loop.append(current)
+            seen.add(current)
+            nbrs = [n for n in undirected.get(current, ()) if n != prev]
+            unvisited = [n for n in nbrs if n not in seen]
+            if unvisited:
+                nxt = unvisited[0]
+            elif nbrs and nbrs[0] == seed_vert and len(loop) > 2:
+                # Closed back to seed — loop complete.
+                break
+            else:
+                # Dead end (shouldn't happen on a clean boundary).
+                break
+            prev = current
+            current = nxt
+        if len(loop) >= 3:
+            loops.append(loop)
+
+    if not loops:
+        print(f"    apply_water_ripple_texture: no closed boundary loops found, skipping.")
+        return mesh
+
+    def _signed_area(idx_list: list[int]) -> float:
+        pts = all_verts[idx_list, :2]
+        x = pts[:, 0]; y = pts[:, 1]
+        return 0.5 * float(np.sum(x * np.roll(y, -1) - np.roll(x, -1) * y))
+
+    loops.sort(key=lambda lp: abs(_signed_area(lp)), reverse=True)
+    outer_loop = loops[0]
+    hole_loops = loops[1:]
+    ring = outer_loop  # legacy name retained downstream
+    all_loops = [outer_loop] + hole_loops
+
+    ring_xy   = all_verts[outer_loop, :2]
+    holes_xy  = [all_verts[lp, :2] for lp in hole_loops]
+    shapely_poly = ShapelyPolygon(ring_xy, holes=holes_xy)
+    if not shapely_poly.is_valid:
+        shapely_poly = shapely_poly.buffer(0)
+    if len(hole_loops) > 0:
+        print(f"    Water ripple boundary: 1 outer ring ({len(outer_loop)} verts) "
+              f"+ {len(hole_loops)} hole(s) "
+              f"({', '.join(str(len(lp)) for lp in hole_loops)} verts)")
+
+    # ------------------------------------------------------------------
+    # 3. Regular grid over bbox; filter inside (with boundary inset to
+    #    keep Delaunay from skipping rim edges — same fix as sand #339).
+    # ------------------------------------------------------------------
+    x_min, x_max = ring_xy[:, 0].min(), ring_xy[:, 0].max()
+    y_min, y_max = ring_xy[:, 1].min(), ring_xy[:, 1].max()
+
+    xs = np.arange(x_min, x_max + grid_step, grid_step)
+    ys = np.arange(y_min, y_max + grid_step, grid_step)
+    gx, gy = np.meshgrid(xs, ys)
+    grid_xy = np.column_stack([gx.ravel(), gy.ravel()])
+
+    from shapely import prepare, contains_xy
+    WATER_GRID_BOUNDARY_INSET_FACTOR = 1.0  # in units of grid_step
+    shapely_inner = shapely_poly.buffer(-grid_step * WATER_GRID_BOUNDARY_INSET_FACTOR)
+    if shapely_inner.is_empty:
+        shapely_inner = shapely_poly
+    prepare(shapely_inner)
+    inside_mask = contains_xy(shapely_inner, grid_xy[:, 0], grid_xy[:, 1])
+    grid_xy_in  = grid_xy[inside_mask]
+
+    if len(grid_xy_in) < 3:
+        print(f"    apply_water_ripple_texture: too few grid points inside polygon "
+              f"({len(grid_xy_in)}), skipping.")
+        return mesh
+
+    n_grid = len(grid_xy_in)
+    print(f"    Water ripple grid: step={grid_step:.3f} mm, "
+          f"bbox {x_max-x_min:.1f}×{y_max-y_min:.1f} mm → "
+          f"{len(xs)}×{len(ys)} candidates → {n_grid} inside polygon "
+          f"(seed=0x{seed:08x}, θ1={math.degrees(theta1):.1f}°, "
+          f"θ2={math.degrees(theta2):.1f}°)")
+
+    # Vertex budget — same 150 K cap as sand.
+    MAX_GRID_PTS = 150_000
+    if n_grid > MAX_GRID_PTS:
+        scale_up = math.sqrt(n_grid / MAX_GRID_PTS)
+        new_step = grid_step * scale_up
+        print(f"    Water ripple: grid too large ({n_grid} pts); "
+              f"increasing step {grid_step:.3f} → {new_step:.3f} mm")
+        grid_step = new_step
+        shapely_inner = shapely_poly.buffer(-grid_step * WATER_GRID_BOUNDARY_INSET_FACTOR)
+        if shapely_inner.is_empty:
+            shapely_inner = shapely_poly
+        prepare(shapely_inner)
+        xs = np.arange(x_min, x_max + grid_step, grid_step)
+        ys = np.arange(y_min, y_max + grid_step, grid_step)
+        gx, gy = np.meshgrid(xs, ys)
+        grid_xy = np.column_stack([gx.ravel(), gy.ravel()])
+        inside_mask = contains_xy(shapely_inner, grid_xy[:, 0], grid_xy[:, 1])
+        grid_xy_in  = grid_xy[inside_mask]
+        n_grid = len(grid_xy_in)
+        print(f"    Water ripple: after step increase → {n_grid} grid points")
+
+    # ------------------------------------------------------------------
+    # 4. Two-sine displacement, clamped ≤ 0 (downward only).
+    # ------------------------------------------------------------------
+    cos_t1, sin_t1 = math.cos(theta1), math.sin(theta1)
+    cos_t2, sin_t2 = math.cos(theta2), math.sin(theta2)
+    two_pi = 2.0 * math.pi
+
+    def ripple_dz(xy: np.ndarray) -> np.ndarray:
+        """Sum of two sines, then clamp to ≤ 0 so peaks don't poke above
+        the unrippled water surface (no overhangs vs. surrounding fringe)."""
+        u1 = (xy[:, 0] * cos_t1 + xy[:, 1] * sin_t1) / lambda1
+        u2 = (xy[:, 0] * cos_t2 + xy[:, 1] * sin_t2) / lambda2
+        dz = A1 * np.sin(two_pi * u1 + phi1) + A2 * np.sin(two_pi * u2 + phi2)
+        return np.minimum(dz, 0.0)
+
+    dz     = ripple_dz(grid_xy_in)
+    grid_z = z_max + dz
+
+    # Concatenate outer ring + every interior hole ring so EVERY boundary
+    # vertex is represented in the Delaunay input and rim-Z snap step.
+    all_ring_idx = [int(v) for lp in all_loops for v in lp]
+    ring_xy_arr  = all_verts[all_ring_idx, :2]
+    ring_z       = z_max + ripple_dz(ring_xy_arr)
+
+    n_ring   = len(ring_xy_arr)
+    all_xy   = np.vstack([ring_xy_arr, grid_xy_in])
+    all_z    = np.concatenate([ring_z, grid_z])
+    grid_pts = np.column_stack([all_xy, all_z])
+
+    print(f"    Water ripple: A1={A1:.3f}/λ1={lambda1:.2f}, "
+          f"A2={A2:.3f}/λ2={lambda2:.2f} mm, "
+          f"dz range [{dz.min():.3f}, {dz.max():.3f}] mm (clamped ≤0) "
+          f"on {n_grid} grid + {n_ring} ring verts")
+
+    # ------------------------------------------------------------------
+    # 5. Delaunay-triangulate; clip triangles whose centroid falls outside
+    # ------------------------------------------------------------------
+    tri = Delaunay(all_xy)
+    tri_faces = tri.simplices
+    centroids = all_xy[tri_faces].mean(axis=1)
+    cent_inside = contains_xy(shapely_poly, centroids[:, 0], centroids[:, 1])
+    top_new_faces = tri_faces[cent_inside]
+
+    print(f"    Water ripple: Delaunay → {len(tri_faces)} triangles, "
+          f"{cent_inside.sum()} kept after centroid clipping")
+
+    # ------------------------------------------------------------------
+    # 6. Reassemble + snap rim Z to merge cleanly with walls
+    # ------------------------------------------------------------------
+    other_vert_indices, other_faces_local = np.unique(
+        other_faces_global, return_inverse=True
+    )
+    other_faces_local = other_faces_local.reshape(-1, 3)
+    other_verts_arr   = all_verts[other_vert_indices].copy()
+
+    ring_global  = np.array(all_ring_idx)
+    ring_disp_z  = ring_z
+    rim_z_lookup = dict(zip(ring_global.tolist(), ring_disp_z.tolist()))
+
+    for local_i, global_i in enumerate(other_vert_indices):
+        if global_i in rim_z_lookup:
+            other_verts_arr[local_i, 2] = rim_z_lookup[global_i]
+
+    n_top = len(grid_pts)
+    combined_verts = np.vstack([grid_pts, other_verts_arr])
+    combined_faces = np.vstack([
+        top_new_faces,
+        other_faces_local + n_top,
+    ])
+
+    new_mesh = trimesh.Trimesh(
+        vertices=combined_verts,
+        faces=combined_faces,
+        process=True,
+    )
+    if not new_mesh.is_watertight:
+        new_mesh.merge_vertices(digits_vertex=3)
+        trimesh.repair.fix_normals(new_mesh)
+        trimesh.repair.fill_holes(new_mesh)
+        trimesh.repair.fix_winding(new_mesh)
+
+    print(f"    Water ripple: reassembled mesh — "
+          f"{len(new_mesh.vertices)} verts, {len(new_mesh.faces)} faces, "
+          f"watertight={new_mesh.is_watertight}")
+
+    mesh.vertices = new_mesh.vertices
+    mesh.faces    = new_mesh.faces
+
+    return mesh
+
+
+# ---------------------------------------------------------------------------
+# Grass bump texture
+# ---------------------------------------------------------------------------
+
+def apply_grass_texture(
+    mesh: "trimesh.Trimesh",
+    amplitude: float = 0.5,
+    bump_spacing: float = 2.4,
+    exclude_polyline_xy: np.ndarray | None = None,
+    exclude_radius_mm: float = 0.0,
+) -> "trimesh.Trimesh":
+    """
+    Apply paraboloid grass-bump displacement to the top surface of a mesh.
+
+    Bump centers are placed on a jittered grid across the XY extent of the
+    top-surface vertices.  Each top-surface vertex is displaced upward by::
+
+        dz = amplitude * max(0, 1 - (r / R)^2)
+
+    where R = bump_spacing * 0.48 (so adjacent bumps slightly overlap) and
+    r is the distance to the nearest bump center.
+
+    Only vertices above BASE_THICKNESS_MM are displaced (top surface / fringe
+    top).  Wall and base vertices are left untouched.
+
+    Parameters
+    ----------
+    mesh        : trimesh.Trimesh — closed watertight mesh in mm coords.
+    amplitude   : maximum Z displacement in mm (peak of each bump).
+    bump_spacing: centre-to-centre distance between bumps in mm.
+    exclude_polyline_xy : optional (N, 2) polyline — any top-surface vertex
+        within ``exclude_radius_mm`` of this polyline is NOT displaced.  Used
+        by the fringe to freeze its seam vertices where it meets the green,
+        so the fringe-green seam stays flush after grass bumps are applied
+        only to one side.
+    exclude_radius_mm   : radius (mm) of the exclusion band around the polyline.
+
+    Returns the mesh modified in place (also returns it for convenience).
+    """
+    verts = mesh.vertices  # (N, 3) — live reference, edits modify the mesh
+
+    # Identify top-surface vertices: Z > BASE_THICKNESS_MM
+    top_mask = verts[:, 2] > BASE_THICKNESS_MM
+    if not top_mask.any():
+        print(f"    apply_grass_texture: no top-surface vertices found (Z > {BASE_THICKNESS_MM}), skipping.")
+        return mesh
+
+    top_xy = verts[top_mask, :2]  # (M, 2)
+
+    # Build per-vertex protection mask for seam verts (fringe-green interface).
+    # We freeze these at their current Z so the seam stays flush between meshes.
+    protect = np.zeros(int(top_mask.sum()), dtype=bool)
+    if exclude_polyline_xy is not None and exclude_radius_mm > 0.0 and len(exclude_polyline_xy) >= 2:
+        ex_tree = cKDTree(exclude_polyline_xy)
+        d_ex, _ = ex_tree.query(top_xy, k=1)
+        protect = d_ex < exclude_radius_mm
+        if protect.any():
+            print(f"    Grass texture: protecting {protect.sum()} top-surface vertices "
+                  f"within {exclude_radius_mm:.2f} mm of seam polyline")
+
+    x_min, x_max = top_xy[:, 0].min(), top_xy[:, 0].max()
+    y_min, y_max = top_xy[:, 1].min(), top_xy[:, 1].max()
+
+    # --- Jittered grid of bump centers ---
+    rng = np.random.default_rng(seed=42)
+    cols = max(1, int(math.ceil((x_max - x_min) / bump_spacing)) + 1)
+    rows = max(1, int(math.ceil((y_max - y_min) / bump_spacing)) + 1)
+
+    xs_centers = np.linspace(x_min, x_min + (cols - 1) * bump_spacing, cols)
+    ys_centers = np.linspace(y_min, y_min + (rows - 1) * bump_spacing, rows)
+
+    grid_x, grid_y = np.meshgrid(xs_centers, ys_centers)
+    grid_x = grid_x.ravel()
+    grid_y = grid_y.ravel()
+
+    # Jitter: random offset up to ±bump_spacing/2
+    jitter_scale = bump_spacing * 0.5
+    jitter_x = rng.uniform(-jitter_scale, jitter_scale, size=len(grid_x))
+    jitter_y = rng.uniform(-jitter_scale, jitter_scale, size=len(grid_y))
+    centers = np.column_stack([grid_x + jitter_x, grid_y + jitter_y])
+
+    n_bumps = len(centers)
+
+    # --- Find nearest bump center for each top vertex (vectorised via cKDTree) ---
+    R = bump_spacing * 0.48
+    tree = cKDTree(centers)
+    dists, _ = tree.query(top_xy, k=1)
+
+    # Paraboloid displacement: amplitude * max(0, 1 - (r/R)^2)
+    r_norm = dists / R
+    dz = amplitude * np.maximum(0.0, 1.0 - r_norm ** 2)
+    # Freeze any protected (seam-adjacent) top verts so the fringe-green seam
+    # stays flush after grass is applied to the fringe only.
+    if protect.any():
+        dz = np.where(protect, 0.0, dz)
+
+    # Apply displacement to top-surface vertices
+    verts[top_mask, 2] += dz
+
+    print(f"    Grass texture: {n_bumps} bumps, R={R:.3f} mm, amplitude={amplitude:.3f} mm, "
+          f"dz range [{dz.min():.3f}, {dz.max():.3f}] mm on {top_mask.sum()} vertices"
+          f"{' (+' + str(int(protect.sum())) + ' seam-frozen)' if protect.any() else ''}")
+
+    return mesh
+
+
+# ---------------------------------------------------------------------------
+# Grass bump texture v2 (Poisson-disk centers, cone/pyramid profile, jitter)
+# ---------------------------------------------------------------------------
+
+def _bridson_poisson_disk_2d(
+    x_min: float, y_min: float, x_max: float, y_max: float,
+    radius: float, k: int, rng: np.random.Generator,
+) -> np.ndarray:
+    """
+    Bridson's Poisson-disk sampling in 2D. Returns (N, 2) sample coords in the
+    rectangle [x_min, x_max] x [y_min, y_max] with min pairwise distance
+    ``radius``. Pure numpy, no external deps. ``k`` is Bridson's max attempts
+    per active sample (typical 30). Deterministic given ``rng``.
+    """
+    if radius <= 0 or x_max <= x_min or y_max <= y_min:
+        return np.zeros((0, 2), dtype=np.float64)
+
+    cell = radius / math.sqrt(2.0)
+    gw = int(math.ceil((x_max - x_min) / cell))
+    gh = int(math.ceil((y_max - y_min) / cell))
+    if gw <= 0 or gh <= 0:
+        return np.zeros((0, 2), dtype=np.float64)
+
+    # Grid holds index into samples list (-1 = empty). Each cell fits at most
+    # one sample by construction (cell diag = radius).
+    grid = -np.ones((gw, gh), dtype=np.int64)
+    samples: list[tuple[float, float]] = []
+    active: list[int] = []
+
+    def _grid_coords(px: float, py: float) -> tuple[int, int]:
+        gx = int((px - x_min) / cell)
+        gy = int((py - y_min) / cell)
+        return max(0, min(gw - 1, gx)), max(0, min(gh - 1, gy))
+
+    def _fits(px: float, py: float) -> bool:
+        if not (x_min <= px < x_max and y_min <= py < y_max):
+            return False
+        gx, gy = _grid_coords(px, py)
+        r2 = radius * radius
+        for ix in range(max(0, gx - 2), min(gw, gx + 3)):
+            for iy in range(max(0, gy - 2), min(gh, gy + 3)):
+                si = grid[ix, iy]
+                if si < 0:
+                    continue
+                sx, sy = samples[si]
+                if (sx - px) * (sx - px) + (sy - py) * (sy - py) < r2:
+                    return False
+        return True
+
+    # Seed with a random point.
+    p0 = (rng.uniform(x_min, x_max), rng.uniform(y_min, y_max))
+    samples.append(p0)
+    active.append(0)
+    gx0, gy0 = _grid_coords(*p0)
+    grid[gx0, gy0] = 0
+
+    while active:
+        # Pick a random active sample.
+        ai = int(rng.integers(0, len(active)))
+        si = active[ai]
+        sx, sy = samples[si]
+        found = False
+        # Generate k candidates in the annulus [radius, 2*radius] around sample.
+        for _ in range(k):
+            r = radius * (1.0 + rng.random())
+            theta = 2.0 * math.pi * rng.random()
+            cx = sx + r * math.cos(theta)
+            cy = sy + r * math.sin(theta)
+            if _fits(cx, cy):
+                samples.append((cx, cy))
+                new_i = len(samples) - 1
+                gx, gy = _grid_coords(cx, cy)
+                grid[gx, gy] = new_i
+                active.append(new_i)
+                found = True
+                break
+        if not found:
+            # Retire this active sample (swap-pop).
+            active[ai] = active[-1]
+            active.pop()
+
+    return np.asarray(samples, dtype=np.float64)
+
+
+def apply_grass_texture_v2(
+    mesh: "trimesh.Trimesh",
+    *,
+    amplitude: float,
+    bump_spacing: float,
+    exclude_polyline_xy: np.ndarray | None = None,
+    freeze_radius_mm: float = FRINGE_GRASS_SEAM_EXCLUDE_MM,
+    # v2-only
+    profile: str = "cone",
+    amplitude_jitter: float = 0.5,
+    xy_shear_mm: float = 0.15,
+    poisson_k: int = 30,
+    rng_seed: int = 42,
+) -> "trimesh.Trimesh":
+    """
+    v2 grass displacement. Improvements over v1:
+      * Poisson-disk sample centers (Bridson) instead of jittered lattice →
+        breaks the "regular pattern" tell.
+      * Cone / pyramid profile options (sharper peaks than paraboloid) that
+        read as grass blades rather than smoothed domes. Paraboloid remains
+        as a comparison baseline.
+      * Per-bump amplitude jitter (±``amplitude_jitter`` fraction, uniform).
+      * Per-vertex XY shear before kernel evaluation to break lattice tells.
+        Skipped for verts inside ``freeze_radius_mm`` of ``exclude_polyline_xy``
+        so the seam does NOT open.
+      * Vertex sums contributions from EVERY center within ``bump_spacing`` of
+        it (cKDTree ball-query), not just the nearest — gives overlapping
+        blades a natural build-up instead of picket-fence uniformity.
+
+    Returns the mesh modified in place.
+    """
+    if bump_spacing <= 0:
+        print(f"    apply_grass_texture_v2: bump_spacing={bump_spacing} ≤ 0, skipping.")
+        return mesh
+    if profile not in ("cone", "pyramid", "paraboloid"):
+        raise ValueError(f"apply_grass_texture_v2: unknown profile {profile!r}")
+
+    verts = mesh.vertices  # (N, 3) — live reference
+    top_mask = verts[:, 2] > BASE_THICKNESS_MM
+    if not top_mask.any():
+        print(f"    apply_grass_texture_v2: no top-surface vertices found (Z > {BASE_THICKNESS_MM}), skipping.")
+        return mesh
+
+    top_xy = verts[top_mask, :2].copy()  # copy — we'll apply per-vertex shear
+    n_top = int(top_mask.sum())
+
+    # Per-vertex seam-freeze mask (also gates XY shear so seam doesn't open).
+    protect = np.zeros(n_top, dtype=bool)
+    if exclude_polyline_xy is not None and freeze_radius_mm > 0.0 and len(exclude_polyline_xy) >= 2:
+        ex_tree = cKDTree(exclude_polyline_xy)
+        d_ex, _ = ex_tree.query(top_xy, k=1)
+        protect = d_ex < freeze_radius_mm
+
+    rng = np.random.default_rng(rng_seed)
+
+    # --- Per-vertex XY shear (only for un-protected verts) --------------------
+    if xy_shear_mm > 0.0:
+        r_shear = np.sqrt(rng.random(n_top)) * xy_shear_mm
+        th_shear = 2.0 * math.pi * rng.random(n_top)
+        dx = r_shear * np.cos(th_shear)
+        dy = r_shear * np.sin(th_shear)
+        # Zero out the shear on protected (seam) vertices so they stay pinned.
+        dx = np.where(protect, 0.0, dx)
+        dy = np.where(protect, 0.0, dy)
+        top_xy[:, 0] += dx
+        top_xy[:, 1] += dy
+
+    # --- Poisson-disk bump centers in the top-surface XY bounding box ---------
+    x_min, x_max = float(top_xy[:, 0].min()), float(top_xy[:, 0].max())
+    y_min, y_max = float(top_xy[:, 1].min()), float(top_xy[:, 1].max())
+    centers = _bridson_poisson_disk_2d(
+        x_min, y_min, x_max, y_max,
+        radius=bump_spacing, k=poisson_k, rng=rng,
+    )
+
+    if len(centers) == 0:
+        print("    apply_grass_texture_v2: Poisson sampling produced 0 centers, skipping.")
+        return mesh
+
+    # Reject centers that are off-mesh (> bump_spacing to the nearest top vert).
+    top_tree = cKDTree(verts[top_mask, :2])  # unsheared XY for on-mesh test
+    d_off, _ = top_tree.query(centers, k=1)
+    on_mesh = d_off <= bump_spacing
+    centers = centers[on_mesh]
+
+    # Reject centers within freeze_radius_mm of the exclude polyline.
+    if exclude_polyline_xy is not None and freeze_radius_mm > 0.0 and len(exclude_polyline_xy) >= 2:
+        ex_tree = cKDTree(exclude_polyline_xy)
+        d_ex_c, _ = ex_tree.query(centers, k=1)
+        centers = centers[d_ex_c >= freeze_radius_mm]
+
+    n_bumps = len(centers)
+    if n_bumps == 0:
+        print("    apply_grass_texture_v2: 0 centers after on-mesh/seam filtering, skipping.")
+        return mesh
+
+    # Per-center amplitude (cached once — don't re-roll).
+    amp_i = amplitude * (1.0 + rng.uniform(-amplitude_jitter, amplitude_jitter, size=n_bumps))
+
+    # --- Spatial hash for kernel evaluation -----------------------------------
+    # Vectorized: cKDTree.query_ball_tree with a vertex-tree yields a list of
+    # neighbor lists, but the hot path is Python overhead per vertex. We flatten
+    # (vertex, center) pairs into two long arrays and evaluate the kernel with
+    # numpy + np.add.at to accumulate per-vertex sums. This drops the Python-
+    # per-vertex overhead entirely and holds v2 within ~3× of v1 on Firefly.
+    ctree = cKDTree(centers)
+    R = float(bump_spacing)  # kernel support radius
+    vtree = cKDTree(top_xy)
+    # Neighbors of each center, in vertex space. Returned as a list of lists.
+    # For 12K centers × ~30 neighbors each = ~360K pairs — small.
+    neighbors_per_center = ctree.query_ball_tree(vtree, r=R)
+    # Flatten to (center_idx, vertex_idx) pair arrays.
+    lens = np.fromiter((len(x) for x in neighbors_per_center), dtype=np.int64,
+                       count=n_bumps)
+    if lens.sum() == 0:
+        print("    apply_grass_texture_v2: no vertex-center pairs within radius, skipping.")
+        return mesh
+    center_ids = np.repeat(np.arange(n_bumps, dtype=np.int64), lens)
+    vertex_ids = np.concatenate([np.asarray(x, dtype=np.int64)
+                                 for x in neighbors_per_center if x])
+    diffs = centers[center_ids] - top_xy[vertex_ids]  # (P, 2)
+
+    if profile == "cone":
+        d = np.linalg.norm(diffs, axis=1)
+        contrib = amp_i[center_ids] * np.maximum(0.0, 1.0 - d / R)
+    elif profile == "pyramid":
+        d = np.maximum(np.abs(diffs[:, 0]), np.abs(diffs[:, 1]))
+        contrib = amp_i[center_ids] * np.maximum(0.0, 1.0 - d / R)
+    else:  # paraboloid — v1 kernel, for A/B baseline via v2 code path
+        d = np.linalg.norm(diffs, axis=1)
+        r_n = d / R
+        contrib = amp_i[center_ids] * np.maximum(0.0, 1.0 - r_n * r_n)
+
+    dz = np.zeros(n_top, dtype=np.float64)
+    np.add.at(dz, vertex_ids, contrib)
+
+    # Freeze seam-adjacent vertices.
+    if protect.any():
+        dz = np.where(protect, 0.0, dz)
+
+    verts[top_mask, 2] += dz
+
+    n_displaced = int((dz > 0.0).sum())
+    print(f"    Grass v2 ({profile}): {n_bumps} Poisson centers "
+          f"(radius={bump_spacing:.2f} mm), amplitude={amplitude:.3f}±{amplitude_jitter*100:.0f}%, "
+          f"xy_shear={xy_shear_mm:.2f} mm, dz range [{dz.min():.3f}, {dz.max():.3f}] mm; "
+          f"{n_displaced}/{n_top} top verts displaced"
+          f"{' (' + str(int(protect.sum())) + ' seam-frozen)' if protect.any() else ''}")
+
+    return mesh
+
+
+# ---------------------------------------------------------------------------
+# Fringe divot
+# ---------------------------------------------------------------------------
+
+def apply_divot(mesh, center_xy, radius, depth):
+    """Lower top-surface vertices within `radius` of center_xy by a hemispherical amount."""
+    verts = mesh.vertices  # live reference
+    # Use BASE_THICKNESS_MM to identify top-surface vertices (same as apply_grass_texture).
+    # Using z_max - 0.6 is too narrow when grass bumps create tall spikes at varied heights.
+    top_mask = verts[:, 2] > BASE_THICKNESS_MM
+    dx = verts[top_mask, 0] - center_xy[0]
+    dy = verts[top_mask, 1] - center_xy[1]
+    d = np.sqrt(dx*dx + dy*dy)
+    inside = d <= radius
+    # For vertices inside the divot, lower their Z by the hemispherical depth
+    # dz = radius - sqrt(radius^2 - d^2)  (positive depression amount)
+    subset_d = d[inside]
+    dz = radius - np.sqrt(np.maximum(0.0, radius*radius - subset_d*subset_d))
+    # Apply: lower the Z of those vertices
+    idxs = np.where(top_mask)[0][inside]
+    verts[idxs, 2] -= dz
+    n_lowered = inside.sum()
+    max_dz = dz.max() if n_lowered > 0 else 0.0
+    print(f"    Divot: {n_lowered} vertices lowered, center={center_xy}, "
+          f"radius={radius} mm, depth={depth} mm, max dz={max_dz:.2f} mm")
+    return mesh
+
+
+# ---------------------------------------------------------------------------
+# Golf-tee-top ball stand
+# ---------------------------------------------------------------------------
+
+def build_ball_stand(
+    n_seg: int = 64,
+    n_taper: int = 24,
+    n_cap: int = 32,
+    n_tip: int = 8,
+) -> "trimesh.Trimesh":
+    """
+    Build a golf-tee-shaped pedestal for a decorative golf ball.
+
+    Shape (all dimensions in mm):
+      - Pointed tip: z=0 (r=0 pole) → z=2 (r=1.5), quadratic ramp
+      - Straight shaft: z=2 to z=7, r=1.5 (5 mm long)
+      - Concave cup flare: z=7 to z=12, r=1.5→7.5 via quadratic Bezier
+        (concave sides — tangent vertical at neck, horizontal at rim)
+      - Cup rim shelf at z=12: outer r=7.5 → inner r=6 (horizontal)
+      - Spherical-cap cup: r=6 to r=0, 3 mm deep
+        R = (r² + h²) / (2h) = (36 + 9) / 6 = 7.5 mm (sphere radius)
+        Sphere center at z=16.5; z = 16.5 - sqrt(56.25 - r^2)
+        r=0 → z=9 (cup bottom pole), r=6 → z=12 (cup rim) ✓
+
+    Total height: 12 mm (rim unchanged; cup bottom drops from z=10 to z=9).
+
+    The mesh is built by revolving a 2-D (r, z) profile around the Z axis
+    and triangulating ring-by-ring. Both z=0 (tip) and z=9 (cup bottom)
+    are poles (r=0) and produce watertight fan triangles.
+    """
+    # --- Spherical cap parameters (cup) ---
+    # Cup radius r_cup=6, depth h=3
+    # R = (r_cup² + h²) / (2h) = (36 + 9) / 6 = 7.5
+    # Sphere center z = cup_bottom_z + R = 9 + 7.5 = 16.5
+    # At r=0: z = 16.5 - 7.5 = 9 (cup bottom)
+    # At r=6: z = 16.5 - sqrt(56.25 - 36) = 16.5 - 4.5 = 12 (cup rim) ✓
+    R_sphere = 7.5
+    z_sphere_center = 16.5
+    r_cup_rim = 6.0
+
+    # --- Build 2-D radial profile ---
+    # Order: bottom pole (tip) → up outer shell → down cup interior → top pole (cup bottom)
+    profile = []
+
+    # 1. POINTED TIP — bottom pole (r=0, z=0)
+    profile.append((0.0, 0.0))
+
+    # 2. TIP RAMP — quadratic flare from (0,0) to (1.5,2), n_tip steps
+    # Start i=1 to skip i=0 (already added pole above)
+    for i in range(1, n_tip + 1):
+        t = i / n_tip                  # (1/n_tip) → 1.0
+        r = 1.5 * math.sqrt(t)        # gradual flare: 1.5x wider than original
+        z = t * 2.0                   # linear z from 0 to 2
+        profile.append((r, z))
+    # Last tip point: (1.5, 2.0)
+
+    # 3. STRAIGHT SHAFT — from z=2 to z=7, r=1.5 (single segment, no intermediate points needed)
+    profile.append((1.5, 7.0))
+
+    # 4. CONCAVE CUP FLARE — quadratic Bezier from (1.5,7) to (7.5,12)
+    # P0 = (1.5,7), C = (1.5,12), P1 = (7.5,12)
+    # Tangent at P0 is vertical (shaft direction), tangent at P1 is horizontal (rim direction)
+    # The control point at (1.5,12) pulls the curve inward → concave sides
+    P0 = np.array([1.5, 7.0])
+    Ctrl = np.array([1.5, 12.0])
+    P1 = np.array([7.5, 12.0])
+    # Skip i=0 (already at neck P0 = last shaft point)
+    for i in range(1, n_taper + 1):
+        t = i / n_taper
+        pt = (1 - t) ** 2 * P0 + 2 * (1 - t) * t * Ctrl + t ** 2 * P1
+        profile.append((pt[0], pt[1]))
+    # Last flare point: (7.5, 12.0) — rim outer corner
+
+    # 5. CUP RIM SHELF — horizontal step inward at z=12
+    profile.append((r_cup_rim, 12.0))
+
+    # 6. SPHERICAL CAP INTERIOR — from (6,12) down to (0,9)
+    # Sample n_cap points; i=0 gives r=6 (already added above), start from i=1
+    for i in range(1, n_cap + 1):
+        t = i / float(n_cap)              # 0 exclusive → 1 inclusive
+        r = r_cup_rim * (1.0 - t)        # 6 → 0
+        z = z_sphere_center - math.sqrt(max(0.0, R_sphere ** 2 - r ** 2))
+        profile.append((r, z))
+    # Last cap point: (0.0, 9.0) — this is the top pole (cup bottom)
+
+    # --- Revolve profile around Z axis ---
+    # For watertight poles, axis points (r=0) get exactly ONE vertex each.
+    # Ring metadata: (start_index, count) where count=1 for poles, n_seg for rings.
+    angles = np.linspace(0.0, 2.0 * math.pi, n_seg, endpoint=False)
+    cos_a = np.cos(angles)
+    sin_a = np.sin(angles)
+
+    vertices = []
+    # rings: list of (start_index, vertex_count, r)
+    rings = []
+
+    for r, z in profile:
+        start = len(vertices)
+        if r == 0.0:
+            # Pole — single vertex on the axis
+            vertices.append([0.0, 0.0, z])
+            rings.append((start, 1, r))
+        else:
+            for k in range(n_seg):
+                vertices.append([r * cos_a[k], r * sin_a[k], z])
+            rings.append((start, n_seg, r))
+
+    vertices = np.array(vertices, dtype=np.float64)
+    faces = []
+
+    def ring_vtx(ring_i, seg_j):
+        """Vertex index for ring ring_i at angular position seg_j (wraps)."""
+        start, count, _ = rings[ring_i]
+        if count == 1:
+            return start  # pole — always the single vertex
+        return start + (seg_j % n_seg)
+
+    for ri in range(len(rings) - 1):
+        _, _, r_bot = rings[ri]
+        _, _, r_top = rings[ri + 1]
+        for j in range(n_seg):
+            j1 = (j + 1) % n_seg
+            a = ring_vtx(ri,     j)
+            b = ring_vtx(ri,     j1)
+            c = ring_vtx(ri + 1, j)
+            d = ring_vtx(ri + 1, j1)
+
+            if r_bot == 0.0:
+                # Bottom pole — fan triangle: pole → next ring
+                # Winding: outward normal faces down (away from next ring)
+                faces.append([a, d, c])
+            elif r_top == 0.0:
+                # Top pole — fan triangle: prev ring → pole
+                faces.append([a, b, c])
+            else:
+                # Normal quad → 2 triangles (CCW outward)
+                faces.append([a, b, d])
+                faces.append([a, d, c])
+
+    faces = np.array(faces, dtype=np.int64)
+    mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=True)
+    return mesh
+
+
+# ---------------------------------------------------------------------------
+# 3MF post-processing — per-object filament/extruder metadata (Bambu Studio)
+# ---------------------------------------------------------------------------
+
+def _filament_for_scene_name(name: str) -> int:
+    """
+    Map a scene node name to a Bambu Studio extruder/filament index.
+
+    Convention:
+        green*    → 1
+        fringe*   → 2
+        trap*     → 3   (sand traps; "sand_trap*" also matches)
+        water*    → 4   (water traps)
+        boulders* → 5   (boulders region)
+
+    Default for anything unrecognised is 1, so unknown geometries don't
+    silently land on a high extruder slot the user has nothing loaded into.
+    """
+    n = (name or "").lower()
+    if n.startswith("boulders"):
+        return 5
+    if n.startswith("water"):
+        return 4
+    if n.startswith("sand_trap") or n.startswith("trap"):
+        return 3
+    if n.startswith("fringe"):
+        return 2
+    if n.startswith("green"):
+        return 1
+    return 1
+
+
+def _load_bambu_project_settings_template() -> bytes | None:
+    """
+    Load app/templates/bambu/project_settings.config as bytes.
+
+    Returns the raw bytes on success, or None with a WARNING log if the file
+    is absent (graceful fallback — Bambu will show its dialog but geometry
+    still loads).
+
+    The result is NOT cached at module level to allow monkeypatching in tests.
+    The caller checks _PROJECT_SETTINGS_TEMPLATE (a str path) so tests can
+    override it with monkeypatch.setattr.
+    """
+    import logging as _logging
+    import os as _os
+    template_path = _PROJECT_SETTINGS_TEMPLATE
+    if not _os.path.isfile(template_path):
+        _logging.getLogger("gradient_surface_diagnostic").warning(
+            "Bambu project_settings.config template not found at %r; "
+            "skipping injection (Bambu Studio will show 'invalid config' dialog "
+            "but geometry will still load). "
+            "To silence the dialog, place a valid Bambu Studio blank-plate export at "
+            "app/templates/bambu/project_settings.config.",
+            template_path,
+        )
+        return None
+    with open(template_path, "rb") as _f:
+        return _f.read()
+
+
+# Path to the Bambu project_settings.config template.
+# Module-level so tests can monkeypatch it without touching the filesystem.
+_PROJECT_SETTINGS_TEMPLATE: str = str(
+    __import__("pathlib").Path(__file__).parent / "templates" / "bambu" / "project_settings.config"
+)
+
+
+def _inject_bambu_extruder_metadata(path_3mf: str, scene_names: list) -> None:
+    """
+    Post-process a trimesh-written 3MF to add per-object extruder assignments
+    that Bambu Studio / OrcaSlicer understand, and inject a complete
+    project_settings.config so Bambu Studio loads without its 'invalid config'
+    warning dialog.
+
+    trimesh.Scene.export writes a single ``3D/3dmodel.model`` file with one
+    ``<object id="N" name="geometry_K" ...>`` per scene geometry, in the same
+    order they were added to the Scene. Bambu reads extruder assignments out
+    of ``Metadata/model_settings.config`` (one ``<object id="N">`` block per
+    model object, with a ``<metadata key="extruder" value="M"/>`` child and
+    a matching ``<part>`` block).
+
+    This function:
+      1. Opens ``path_3mf`` as a zip and parses ``3D/3dmodel.model``.
+      2. Reads each ``<object>``'s id (and name attribute, e.g. "geometry_0").
+      3. Pairs that ordered list with ``scene_names`` (same order — both come
+         from Scene.geometry insertion order) to derive the extruder via
+         ``_filament_for_scene_name``.
+      4. Writes a fresh ``Metadata/model_settings.config`` into the zip.
+      5. Writes ``Metadata/project_settings.config`` from the template at
+         app/templates/bambu/project_settings.config (verbatim copy).
+         If the template is missing, logs a WARNING and skips step 5 only —
+         step 4 still completes (graceful fallback).
+      6. Ensures ``[Content_Types].xml`` declares the 'config' extension so
+         Bambu Studio's content-type validator accepts the .config files.
+
+    If counts don't line up, falls back to extruder=1 for everything and
+    prints a warning rather than silently mis-tagging.
+
+    Printer assumption: the bundled template was exported from Bambu Studio
+    with a Bambu Lab A1 0.4 nozzle profile (printer_settings_id =
+    'Bambu Lab A1 0.4 nozzle'). This is Thomas's machine. Bambu Studio accepts
+    same-model profiles without complaint; no dialog appears. If a different
+    printer is used the profile keys may differ but geometry still loads.
+    """
+    import zipfile
+    import shutil
+    import re as _re
+    import xml.etree.ElementTree as _ET
+
+    # --- 1. Read 3D/3dmodel.model out of the existing zip ---
+    with zipfile.ZipFile(path_3mf, "r") as zin:
+        try:
+            model_xml = zin.read("3D/3dmodel.model").decode("utf-8")
+        except KeyError:
+            print(f"  WARNING: 3D/3dmodel.model missing from {path_3mf}; "
+                  f"cannot inject extruder metadata.")
+            return
+        existing_names = set(zin.namelist())
+
+    # --- 2. Pull (object_id, object_name) in document order ---
+    # ElementTree handles namespaces but we only need the attributes.
+    ns = "{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}"
+    try:
+        root = _ET.fromstring(model_xml)
+    except _ET.ParseError as exc:
+        print(f"  WARNING: failed to parse 3dmodel.model ({exc}); "
+              f"skipping extruder metadata.")
+        return
+
+    object_entries: list[tuple[str, str]] = []  # (object_id, name)
+    for obj in root.iter(f"{ns}object"):
+        oid = obj.attrib.get("id", "")
+        oname = obj.attrib.get("name", "")
+        if oid:
+            object_entries.append((oid, oname))
+
+    if len(object_entries) != len(scene_names):
+        print(f"  WARNING: 3dmodel.model has {len(object_entries)} objects but "
+              f"scene_names has {len(scene_names)}; falling back to extruder=1 "
+              f"for every object.")
+        # 4-tuple: (oid, oname, extruder, scene_name); scene_name="" in fallback
+        mapping = [(oid, oname, 1, "") for (oid, oname) in object_entries]
+    else:
+        # 4-tuple: (oid, oname, extruder, scene_name)
+        # scene_name is the ORIGINAL name used when adding to the trimesh.Scene
+        # (e.g. "fringe_no_grass_sample") — NOT oname which is trimesh's "geometry_N"
+        # generic label.  The plate-split logic below must use scene_name, not oname.
+        mapping = [
+            (oid, oname, _filament_for_scene_name(scene_names[i]), scene_names[i])
+            for i, (oid, oname) in enumerate(object_entries)
+        ]
+
+    # --- 3. Build Metadata/model_settings.config ---
+    # Bambu's <part id> values must be unique across the whole config. We
+    # allocate a part id per object using object_id + a fixed offset so the
+    # part ids do not collide with object ids. (This matches the layout
+    # observed in Bambu-Studio-saved 3MFs.)
+    #
+    # Two-plate support (task 718, updated task 724): when "fringe_no_grass_sample"
+    # is one of the scene names, generate two <plate> sections:
+    #   - plate 1: all objects except fringe_no_grass_sample, with <model_instance>
+    #   - plate 2: fringe_no_grass_sample only (smooth/grass-less fringe sample)
+    # When fringe_no_grass_sample is absent (include_fringe_without_grass=False),
+    # we emit a single <plate> block for backward compatibility.
+    _PLATE2_SCENE_NAME = "fringe_no_grass_sample"
+    _has_plate2 = _PLATE2_SCENE_NAME in (scene_names or [])
+
+    cfg_lines = ['<?xml version="1.0" encoding="UTF-8"?>', '<config>']
+    for oid, oname, extruder, _sn in mapping:
+        try:
+            part_id = int(oid) + 1000
+        except ValueError:
+            part_id = 1000
+        display_name = oname or f"object_{oid}"
+        cfg_lines.append(f'  <object id="{oid}">')
+        cfg_lines.append(f'    <metadata key="name" value="{display_name}"/>')
+        cfg_lines.append(f'    <metadata key="extruder" value="{extruder}"/>')
+        cfg_lines.append(f'    <part id="{part_id}" subtype="normal_part">')
+        cfg_lines.append(f'      <metadata key="name" value="{display_name}"/>')
+        cfg_lines.append(f'      <metadata key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>')
+        cfg_lines.append(f'      <metadata key="extruder" value="{extruder}"/>')
+        cfg_lines.append(f'    </part>')
+        cfg_lines.append(f'  </object>')
+
+    # --- 3a. Build <plate> sections ---
+    # Build the plate-1 instance list: all objects NOT named fringe_no_grass_sample.
+    # Build the plate-2 instance list: fringe_no_grass_sample object only (if present).
+    # IMPORTANT: use scene_name (4th element), NOT oname (2nd element) for matching.
+    # trimesh exports objects as "geometry_N" so oname is never "fringe_no_grass_sample".
+    _plate1_items: list[tuple[str, str]] = []  # (oid, oname)
+    _plate2_items: list[tuple[str, str]] = []
+    for oid, oname, _ext, _scene_name in mapping:
+        _sname = (_scene_name or "").lower()
+        if _sname == _PLATE2_SCENE_NAME:
+            _plate2_items.append((oid, oname))
+        else:
+            _plate1_items.append((oid, oname))
+
+    # Plate 1 block — always emitted; includes all non-sample objects.
+    cfg_lines.append('  <plate>')
+    cfg_lines.append('    <metadata key="plater_id" value="1"/>')
+    cfg_lines.append('    <metadata key="plater_name" value=""/>')
+    cfg_lines.append('    <metadata key="locked" value="false"/>')
+    cfg_lines.append('    <metadata key="filament_map_mode" value="Auto For Flush"/>')
+    cfg_lines.append('    <metadata key="thumbnail_file" value="Metadata/plate_1.png"/>')
+    cfg_lines.append('    <metadata key="thumbnail_no_light_file" value="Metadata/plate_no_light_1.png"/>')
+    cfg_lines.append('    <metadata key="top_file" value="Metadata/top_1.png"/>')
+    cfg_lines.append('    <metadata key="pick_file" value="Metadata/pick_1.png"/>')
+    for oid, _oname in _plate1_items:
+        cfg_lines.append('    <model_instance>')
+        cfg_lines.append(f'      <metadata key="object_id" value="{oid}"/>')
+        cfg_lines.append('      <metadata key="instance_id" value="0"/>')
+        cfg_lines.append(f'      <metadata key="identify_id" value="{oid}00"/>')
+        cfg_lines.append('    </model_instance>')
+    cfg_lines.append('  </plate>')
+
+    # Plate 2 block — only emitted when fringe_no_grass_sample is present.
+    if _has_plate2:
+        cfg_lines.append('  <plate>')
+        cfg_lines.append('    <metadata key="plater_id" value="2"/>')
+        cfg_lines.append('    <metadata key="plater_name" value="Fringe No Grass Sample"/>')
+        cfg_lines.append('    <metadata key="locked" value="false"/>')
+        cfg_lines.append('    <metadata key="filament_map_mode" value="Auto For Flush"/>')
+        cfg_lines.append('    <metadata key="thumbnail_file" value="Metadata/plate_2.png"/>')
+        cfg_lines.append('    <metadata key="thumbnail_no_light_file" value="Metadata/plate_no_light_2.png"/>')
+        cfg_lines.append('    <metadata key="top_file" value="Metadata/top_2.png"/>')
+        cfg_lines.append('    <metadata key="pick_file" value="Metadata/pick_2.png"/>')
+        for oid, _oname in _plate2_items:
+            cfg_lines.append('    <model_instance>')
+            cfg_lines.append(f'      <metadata key="object_id" value="{oid}"/>')
+            cfg_lines.append('      <metadata key="instance_id" value="0"/>')
+            cfg_lines.append(f'      <metadata key="identify_id" value="{oid}00"/>')
+            cfg_lines.append('    </model_instance>')
+        cfg_lines.append('  </plate>')
+
+    cfg_lines.append('  <assemble>')
+    cfg_lines.append('  </assemble>')
+    cfg_lines.append('</config>')
+    cfg_lines.append('')
+    cfg_xml = "\n".join(cfg_lines)
+
+    # --- 3b. Load all template files from app/templates/bambu/ (task-674/677) ---
+    # project_settings.config: full ~62 KB Bambu Studio blank-plate export template.
+    # slice_info.config, filament_sequence.json, and 5 thumbnail PNGs: verbatim copies
+    # from the same template directory.
+    # If any template is absent, log a WARNING and skip that file only.
+    import os as _os
+    import logging as _logging
+    _bambu_tmpl_dir = _os.path.join(_os.path.dirname(__file__), "templates", "bambu")
+
+    def _load_tmpl(filename: str) -> bytes | None:
+        p = _os.path.join(_bambu_tmpl_dir, filename)
+        if not _os.path.isfile(p):
+            _logging.getLogger("gradient_surface_diagnostic").warning(
+                "Bambu template %r not found at %r; skipping.", filename, p
+            )
+            return None
+        with open(p, "rb") as _f:
+            return _f.read()
+
+    project_settings_bytes = _load_bambu_project_settings_template()
+
+    # 7 additional template files introduced in task-677.
+    # arcname → template filename
+    _NEW_TMPL_FILES: dict[str, str] = {
+        "Metadata/slice_info.config":      "slice_info.config",
+        "Metadata/filament_sequence.json": "filament_sequence.json",
+        "Metadata/pick_1.png":             "pick_1.png",
+        "Metadata/plate_1_small.png":      "plate_1_small.png",
+        "Metadata/plate_1.png":            "plate_1.png",
+        "Metadata/plate_no_light_1.png":   "plate_no_light_1.png",
+        "Metadata/top_1.png":              "top_1.png",
+    }
+    new_tmpl_bytes: dict[str, bytes] = {}
+    for arcname, fname in _NEW_TMPL_FILES.items():
+        data = _load_tmpl(fname)
+        if data is not None:
+            new_tmpl_bytes[arcname] = data
+
+    # Plate-2 thumbnails (task 718, updated task 724): when fringe_no_grass_sample is
+    # present, inject 5 plate-2 thumbnail files by copying the plate-1 thumbnail bytes
+    # under the plate_2 names. Bambu Studio will regenerate them on first slice; these
+    # placeholders prevent the missing-file warning on load.
+    # plate_2_small.png mirrors the Double Plate Blank template structure.
+    # arcname → source template filename (re-using plate-1 thumbnails as placeholders)
+    _PLATE2_TMPL_FILES: dict[str, str] = {
+        "Metadata/pick_2.png":             "pick_1.png",
+        "Metadata/plate_2.png":            "plate_1.png",
+        "Metadata/plate_2_small.png":      "plate_1_small.png",
+        "Metadata/plate_no_light_2.png":   "plate_no_light_1.png",
+        "Metadata/top_2.png":              "top_1.png",
+    }
+    if _has_plate2:
+        for arcname, fname in _PLATE2_TMPL_FILES.items():
+            data = _load_tmpl(fname)
+            if data is not None:
+                new_tmpl_bytes[arcname] = data
+
+    # --- 4. Rewrite zip with new Metadata/model_settings.config,
+    #        project_settings.config, 7 additional template files, and patched
+    #        [Content_Types].xml with config+png extensions declared.
+    # zipfile cannot edit in place; copy entries to a sibling temp file then
+    # atomically replace the original.
+    # --- 3b. Patch 3D/3dmodel.model: inject BambuStudio version metadata ---
+    # BambuStudio checks for a <metadata name="BambuStudio:3mfVersion"> element
+    # inside the <model> root of 3dmodel.model to set m_bambuslicer_generator_version.
+    # Without it the importer falls into the else-branch (dont_load_config=true) and
+    # shows "The 3mf file has invalid config, load geometry data only" on every open.
+    # We insert the metadata element immediately after the opening <model ...> tag,
+    # before <resources>, using the same version string already in slice_info.config.
+    _BBL_VERSION_STRING = "02.08.02.61"
+    _BBL_VERSION_META = (
+        f'<metadata name="BambuStudio:3mfVersion">{_BBL_VERSION_STRING}</metadata>'
+    )
+
+    def _patch_model_xml_version(xml_str: str) -> str:
+        """Insert BambuStudio:3mfVersion metadata after the <model ...> opening tag
+        if it is not already present (idempotent)."""
+        if "BambuStudio:3mfVersion" in xml_str:
+            return xml_str  # already patched
+        # Find end of the <model ...> opening tag (skip past '>').
+        import re as _re2
+        m = _re2.search(r"<model\b[^>]*>", xml_str)
+        if not m:
+            return xml_str  # unexpected structure; leave unchanged
+        insert_pos = m.end()
+        return xml_str[:insert_pos] + _BBL_VERSION_META + xml_str[insert_pos:]
+
+    patched_model_xml = _patch_model_xml_version(model_xml)
+
+    tmp_path = path_3mf + ".tmp"
+    # All files we are replacing/adding — skip their originals in the copy loop.
+    # Include plate-2 thumbnail arcnames so a second injection call does not
+    # accumulate duplicates (idempotency).
+    _SKIP_FILES = (
+        {
+            "3D/3dmodel.model",
+            "Metadata/model_settings.config",
+            "Metadata/project_settings.config",
+            "[Content_Types].xml",
+            "_rels/.rels",
+        }
+        | set(new_tmpl_bytes.keys())
+        | set(_PLATE2_TMPL_FILES.keys())
+    )
+    with zipfile.ZipFile(path_3mf, "r") as zin, \
+         zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zout:
+        # Build [Content_Types].xml: start from the template (which already
+        # declares rels, model, png, gcode), then ensure config is present.
+        ct_template_path = _os.path.join(_bambu_tmpl_dir, "content_types.xml")
+        if _os.path.isfile(ct_template_path):
+            with open(ct_template_path, "rb") as _f:
+                ct_xml = _f.read().decode("utf-8")
+        else:
+            # Fallback: read from input zip (trimesh provides rels+model only).
+            try:
+                ct_xml = zin.read("[Content_Types].xml").decode("utf-8")
+            except KeyError:
+                ct_xml = (
+                    '<?xml version=\'1.0\' encoding=\'utf-8\'?>\n'
+                    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">\n'
+                    ' <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>\n'
+                    ' <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>\n'
+                    '</Types>'
+                )
+        # Ensure config extension is declared (blank.3mf omits it but Bambu
+        # Studio requires it to accept .config files from non-Studio sources).
+        if 'Extension="config"' not in ct_xml:
+            ct_xml = ct_xml.replace(
+                "</Types>",
+                ' <Default Extension="config" ContentType="text/xml"/>\n</Types>',
+            )
+
+        # Build _rels/.rels: declare the 3dmodel and all thumbnail PNG relationships.
+        # Bambu Studio validates that every PNG in Metadata/ has a corresponding
+        # relationship entry; missing entries trigger the "invalid config" warning.
+        # Relationship IDs must be unique; we use rel-1, rel-2, rel-4, rel-5 pattern
+        # matching blank.3mf (skipping rel-3 for parity with Bambu exports).
+        rels_xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\n'
+            ' <Relationship Target="/3D/3dmodel.model" Id="rel-1" '
+            'Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>\n'
+            ' <Relationship Target="/Metadata/plate_1.png" Id="rel-2" '
+            'Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/thumbnail"/>\n'
+            ' <Relationship Target="/Metadata/plate_1.png" Id="rel-4" '
+            'Type="http://schemas.bambulab.com/package/2021/cover-thumbnail-middle"/>\n'
+            ' <Relationship Target="/Metadata/plate_1_small.png" Id="rel-5" '
+            'Type="http://schemas.bambulab.com/package/2021/cover-thumbnail-small"/>\n'
+            '</Relationships>'
+        )
+
+        for item in zin.infolist():
+            if item.filename in _SKIP_FILES:
+                # Skip files we're replacing so we write fresh copies below.
+                continue
+            zout.writestr(item, zin.read(item.filename))
+
+        # Write patched 3D/3dmodel.model (with BambuStudio:3mfVersion metadata).
+        zout.writestr("3D/3dmodel.model", patched_model_xml.encode("utf-8"))
+        # Write patched [Content_Types].xml.
+        zout.writestr("[Content_Types].xml", ct_xml.encode("utf-8"))
+        # Write regenerated _rels/.rels with thumbnail relationship declarations.
+        zout.writestr("_rels/.rels", rels_xml.encode("utf-8"))
+        # Write extruder assignments.
+        zout.writestr("Metadata/model_settings.config", cfg_xml)
+        # Write project_settings.config from template (if available).
+        if project_settings_bytes is not None:
+            zout.writestr("Metadata/project_settings.config", project_settings_bytes)
+        # Write the 7 additional template files (slice_info, filament_sequence, PNGs).
+        for arcname, data in new_tmpl_bytes.items():
+            zout.writestr(arcname, data)
+
+    shutil.move(tmp_path, path_3mf)
+
+    summary = ", ".join(
+        f"{oname or oid}=ext{ext}" for oid, oname, ext, _sn in mapping
+    )
+    print(f"  Extruder metadata injected → {summary}")
+
+
+# ---------------------------------------------------------------------------
+# Mount-pipe footprint subtraction (task #347 — replaces #346 corner search)
+# ---------------------------------------------------------------------------
+#
+# Thomas's correction (#347): the mount pipe stays at the fixed upper-left
+# corner regardless of what's underneath it. Instead of moving the pipe to
+# avoid traps/water, every other surface (trap polygon, water polygon, fringe
+# carve-out union) gets the pipe footprint subtracted out so the surfaces
+# don't overlap the pipe. The pipe is allowed to land on the boundary of, or
+# straddle the interface between, multiple obstacle polygons.
+# ---------------------------------------------------------------------------
+
+def _subtract_pipe_from_polygon(
+    poly: ShapelyPolygon,
+    pipe_circle: ShapelyPolygon,
+    label: str,
+) -> "ShapelyPolygon | None":
+    """
+    Subtract the mount-pipe circular footprint from a trap/water polygon.
+
+    No-op when the polygon does not intersect the pipe footprint (returns
+    the input polygon unchanged).
+
+    If the difference splits the polygon into multiple pieces (the pipe
+    straddles a thin neck in the original polygon), the largest piece by
+    area is returned and the others are logged + discarded — same pattern
+    as ``_clip_polygon_to_fringe_rect``.
+
+    Returns None if the polygon is fully consumed by the pipe footprint
+    (caller should skip emitting any mesh for it).
+    """
+    if not poly.is_valid:
+        poly = poly.buffer(0)
+    if not pipe_circle.intersects(poly):
+        return poly
+    notched = poly.difference(pipe_circle)
+    if notched.is_empty:
+        print(f"  {label}: pipe footprint fully covers polygon — skipping")
+        return None
+    # Log a notch event so Topo / Thomas can see which polygons were affected.
+    overlap_area = float(poly.intersection(pipe_circle).area)
+    print(f"  {label}: notched by mount-pipe footprint (overlap={overlap_area:.2f} mm^2)")
+    if isinstance(notched, ShapelyMultiPolygon):
+        parts = sorted(list(notched.geoms), key=lambda g: g.area, reverse=True)
+        kept = parts[0]
+        dropped = parts[1:]
+        if dropped:
+            dropped_areas = ", ".join(f"{p.area:.2f}" for p in dropped)
+            print(f"  {label}: pipe-subtract produced MultiPolygon — kept "
+                  f"largest ({kept.area:.2f} mm^2), discarded {len(dropped)} "
+                  f"part(s) with areas [{dropped_areas}] mm^2")
+        return kept
+    if isinstance(notched, ShapelyPolygon):
+        return notched
+    # GeometryCollection or other — try to recover the largest polygonal piece.
+    try:
+        polys = [g for g in notched.geoms if isinstance(g, ShapelyPolygon) and not g.is_empty]
+        if not polys:
+            print(f"  {label}: pipe-subtract yielded no polygon geometry — skipping")
+            return None
+        polys.sort(key=lambda g: g.area, reverse=True)
+        return polys[0]
+    except Exception:
+        print(f"  {label}: unrecognised pipe-subtract geometry "
+              f"{type(notched).__name__} — keeping input")
+        return poly
+
+
+def _build_pipe_circle(cx: float, cy: float) -> ShapelyPolygon:
+    """Return the mount-pipe outer-wall circular footprint at (cx, cy)."""
+    from shapely.geometry import Point as _ShapelyPoint
+    return _ShapelyPoint(cx, cy).buffer(MOUNT_BORE_OUTER_RADIUS_MM)
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def run_pipeline(
+    egm_path: str,
+    include_boundary_region: bool | None = None,
+    apply_fringe_frame_cap: bool | None = None,
+    include_fringe_without_grass: bool | None = None,
+    serial: int | None = None,
+) -> str:
+    """Run the full gradient surface pipeline for a given EGM file path.
+
+    Parameters
+    ----------
+    egm_path : str
+        Absolute path to the .egm project file.
+    include_boundary_region : bool | None, optional
+        When True, auto-derive a 5 mm-wide boulders ring around each water
+        polygon (replacing any manual boulders polygons) and shrink the water
+        meshes inward by 5 mm to create the gap the ring fills. When False,
+        skip the derivation. When None (default), fall back to the
+        ``includeBoundaryRegion`` flag persisted inside the EGM file.
+    apply_fringe_frame_cap : bool | None, optional
+        When True (default), the water-hole rule clips fringe top vertices
+        within BOUNDARY_CAP_BAND_MM of the plaque frame perimeter to
+        BOUNDARY_HEIGHT_CAP_MM (preserves legacy behavior). When False, the
+        fringe cap is skipped and the fringe rises to its natural height even
+        where it exceeds the frame. Green/trap/water caps are unaffected.
+        When None, fall back to the ``applyFringeFrameCap`` flag persisted
+        inside the EGM file (missing → True).
+    include_fringe_without_grass : bool | None, optional
+        When True, a second plate is generated holding a smooth (grass-less)
+        fringe sample named "fringe_no_grass_sample".  Plate 1 ALWAYS has
+        grass applied unconditionally — this flag only controls whether a
+        second plate is produced.  When False (default), a single plate is
+        generated with the grassy fringe.  When None, fall back to the
+        ``includeFringeWithoutGrass`` flag persisted inside the EGM file
+        (missing → False).
+    serial : int | None, optional
+        Global serial number for this generate run.  Obtained by the caller
+        via ``commit_global_serial()`` BEFORE calling run_pipeline.  When
+        None, the serial is omitted from the filename.
+
+    Returns the absolute path to the generated .3mf file.
+    """
+    print("=" * 60)
+    print("Gradient Surface Diagnostic")
+    print("=" * 60)
+    print(f"[config] GREEN_BOUNDARY_SPLINE_SMOOTHING_PX = {GREEN_BOUNDARY_SPLINE_SMOOTHING_PX}")
+    print(f"[config] GREEN_BOUNDARY_SPLINE_RESAMPLE_PX  = {GREEN_BOUNDARY_SPLINE_RESAMPLE_PX}")
+    print(f"[config] GREEN_BOUNDARY_SMOOTH_ITERATIONS   = {GREEN_BOUNDARY_SMOOTH_ITERATIONS}")
+    print(f"[config] GREEN_FRINGE_GAP_MM                = {GREEN_FRINGE_GAP_MM}")
+    print(f"[config] TRAP_BOUNDARY_SPLINE_SMOOTHING_PX  = {TRAP_BOUNDARY_SPLINE_SMOOTHING_PX}")
+    print(f"[config] TRAP_BOUNDARY_SPLINE_RESAMPLE_PX   = {TRAP_BOUNDARY_SPLINE_RESAMPLE_PX}")
+    print(f"[config] TRAP_BOUNDARY_SMOOTH_ITERATIONS    = {TRAP_BOUNDARY_SMOOTH_ITERATIONS}")
+    print(f"[config] TRAP_FRINGE_GAP_MM                 = {TRAP_FRINGE_GAP_MM}")
+    print(f"[config] WATER_BOUNDARY_SPLINE_SMOOTHING_PX = {WATER_BOUNDARY_SPLINE_SMOOTHING_PX}")
+    print(f"[config] WATER_BOUNDARY_SPLINE_RESAMPLE_PX  = {WATER_BOUNDARY_SPLINE_RESAMPLE_PX}")
+    print(f"[config] WATER_BOUNDARY_SMOOTH_ITERATIONS   = {WATER_BOUNDARY_SMOOTH_ITERATIONS}")
+    print(f"[config] WATER_FRINGE_GAP_MM                = {WATER_FRINGE_GAP_MM}")
+    print(f"[config] FRINGE_XY_EXPANSION_MM             = {FRINGE_XY_EXPANSION_MM}")
+
+    # ── 1. Load EGM and image ───────────────────────────────────────────────
+    egm_path = os.path.abspath(egm_path)
+    print(f"\n[1] EGM: {os.path.basename(egm_path)}")
+    print(f"    [generate] EGM absolute path:   {egm_path}")
+    _egm_data, image_path, green_boundary_px = load_egm(egm_path)
+    print(f"    Image: {os.path.basename(image_path)}")
+    print(f"    [generate] input image:         {image_path}")
+    print(f"    Green boundary: {len(green_boundary_px)} spline points")
+
+    # Apply per-project base-thickness override from the EGM (Boundary Editor
+    # "Base thickness (mm)" field). BASE_THICKNESS_MM is referenced as a
+    # module-level constant by ~23 call sites in this file; rather than thread
+    # the value through every helper, we mutate the module global so the
+    # next reads in this pipeline run pick it up. Missing/zero/invalid → keep
+    # the module default (1.5 mm).
+    try:
+        _base_override = float(_egm_data.get("baseThicknessMm") or 0)
+    except (TypeError, ValueError):
+        _base_override = 0.0
+    if _base_override > 0:
+        globals()["BASE_THICKNESS_MM"] = _base_override
+        print(f"    Base thickness from EGM: {_base_override} mm")
+    else:
+        print(f"    Base thickness: {BASE_THICKNESS_MM} mm (default)")
+
+    # ── 1b. Auto-derive boulders ring from water (boundary region) ──────────
+    # When include_boundary_region is True, we replace any manual boulders
+    # polygons with a synthesised 5 mm-wide annular ring just inside each
+    # water polygon's original outer edge. The water polygon itself is
+    # shrunk inward by 5 mm so the printed water sits in the recess defined
+    # by water_shrunk; the boulders ring fills the 5 mm gap that opens up
+    # between water_shrunk and the (un-changed) fringe inner boundary.
+    #
+    # The downstream "annulus-mode" boulders carve in build_fringe_mesh and
+    # export_boulders_meshes (`shapely_boulders.covers(water_sp)` → subtract)
+    # then does the actual ring construction automatically — we just have to
+    # hand it a boulders polygon equal to the ORIGINAL water shape and a
+    # water polygon equal to the SHRUNKEN water shape. See task #460 and
+    # project_golf_render_rules.md → "Boulders polygon convention".
+    #
+    # All geometry happens in mm coords (where the 5 mm buffer is meaningful);
+    # the synthesised polygons are then converted back to px coords for
+    # storage in egm_data["polygons"], which is what the rest of the pipeline
+    # consumes.
+    if include_boundary_region is None:
+        include_boundary_region = bool(_egm_data.get("includeBoundaryRegion", False))
+    else:
+        # Persist the caller's choice into egm_data so any downstream logic
+        # that introspects the EGM sees a consistent value.
+        _egm_data["includeBoundaryRegion"] = bool(include_boundary_region)
+
+    if include_boundary_region:
+        _apply_boundary_region_derivation(_egm_data, green_boundary_px)
+
+    # Resolve applyFringeFrameCap (task 669). Default True on missing key
+    # preserves the legacy always-cap behavior; explicit False from either
+    # the caller or the EGM disables the fringe cap in step 7c.
+    if apply_fringe_frame_cap is None:
+        apply_fringe_frame_cap = bool(_egm_data.get("applyFringeFrameCap", True))
+    else:
+        _egm_data["applyFringeFrameCap"] = bool(apply_fringe_frame_cap)
+    print(f"    Apply fringe frame cap: {apply_fringe_frame_cap}")
+
+    # Resolve includeFringeWithoutGrass (task 724). Default False on missing key
+    # preserves the legacy single-plate behavior. When True, a second plate is
+    # generated holding a smooth (grass-less) fringe sample. Plate 1 is always
+    # grassy regardless of this flag.
+    if include_fringe_without_grass is None:
+        include_fringe_without_grass = bool(_egm_data.get("includeFringeWithoutGrass", False))
+    else:
+        _egm_data["includeFringeWithoutGrass"] = bool(include_fringe_without_grass)
+    print(f"    Include fringe without grass: {include_fringe_without_grass}")
+
+    img = cv2.imread(image_path)
+    if img is None:
+        raise FileNotFoundError(f"Cannot read image: {image_path}")
+    print(f"    Image size: {img.shape[1]}x{img.shape[0]}")
+
+    # ── 2. Detect arrows ────────────────────────────────────────────────────
+    print("\n[2] Detecting arrows…")
+    arrows = detect_arrows(img, green_boundary_px, dark_threshold=50, max_arrow_area=600)
+    print(f"    Found {len(arrows)} arrows")
+
+    # No-arrows fallback (topology rule): if zero arrows are detected, the
+    # image carries no slope information, so we build a flat, horizontal
+    # green surface and skip the Poisson solve. This is the homeowner-
+    # mandated default — see project_golf_render_rules.md.
+    #
+    # Water-aware refinement (2026-05-07): when the hole contains one or
+    # more water polygons, the flat green sits at FLAT_FALLBACK_Z_WATER_MM
+    # (5 mm = 2 mm water slab + 3 mm clearance) so it doesn't intersect
+    # the water surface. Otherwise it sits at FLAT_FALLBACK_Z_MM (0 mm).
+    GRID_RES = 200
+    flat_fallback_triggered = (len(arrows) == 0)
+
+    if flat_fallback_triggered:
+        print("[gradient] zero arrows detected — generating flat green")
+        _has_water = _hole_has_water(_egm_data)
+        fallback_z = FLAT_FALLBACK_Z_WATER_MM if _has_water else FLAT_FALLBACK_Z_MM
+
+        # Printability floor: a green at Z = 0 mm sits flush with the base
+        # plate, which (combined with the no-arrows fringe-flattening fix)
+        # would produce a green+fringe coplanar with the base — unprintable.
+        # Clamp the fallback Z to at least BASE_THICKNESS_MM (1.5 mm) so the
+        # surface always stands above the base. This only affects the dry
+        # case (raw 0 mm → 1.5 mm); the water case (5 mm) is already above
+        # the floor and is unchanged. We apply the floor as a guard at the
+        # point of use rather than bumping FLAT_FALLBACK_Z_MM itself,
+        # because the homeowner explicitly chose 0 mm as the conceptual
+        # "natural ground level" and the constant should keep that meaning.
+        # See project_golf_render_rules.md → "No-arrows fallback (topology)"
+        # → "Printability floor".
+        _fallback_z_raw = fallback_z
+        fallback_z = max(fallback_z, BASE_THICKNESS_MM)
+        _floor_applied = fallback_z != _fallback_z_raw
+
+        if _has_water:
+            print(
+                f"  NO-ARROWS FALLBACK: water present, using {fallback_z:.3f} mm flat "
+                "(2 mm water slab + 3 mm clearance). Skipping Poisson solve. See "
+                "project_golf_render_rules.md → 'No-arrows fallback (topology)'."
+            )
+        else:
+            if _floor_applied:
+                print(
+                    f"  NO-ARROWS FALLBACK: no water, raw Z={_fallback_z_raw:.3f} mm "
+                    f"clamped to printability floor BASE_THICKNESS_MM={BASE_THICKNESS_MM:.3f} mm. "
+                    "Skipping Poisson solve. See project_golf_render_rules.md → "
+                    "'No-arrows fallback (topology)'."
+                )
+            else:
+                print(
+                    f"  NO-ARROWS FALLBACK: no water, using {fallback_z:.3f} mm flat "
+                    "(natural ground level). Skipping Poisson solve. See "
+                    "project_golf_render_rules.md → 'No-arrows fallback (topology)'."
+                )
+
+        # Still need the grid + inside_mask for the downstream mesh builder.
+        # build_gradient_field handles empty `arrows` by returning zero-vector
+        # Gx/Gy plus a correctly-sized grid + inside_mask, which is exactly
+        # what we need (we only consume the grid and mask below).
+        print(f"\n[3] Building grid for flat fallback ({GRID_RES}x{GRID_RES})…")
+        xs_grid, ys_grid, inside_mask, _Gx, _Gy = build_gradient_field(
+            arrows, green_boundary_px, grid_res=GRID_RES
+        )
+
+        # Build a flat heightmap: fallback_z inside the green, NaN outside.
+        # This matches the shape and dtype contract of solve_poisson_height's
+        # return value.
+        Z = np.where(inside_mask, fallback_z, np.nan)
+        print(
+            f"    Flat heightmap built: {int(inside_mask.sum())} interior cells "
+            f"at z={fallback_z:.3f} mm, NaN elsewhere."
+        )
+
+        # Skip soften_extremes — there are no extremes to soften on a flat
+        # surface, and the function would log misleading peak/valley stats.
+        # Build a stub stats dict so downstream prints stay consistent.
+        _soften_stats = {
+            "peak_limit_mm": _PEAK_LIMIT_MM,
+            "valley_limit_mm": _VALLEY_LIMIT_MM,
+            "local_window_px": _LOCAL_WINDOW_PX,
+            "soften_sigma_px": _SOFTEN_SIGMA_PX,
+            "max_peak_mm_before": 0.0,
+            "min_valley_mm_before": 0.0,
+            "n_peaks_clipped": 0,
+            "n_valleys_clipped": 0,
+            "max_peak_mm_after": 0.0,
+            "min_valley_mm_after": 0.0,
+            "n_peaks_after": 0,
+            "n_valleys_after": 0,
+        }
+        print("    (skipping soften_extremes — no extremes on a flat surface)")
+    else:
+        # ── 3. Build gradient field ─────────────────────────────────────────
+        print(f"\n[3] Building gradient field ({GRID_RES}x{GRID_RES} grid)…")
+        xs_grid, ys_grid, inside_mask, Gx, Gy = build_gradient_field(
+            arrows, green_boundary_px, grid_res=GRID_RES
+        )
+        print(f"    Gradient field built. Gx range: [{Gx[inside_mask].min():.3f}, {Gx[inside_mask].max():.3f}]")
+        print(f"    Gy range: [{Gy[inside_mask].min():.3f}, {Gy[inside_mask].max():.3f}]")
+
+        # ── 4. Solve Poisson ────────────────────────────────────────────────
+        print("\n[4] Solving Poisson equation…")
+        Z = solve_poisson_height(inside_mask, Gx, Gy)
+
+        # Green smoothing disabled — raw Poisson surface
+        valid = Z[~np.isnan(Z)]
+        print(f"    Height range (raw, pre-soften): {valid.min():.4f} .. {valid.max():.4f}")
+
+        # Clamp + soften spurious local peaks/valleys before triangulation.
+        _elev_range_soften = float(_egm_data.get("elevationRange") or ELEVATION_RANGE_MM)
+        Z, _soften_stats = soften_extremes(Z, inside_mask, elevation_range_mm=_elev_range_soften)
+    print(
+        f"    soften_extremes: peak_limit={_soften_stats['peak_limit_mm']:.2f} mm, "
+        f"valley_limit={_soften_stats['valley_limit_mm']:.2f} mm, "
+        f"window={_soften_stats['local_window_px']} px, "
+        f"sigma={_soften_stats['soften_sigma_px']} px"
+    )
+    print(
+        f"    BEFORE: max peak={_soften_stats['max_peak_mm_before']:+.3f} mm, "
+        f"min valley={_soften_stats['min_valley_mm_before']:+.3f} mm, "
+        f"#peaks>limit={_soften_stats['n_peaks_clipped']}, "
+        f"#valleys<limit={_soften_stats['n_valleys_clipped']}"
+    )
+    print(
+        f"    AFTER:  max peak={_soften_stats['max_peak_mm_after']:+.3f} mm, "
+        f"min valley={_soften_stats['min_valley_mm_after']:+.3f} mm, "
+        f"#peaks>limit={_soften_stats['n_peaks_after']}, "
+        f"#valleys<limit={_soften_stats['n_valleys_after']}"
+    )
+
+    # NOTE: the slope limiter (limit_max_slope) is NOT called here on raw Z
+    # because `_height_to_mm` re-normalises [z_min, z_max] to the full
+    # elevation range — any peak reduction on raw Z gets stretched right back
+    # to the top of the mm range and the spike returns. The limiter is
+    # instead applied post-normalisation in `save_stl_meshes` (green meshes)
+    # and again on `Z_mm_for_fringe` below so the fringe seam follows the
+    # limited surface.
+
+    # ── Build filename slug from course + hole ────────────────────────────────
+    import re
+    course = _egm_data.get("course", "unknown")
+    hole = _egm_data.get("hole", "0")
+    slug = re.sub(r"[^a-z0-9]+", "_", f"{course}_hole_{hole}".lower()).strip("_")
+    print(f"    File slug: {slug}")
+
+    # ── Resolve output directories from course_paths ─────────────────────────
+    # NOTE: per the course folder convention, the pipeline does NOT emit STLs
+    # into the course folder. STLs are not deliverables — only the final 3MF
+    # matters. All intermediate meshes stay in memory.
+    _cpaths = course_paths(course) if course != "unknown" else None
+    _3mf_dir  = os.path.abspath(_cpaths["3mfs"]   if _cpaths else OWNER_INBOX)
+    _img_dir  = os.path.abspath(_cpaths["images"] if _cpaths else OWNER_INBOX)
+    os.makedirs(_3mf_dir,  exist_ok=True)
+    os.makedirs(_img_dir,  exist_ok=True)
+    print(f"    [generate] output 3MF dir:      {_3mf_dir}")
+    print(f"    [generate] output images dir:   {_img_dir}")
+
+    # ── 5. Save diagnostic images → owner_inbox/diagnostics/ (not course Images/) ──
+    _diag_paths: list[str] = []
+    _diag_tag = f"[{serial}]" if serial is not None else __import__("time").strftime("%Y%m%d-%H%M%S")
+
+    def _save_diag(kind, fn, *a):
+        if not SAVE_DIAGNOSTIC_IMAGES:
+            return
+        try:
+            os.makedirs(DIAGNOSTICS_DIR, exist_ok=True)
+            out = os.path.join(DIAGNOSTICS_DIR, f"{slug}_{_diag_tag}_{kind}.png")
+            fn(*a, out)
+            _diag_paths.append(out)
+        except Exception as exc:  # never fail generation over a diagnostic
+            print(f"  WARNING: diagnostic image '{kind}' failed: {exc}")
+
+    print("\n[5] Saving diagnostic images…")
+    _save_diag("arrow_directions", save_arrow_directions, img, arrows, green_boundary_px)
+    _save_diag("height_map", save_height_map, Z, xs_grid, ys_grid, green_boundary_px)
+    _save_diag("arrow_vs_output", save_arrow_vs_output_overlay, img, arrows, Z, xs_grid, ys_grid, green_boundary_px)
+
+    # ── 6. Build green surface meshes (smooth + stepped, in-memory) ─────────
+    print("\n[6] Building green surface meshes…")
+    smooth_mesh_flat, stepped_mesh = save_stl_meshes(
+        Z, xs_grid, ys_grid, inside_mask, green_boundary_px,
+        _egm_data, None, None  # no STL writes — meshes are 3MF-bound
+    )
+
+    # ── 6b. (Green grass texturing removed — Topo 2026-09-09) ───────────────
+    # Per Thomas: the green surface is NEVER grass-textured, regardless of
+    # greenStyle ("smooth" or "terraced"). Grass belongs on the fringe ONLY
+    # (see block 7 ~L7491). The green's visual style comes from smooth-vs-
+    # terraced geometry alone; both variants ship untextured. `grass_amplitude`
+    # and `grass_spacing` are still read from the EGM below so block 7 can
+    # apply them to the fringe.
+    grass_amplitude = _egm_data.get("grassAmplitude", 0.5)
+    grass_spacing   = _egm_data.get("grassSpacing",   2.4)
+    import copy  # still needed for fringe_mesh_flat deepcopy in block 7
+
+    # ── 7. Build fringe mesh ────────────────────────────────────────────────
+    print("\n[7] Building fringe mesh…")
+    scale_f, centroid_f = _compute_px_to_mm(green_boundary_px, _egm_data)
+    _elevation_range_for_fringe = float(_egm_data.get("elevationRange") or ELEVATION_RANGE_MM)
+    Z_mm_for_fringe = _height_to_mm(Z, inside_mask, elevation_range_mm=_elevation_range_for_fringe)
+    # Apply the same slope limit used inside save_stl_meshes so the fringe
+    # seam heights track the (limited) green surface instead of the original
+    # spike. Keeping these two calls in lockstep is what makes the fringe
+    # "follow" the green after the peak has been smashed down.
+    _fringe_valid = Z_mm_for_fringe[inside_mask]
+    _fringe_range_mm = float(_fringe_valid.max() - _fringe_valid.min()) if _fringe_valid.size else 0.0
+    if _fringe_range_mm > 0:
+        Z_mm_for_fringe, _fringe_slope_stats = limit_max_slope(
+            Z_mm_for_fringe, inside_mask, elevation_range_mm=_fringe_range_mm,
+        )
+        print(
+            f"    limit_max_slope (fringe Z_mm): iters={_fringe_slope_stats['iters']}, "
+            f"cells reduced={_fringe_slope_stats['cells_reduced']}"
+        )
+    fringe_mesh = None
+    fringe_mesh_flat = None   # kept for trap height sampling (no texture perturbation)
+
+    # Mounting-bore "pipe" footprint (task #335). The fringe is hollowed out
+    # for the FULL pipe outer diameter so we can drop in an explicit
+    # annular-walled cylinder afterwards. Inner bore = 3/16", wall =
+    # WALL_THICKNESS_MM (1.6 mm) → outer Ø = 4.7625 + 2×1.6 = 7.9625 mm.
+    #
+    # Task #347: the pipe stays at the fixed upper-left corner regardless of
+    # what's underneath it. The earlier collision-aware corner search (#346)
+    # was the wrong design — Thomas wants the pipe in a known fixed position
+    # and the OTHER surfaces (traps, water, fringe) carved to match. The
+    # `pipe_circle` Shapely polygon below is what those subtractions use.
+    #
+    # Task #459 (2026-05-23): the whole mount-bore feature is gated behind
+    # ENABLE_MOUNT_BORE. When False (current default), no fringe hole is
+    # reserved, no pipe is built, and pipe_circle stays None so that the
+    # trap/water/boulders pipe-subtractions and the fringe carve-list pipe-hole
+    # circles all degenerate to no-ops. Re-enable with a one-line flip.
+    if ENABLE_MOUNT_BORE:
+        _half_for_bore = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0
+        _bore_cx = -_half_for_bore + MOUNT_BORE_INSET_MM
+        _bore_cy = +_half_for_bore - MOUNT_BORE_INSET_MM
+        pipe_circle = _build_pipe_circle(_bore_cx, _bore_cy)
+        print(f"  Mount pipe: fixed upper-left at ({_bore_cx:.2f}, {_bore_cy:.2f}), "
+              f"r_outer={MOUNT_BORE_OUTER_RADIUS_MM:.4f} mm")
+
+        # Green-overlap warning (#347 step 2.4): the pipe lives ~20 mm from the
+        # rect edge so it should never land inside the green polygon, but log a
+        # warning if it ever does so Thomas can flag the case. We do NOT carve
+        # the green raster mask — see #347 step 2.4 for the rationale.
+        try:
+            _green_bnd_mm_warn = _px_to_mm_2d(
+                green_boundary_px.copy(), scale_f, centroid_f
+            )
+            _green_sp_warn = ShapelyPolygon(_green_bnd_mm_warn)
+            if not _green_sp_warn.is_valid:
+                _green_sp_warn = _green_sp_warn.buffer(0)
+            if pipe_circle.intersects(_green_sp_warn):
+                _green_overlap = float(_green_sp_warn.intersection(pipe_circle).area)
+                if _green_overlap > 1e-3:
+                    print(f"  Mount pipe: WARNING — pipe footprint intersects green "
+                          f"polygon (overlap={_green_overlap:.2f} mm^2). The green "
+                          f"raster mask is NOT carved; flag this hole for review.")
+        except Exception as _exc_green_warn:
+            print(f"  Mount pipe: green-overlap check failed: {_exc_green_warn}")
+
+        fringe_holes: list = [(_bore_cx, _bore_cy, MOUNT_BORE_OUTER_RADIUS_MM)]
+    else:
+        _bore_cx = 0.0
+        _bore_cy = 0.0
+        pipe_circle = None
+        fringe_holes = []
+        print("  Mount pipe: DISABLED (ENABLE_MOUNT_BORE = False) — "
+              "no fringe hole, no pipe mesh, no trap/water/boulders pipe-subtraction.")
+    # Plate-2 smooth fringe sample mesh — initialised to None; set inside the fringe
+    # try-block if include_fringe_without_grass=True and the sample builds successfully.
+    # Named "fringe_no_grass_sample" in the scene; checked when assembling the 3MF scene.
+    fringe_no_grass_sample: trimesh.Trimesh | None = None
+    try:
+        fringe_mesh = build_fringe_mesh(
+            Z_mm_for_fringe,
+            xs_grid, ys_grid,
+            inside_mask,
+            green_boundary_px,
+            _egm_data,
+            fringe_grid_res=200,
+            holes=fringe_holes,
+        )
+        bb = fringe_mesh.bounds
+        print(f"  Fringe mesh: {len(fringe_mesh.vertices)} vertices, {len(fringe_mesh.faces)} faces")
+        print(f"  Watertight: {fringe_mesh.is_watertight}")
+        print(f"  Bounding box: X [{bb[0,0]:.1f}, {bb[1,0]:.1f}] "
+              f"Y [{bb[0,1]:.1f}, {bb[1,1]:.1f}] Z [{bb[0,2]:.1f}, {bb[1,2]:.1f}] mm")
+        _verify_fringe_boundary(
+            fringe_mesh, Z_mm_for_fringe,
+            xs_grid, ys_grid, inside_mask,
+            green_boundary_px, _egm_data,
+        )
+        # Keep an in-memory reference to the flat (untextured) fringe for
+        # trap height sampling, before grass texture displaces seam vertices.
+        fringe_mesh_flat = copy.deepcopy(fringe_mesh)
+        # Apply grass texture to fringe top surface.  IMPORTANT: the green
+        # surface added to the 3MF is the untextured (flat) version, so any
+        # grass bump applied to a fringe seam vertex opens a visible gap
+        # against the green's pinned boundary.  We freeze the seam verts here.
+        #
+        # Task #488 (real fix): the trap and water cutout boundaries are ALSO
+        # seams — the fringe wall drops from its top surface to Z=0 along
+        # those cutout edges. Applying a 0.5 mm paraboloid bump to a top
+        # vertex sitting right on that boundary produces a visible wrinkle
+        # on the wall's top edge (previously blamed on water/cap/grid). The
+        # exclude polyline now includes green + all trap + all water dense
+        # polylines so every cutout boundary gets the same seam-freeze that
+        # the green already had.
+        _green_bnd_mm_for_grass = _px_to_mm_2d(
+            green_boundary_px.copy(), scale_f, centroid_f
+        )
+        _cutout_polylines_mm = [_green_bnd_mm_for_grass]
+        for _poly in _egm_data.get("polygons", []):
+            if _poly.get("type") not in ("trap", "water"):
+                continue
+            try:
+                _pts_px = _poly_to_dense_px(_poly)
+            except Exception:
+                _pts_px = np.array(
+                    [[p["x"], p["y"]] for p in _poly.get("points", [])],
+                    dtype=np.float64,
+                )
+            if _pts_px.size == 0:
+                continue
+            _cutout_polylines_mm.append(
+                _px_to_mm_2d(_pts_px, scale_f, centroid_f)
+            )
+        _grass_exclude_polyline = np.vstack(_cutout_polylines_mm)
+        # Exclude-radius covers the buffered seam gap.  Post-watertight-rewrite
+        # (task 742), the fringe mesh boundary sits at the +*_FRINGE_GAP_MM
+        # buffered ring (~1.0 mm outside the raw green/trap/water polygons),
+        # while the seam polyline used here is the RAW polygons.  So the mesh
+        # boundary verts sit at distance ~1.0 mm from the seam polyline.  Using
+        # 2.0 mm (task 488 legacy) was safe but frozed ~96% of top-surface verts
+        # because the polylines are Chaikin-densified — grass barely applied
+        # anywhere.  Task 500 (Topo, 2026-09-09): drop to 1.2 mm (matches gap
+        # + 0.2 safety), freeing ~2× more interior verts for grass texture.
+        _seam_exclude_radius_mm = FRINGE_GRASS_SEAM_EXCLUDE_MM
+
+        # Grass spacing floor — v2 Poisson explodes below ~0.4 mm and v1
+        # collapses to per-vertex spikes there too. Editor default currently
+        # 0.05 mm; clamp up so the fringe build stays sane. (Editor default
+        # left as-is per Thomas — this only affects the build, not the EGM.)
+        _grass_spacing_eff = grass_spacing
+        if _grass_spacing_eff < FRINGE_GRASS_MIN_SPACING_MM:
+            print(f"  [grass floor] grass_spacing={_grass_spacing_eff} mm below "
+                  f"FRINGE_GRASS_MIN_SPACING_MM={FRINGE_GRASS_MIN_SPACING_MM} mm; "
+                  f"clamping UP to {FRINGE_GRASS_MIN_SPACING_MM} mm.")
+            _grass_spacing_eff = FRINGE_GRASS_MIN_SPACING_MM
+
+        # Plate 1 grass is UNCONDITIONAL (task 724): the grass bump is always applied
+        # to the main fringe regardless of the includeFringeWithoutGrass checkbox.
+        # The checkbox only controls whether a second plate (smooth sample) is built.
+        print(f"  Applying grass texture to fringe (algorithm={GRASS_ALGORITHM}, "
+              f"amplitude={grass_amplitude} mm, spacing={_grass_spacing_eff} mm)…")
+        print(f"  Grass seam exclusion: {len(_cutout_polylines_mm)} polyline(s) "
+              f"({len(_grass_exclude_polyline)} points total)")
+        if GRASS_ALGORITHM == "v2":
+            apply_grass_texture_v2(
+                fringe_mesh,
+                amplitude=grass_amplitude,
+                bump_spacing=_grass_spacing_eff,
+                exclude_polyline_xy=_grass_exclude_polyline,
+                freeze_radius_mm=_seam_exclude_radius_mm,
+            )
+        else:
+            apply_grass_texture(
+                fringe_mesh,
+                amplitude=grass_amplitude,
+                bump_spacing=_grass_spacing_eff,
+                exclude_polyline_xy=_grass_exclude_polyline,
+                exclude_radius_mm=_seam_exclude_radius_mm,
+            )
+
+        # ── 7a-ii. Build plate-2 smooth (grass-less) fringe sample (task 724) ──
+        # Plate 2 is a standalone fringe mesh WITHOUT grass — a smooth surface
+        # sample named "fringe_no_grass_sample" → extruder 2.  Only built when
+        # include_fringe_without_grass=True (checkbox checked).
+        # No grass texture is applied — this is the smooth reference print.
+        # No mount pipe is attached — sample annulus only.
+        # fringe_no_grass_sample is initialised to None before the outer try block.
+        if include_fringe_without_grass:
+            try:
+                print("\n  [7a-ii] Building plate-2 smooth fringe sample (no grass)…")
+                _sample_fringe = build_fringe_mesh(
+                    Z_mm_for_fringe,
+                    xs_grid, ys_grid,
+                    inside_mask,
+                    green_boundary_px,
+                    _egm_data,
+                    fringe_grid_res=200,
+                    holes=fringe_holes,
+                )
+                # Grass is intentionally NOT applied — plate 2 is the smooth sample.
+                print(f"  [plate-2] Smooth fringe sample built (no grass). "
+                      f"{len(_sample_fringe.vertices)} vertices, "
+                      f"{len(_sample_fringe.faces)} faces")
+                fringe_no_grass_sample = _sample_fringe
+            except Exception as _exc_sample:
+                print(f"  [plate-2] ERROR building smooth fringe sample: {_exc_sample}")
+                import traceback; traceback.print_exc()
+        else:
+            print("  [7a-ii] Skipping plate-2 sample (includeFringeWithoutGrass=False).")
+
+        # ── 7b. Build the upper-left mounting-bore PIPE (task #335) ──────────
+        # The fringe was already hollowed out at (_bore_cx, _bore_cy) with
+        # outer-pipe radius. Now we drop a watertight hollow cylinder into
+        # that void: outer wall = MOUNT_BORE_OUTER_RADIUS_MM, inner bore =
+        # MOUNT_BORE_INNER_RADIUS_MM (3/16"), height = fringe top Z at the
+        # bore boundary (no stub above fringe).
+        #
+        # Task #459: gated behind ENABLE_MOUNT_BORE so the pipe is neither
+        # measured nor merged into the fringe when the mount bore is off.
+        # We short-circuit the entire try-block with an early no-op when
+        # disabled, keeping the existing indentation intact (the try-body
+        # references _bore_cx/_bore_cy and would crash on bogus values otherwise).
+        try:
+            if not ENABLE_MOUNT_BORE:
+                raise _MountBoreDisabled
+            _flat_verts = fringe_mesh_flat.vertices
+            _dx = _flat_verts[:, 0] - _bore_cx
+            _dy = _flat_verts[:, 1] - _bore_cy
+            _r = np.sqrt(_dx * _dx + _dy * _dy)
+            _grid_step_mm = (PRINT_SIZE_MM + abs(FRINGE_XY_EXPANSION_MM)) / 200.0
+            _ring_inner = MOUNT_BORE_OUTER_RADIUS_MM
+            _ring_outer = MOUNT_BORE_OUTER_RADIUS_MM + 2.0 * _grid_step_mm
+            _ring_mask = (
+                (_r >= _ring_inner)
+                & (_r <= _ring_outer)
+                & (_flat_verts[:, 2] > BASE_THICKNESS_MM * 0.5)
+            )
+            if _ring_mask.any():
+                _ring_z = _flat_verts[_ring_mask, 2]
+                _pipe_top_z = float(np.max(_ring_z))
+                print(f"  Bore-rim fringe Z: count={int(_ring_mask.sum())} "
+                      f"range=[{_ring_z.min():.3f}, {_ring_z.max():.3f}] mm "
+                      f"→ pipe top z = {_pipe_top_z:.3f} mm")
+            else:
+                _pipe_top_z = float(BASE_THICKNESS_MM + 0.5)
+                print(f"  WARN: no fringe verts found near bore rim, "
+                      f"falling back to pipe top z = {_pipe_top_z:.3f} mm")
+
+            _pipe_mesh = build_mount_pipe_mesh(
+                cx=_bore_cx,
+                cy=_bore_cy,
+                inner_radius=MOUNT_BORE_INNER_RADIUS_MM,
+                outer_radius=MOUNT_BORE_OUTER_RADIUS_MM,
+                z_top=_pipe_top_z,
+                n_seg=64,
+            )
+            print(f"  Mount pipe: cx={_bore_cx:.2f} cy={_bore_cy:.2f} "
+                  f"r_in={MOUNT_BORE_INNER_RADIUS_MM:.4f} "
+                  f"r_out={MOUNT_BORE_OUTER_RADIUS_MM:.4f} "
+                  f"z=[0, {_pipe_top_z:.3f}] mm "
+                  f"({len(_pipe_mesh.vertices)} verts, {len(_pipe_mesh.faces)} faces)")
+
+            # Concatenate pipe with the (textured) fringe so the result is a
+            # single Trimesh that travels through the rest of the pipeline as
+            # one body. Per task #335 the pipe must read as part of the fringe
+            # (filament 2 in the per-object metadata) — keeping it inside the
+            # `fringe` scene node achieves that without touching the filament
+            # mapping in _filament_for_scene_name.
+            fringe_mesh = trimesh.util.concatenate([fringe_mesh, _pipe_mesh])
+            fringe_mesh.merge_vertices(digits_vertex=6)
+            fringe_mesh.update_faces(fringe_mesh.nondegenerate_faces())
+            fringe_mesh.update_faces(fringe_mesh.unique_faces())
+            fringe_mesh.remove_unreferenced_vertices()
+            print(f"  Fringe + pipe (merged): {len(fringe_mesh.vertices)} verts, "
+                  f"{len(fringe_mesh.faces)} faces, "
+                  f"watertight={fringe_mesh.is_watertight}")
+        except _MountBoreDisabled:
+            print("  Mount pipe: build SKIPPED (ENABLE_MOUNT_BORE = False)")
+        except Exception as exc_pipe:
+            print(f"  ERROR building/merging mount pipe: {exc_pipe}")
+            import traceback; traceback.print_exc()
+    except Exception as exc:
+        print(f"  ERROR building fringe mesh: {exc}")
+        import traceback; traceback.print_exc()
+
+    # ── 7c. Water-hole rule: lift green + fringe (+ optional cap) ───────────
+    #
+    # When the EGM contains any water polygon, lift green and fringe by
+    # WATER_HOLE_LIFT_MM so a 2 mm filament base sits underneath. The fringe
+    # gets the per-vertex edge-band cap (Topo 2026-05-05): only fringe top
+    # vertices within BOUNDARY_CAP_BAND_MM of the plaque frame perimeter are
+    # clipped to BOUNDARY_HEIGHT_CAP_MM; interior fringe relief is preserved
+    # regardless of height. The green is *explicitly* skipped — even if a
+    # course's green were ever drawn touching the frame, it should never be
+    # capped per homeowner spec. Traps and water are handled inside their
+    # export_* functions (see export_trap_stls / export_water_meshes).
+    #
+    # Sampling note: trap and water heights were computed earlier from
+    # `fringe_mesh_flat` (an unlifted reference). After we lift `fringe_mesh`
+    # here, that reference still holds the un-lifted fringe Z, so trap and
+    # water slabs are sized against the original surface; their own lift is
+    # then applied on top of that, producing a consistent +2 mm shift for
+    # every printable piece in the assembly.
+    _hole_water_active = WATER_HOLE_LIFT_ENABLED and _hole_has_water(_egm_data)
+    if _hole_water_active:
+        print(f"\n[7c] Water-hole rule: lift={WATER_HOLE_LIFT_MM} mm, "
+              f"boundary cap={BOUNDARY_HEIGHT_CAP_MM} mm "
+              f"(mode={BOUNDARY_HEIGHT_CAP_MODE})")
+        # Green: smooth + stepped variants — never touches the frame, so no cap.
+        if isinstance(smooth_mesh_flat, trimesh.Trimesh):
+            _apply_lift_and_cap(
+                smooth_mesh_flat, lift_mm=WATER_HOLE_LIFT_MM,
+                cap_mm=None, label="green_smooth",
+            )
+        if isinstance(stepped_mesh, trimesh.Trimesh):
+            _apply_lift_and_cap(
+                stepped_mesh, lift_mm=WATER_HOLE_LIFT_MM,
+                cap_mm=None, label="green_stepped",
+            )
+        # Fringe: ALWAYS touches the frame by construction → lift + cap
+        # (cap gated by applyFringeFrameCap — task 669). When the cap is
+        # disabled, we still apply the water-hole lift so the fringe sits on
+        # the 2 mm base slab; only the per-vertex boundary-band clip is
+        # skipped, allowing fringe verts near the frame to keep their
+        # natural terrain height.
+        if isinstance(fringe_mesh, trimesh.Trimesh):
+            # v5.17 clipping fix: honour user-set grid cells above
+            # BOUNDARY_HEIGHT_CAP_MM. Otherwise the per-vertex edge-band cap in
+            # _apply_lift_and_cap silently clips a 20 mm user cell within
+            # BAND+TAPER of the frame back to 9 mm, flattening the TPS peak.
+            # The cap still protects natural fringe near the frame (vertices
+            # with z <= effective cap are never touched by the above_cap gate).
+            _user_grid_max_mm = 0.0
+            _user_grid_heights = (_egm_data or {}).get("gridCellHeights") or {}
+            if _user_grid_heights:
+                try:
+                    _user_grid_max_mm = max(float(v) for v in _user_grid_heights.values())
+                except (TypeError, ValueError):
+                    _user_grid_max_mm = 0.0
+            _effective_fringe_cap_mm = max(BOUNDARY_HEIGHT_CAP_MM, _user_grid_max_mm)
+            _fringe_cap = _effective_fringe_cap_mm if apply_fringe_frame_cap else None
+            _fringe_label = "fringe" if apply_fringe_frame_cap else "fringe (cap disabled)"
+            _apply_lift_and_cap(
+                fringe_mesh, lift_mm=WATER_HOLE_LIFT_MM,
+                cap_mm=_fringe_cap, label=_fringe_label,
+            )
+    else:
+        print("\n[7c] Water-hole rule: SKIPPED (no water polygons in EGM)")
+
+    # ── 7d. Tee-hole punch (task 692, Topo 2026-09-01) ──────────────────────
+    # Read the optional {"tee_hole": {"x_mm": ..., "y_mm": ...}} key from the
+    # EGM. Coords are millimetres from the top-left corner of the print
+    # bounds; drill_tee_hole handles the conversion to mesh world coords.
+    # When the key is absent (all legacy EGMs) we silently skip — no error,
+    # no spurious hole, no change to the fringe.
+    _tee_spec = _egm_data.get("tee_hole")
+    if _tee_spec and isinstance(fringe_mesh, trimesh.Trimesh):
+        try:
+            _tee_x = float(_tee_spec.get("x_mm"))
+            _tee_y = float(_tee_spec.get("y_mm"))
+        except (TypeError, ValueError, AttributeError) as _exc_tee:
+            print(f"\n[7d] Tee-hole: SKIPPED — invalid tee_hole spec {_tee_spec!r}: {_exc_tee}")
+        else:
+            print(f"\n[7d] Tee-hole: punching Ø{TEE_HOLE_DIAMETER_MM} mm through-hole "
+                  f"at print-top-left ({_tee_x:.2f}, {_tee_y:.2f}) mm, "
+                  f"collar Ø{TEE_HOLE_COLLAR_OD_MM} mm + {TEE_HOLE_COLLAR_PROTRUDE_MM} mm protrusion")
+            try:
+                fringe_mesh = drill_tee_hole(
+                    fringe_mesh,
+                    x_mm_from_topleft=_tee_x,
+                    y_mm_from_topleft=_tee_y,
+                )
+            except Exception as _exc_tee:
+                print(f"    ERROR drilling tee hole: {_exc_tee}")
+                import traceback; traceback.print_exc()
+    else:
+        if not _tee_spec:
+            print("\n[7d] Tee-hole: no 'tee_hole' key in EGM — skipping.")
+
+    # ── 8. Build sand trap meshes (in-memory) ───────────────────────────────
+    # Pass apply_fringe_frame_cap so the trap boundary-band cap mirrors the
+    # fringe cap controlled by the same EGM flag (task #604).
+    print("\n[8] Building sand trap meshes…")
+    trap_meshes = export_trap_stls(_egm_data, green_boundary_px, slug,
+                                   fringe_mesh=fringe_mesh_flat,
+                                   pipe_circle=pipe_circle,
+                                   write_stls=False,
+                                   apply_fringe_frame_cap=apply_fringe_frame_cap)
+    if not trap_meshes:
+        print("  (no traps built)")
+
+    # ── 8b. Build water trap meshes (in-memory) ─────────────────────────────
+    print("\n[8b] Building water trap meshes…")
+    water_meshes = export_water_meshes(_egm_data, green_boundary_px, slug,
+                                       fringe_mesh=fringe_mesh_flat,
+                                       pipe_circle=pipe_circle,
+                                       write_stls=False)
+    if not water_meshes:
+        print("  (no water built)")
+
+    # ── 8c. Build boulders meshes (in-memory) ───────────────────────────────
+    print("\n[8c] Building boulders meshes…")
+    boulders_meshes = export_boulders_meshes(_egm_data, green_boundary_px, slug,
+                                             fringe_mesh=fringe_mesh_flat,
+                                             pipe_circle=pipe_circle,
+                                             write_stls=False)
+    if not boulders_meshes:
+        print("  (no boulders built)")
+
+    # ── 9. Contour debug image → owner_inbox/diagnostics/ ───────────────────
+    print("\n[9] Saving contour lines debug image…")
+    _save_diag("gradient_contours", save_contour_debug_image, Z, xs_grid, ys_grid, inside_mask, img, green_boundary_px)
+
+    # ── 10. Assemble 3MF ────────────────────────────────────────────────────
+    print("\n[10] Assembling 3MF…")
+
+    # ── 10b. Build filename with global serial ───────────────────────────────
+    # The serial was committed by the caller (Flask route or CLI) before entering
+    # the pipeline.  We simply use the value that was passed in.
+    from serial_engraver import engrave_scene_geometries as _engrave_scene
+    serial_number = serial   # may be None if caller didn't provide one
+    hole_label = str(hole).zfill(2) if str(hole).isdigit() else str(hole)
+    if serial_number is not None:
+        fname_3mf = f"{course} (Hole {hole_label}) [{serial_number}].3mf"
+    else:
+        fname_3mf = f"{course} (Hole {hole_label}).3mf"
+    path_3mf = os.path.abspath(os.path.join(_3mf_dir, fname_3mf))
+    print(f"    [generate] output 3MF file:     {path_3mf}")
+
+    scene = trimesh.Scene()
+    scene_names = []
+
+    # Green surface — untextured in both styles (Topo 2026-09-09). Grass is
+    # applied to the fringe only; the green's visual style is smooth vs.
+    # terraced geometry, nothing more.
+    green_style = _egm_data.get("greenStyle", "smooth")
+    print(f"  Using {green_style} green surface")
+    if green_style == "terraced":
+        scene.add_geometry(stepped_mesh, node_name="green_surface")
+    else:
+        scene.add_geometry(smooth_mesh_flat, node_name="green_surface")
+    scene_names.append("green_surface")
+
+    # Fringe mesh (if built successfully) — includes a 3/16" through-hole at the stand corner
+    if isinstance(fringe_mesh, trimesh.Trimesh):
+        scene.add_geometry(fringe_mesh, node_name="fringe")
+        scene_names.append("fringe")
+
+    # Trap meshes — added directly from memory (no disk round-trip)
+    for trap_node, trap_mesh in trap_meshes:
+        scene.add_geometry(trap_mesh, node_name=trap_node)
+        scene_names.append(trap_node)
+
+    # Water meshes — names start with "water" so _filament_for_scene_name
+    # routes each one to extruder 4 (royal blue filament).
+    for water_node, water_mesh in water_meshes:
+        scene.add_geometry(water_mesh, node_name=water_node)
+        scene_names.append(water_node)
+
+    # Boulders meshes — names start with "boulders" so _filament_for_scene_name
+    # routes each one to extruder 5 (pink filament).
+    for boulders_node, boulders_mesh in boulders_meshes:
+        scene.add_geometry(boulders_mesh, node_name=boulders_node)
+        scene_names.append(boulders_node)
+
+    # Plate-2 smooth fringe sample (task 724) — added AFTER all plate-1 objects so
+    # its object ID (N+1) is highest, and the injection function maps it to plate 2.
+    # The name "fringe_no_grass_sample" routes to extruder 2 via _filament_for_scene_name
+    # ("fringe" prefix).  Serial engraving is NOT applied to the sample (it's a
+    # smooth-surface reference piece, not a serialised plaque).
+    # Only present when include_fringe_without_grass=True.
+    if isinstance(fringe_no_grass_sample, trimesh.Trimesh):
+        scene.add_geometry(fringe_no_grass_sample, node_name="fringe_no_grass_sample")
+        scene_names.append("fringe_no_grass_sample")
+        print(f"  Plate-2 smooth fringe sample (no grass) added to scene.")
+
+    print(f"\n[10b] Engraving serial s/n: {serial_number} on {len(scene_names)} item(s)…")
+    _engrave_scene(scene, serial_number)
+
+    # Repair pass: collapse float-ops slivers and dedupe before manifold check.
+    for _node_name, _m in scene.geometry.items():
+        if not isinstance(_m, trimesh.Trimesh):
+            continue
+        _m.merge_vertices(digits_vertex=6)              # collapse coincident vertices from float ops
+        _m.update_faces(_m.nondegenerate_faces())       # drop zero-area faces
+        _m.update_faces(_m.unique_faces())              # de-dupe identical face triplets
+        _m.remove_unreferenced_vertices()
+
+    # ── Scene-wide micro-component cleanup (task 715, Topo 2026-09-03) ─────
+    # Final safety net: any geometry with tiny (<= 20 face) disconnected
+    # components after all upstream carves + engraving + repair gets those
+    # components dropped. Bambu Studio flags micro-fragments as "floating
+    # regions" and, if they sit inside another body's solid volume (a fringe
+    # wall floater intersecting trap 1 at layer 30, task 715), also as
+    # "gcode path conflicts". Threshold of 20 faces is conservative — well
+    # below the tee collar tube's 384 faces and any legitimate secondary
+    # body, but above the 1–4 face fragments produced by earcut + carve +
+    # float-op residues.
+    _MICRO_LIMIT = 20
+    for _node_name, _m in list(scene.geometry.items()):
+        if not isinstance(_m, trimesh.Trimesh) or len(_m.faces) == 0:
+            continue
+        try:
+            _cs = _m.split(only_watertight=False)
+        except Exception:
+            continue
+        if len(_cs) <= 1:
+            continue
+        _keep = [c for c in _cs if len(c.faces) > _MICRO_LIMIT]
+        _drop = [c for c in _cs if len(c.faces) <= _MICRO_LIMIT]
+        if not _drop:
+            continue
+        _n_drop_faces = sum(len(c.faces) for c in _drop)
+        if len(_keep) == 1:
+            _new_mesh = _keep[0]
+        elif len(_keep) > 1:
+            _new_mesh = trimesh.util.concatenate(_keep)
+        else:
+            # Everything is micro — keep original rather than emptying the geom
+            continue
+        scene.geometry[_node_name] = _new_mesh
+        print(f"  [micro-cleanup] {_node_name}: dropped {len(_drop)} component(s) "
+              f"({_n_drop_faces} faces ≤ {_MICRO_LIMIT}); kept {len(_keep)} "
+              f"({len(_new_mesh.faces)} total faces)")
+
+    # Manifold check, per-component, with tolerances suitable for current
+    # geometry (the boss's slicer accepts the originally-shipped topology).
+    assert_manifold(
+        scene,
+        label=f"{course}-hole-{hole}",
+        # Fringe is intentionally an open-bottom thin shell; topology rework queued (task 311).
+        skip_labels={"fringe", "geometry_1"},
+        tolerate_boundary_edges=30,
+        tolerate_triple_shared=5,
+    )
+
+    scene.export(path_3mf)
+    print(f"  [generate] output 3MF written:  {path_3mf}")
+    print(f"  Objects in 3MF ({len(scene_names)}):")
+    for name in scene_names:
+        print(f"    - {name}")
+
+    # Inject Bambu/Orca per-object extruder metadata so the slicer prints each
+    # geometry on the correct filament (green=1, fringe=2, traps=3, water=4).
+    try:
+        _inject_bambu_extruder_metadata(path_3mf, scene_names)
+    except Exception as exc:
+        print(f"  WARNING: failed to inject extruder metadata: {exc}")
+
+    # ── 10c. Serial was already committed by the caller before run_pipeline. ──
+    # Nothing to do here — the global counter was incremented at the Generate
+    # click (Flask route or CLI entrypoint) before we were called.
+    if serial_number is not None:
+        print(f"  Serial used: s/n {serial_number} (committed by caller)")
+
+    print("\n" + "=" * 60)
+    print("Done.")
+    for _p in _diag_paths:
+        print(f"  Diagnostic PNG:     {_p}")
+    print(f"  3MF assembly:       {path_3mf}")
+    print(f"  Scene objects:      {len(scene_names)} (green + fringe + {len(trap_meshes)} trap(s) + {len(water_meshes)} water + {len(boulders_meshes)} boulders)")
+    print("=" * 60)
+
+    return path_3mf
+
+
+def main() -> None:
+    search = sys.argv[1] if len(sys.argv) > 1 else "Moffett"
+    egm_path = find_egm(search)
+    # Burn a global serial — running the CLI is another form of pressing Generate.
+    from serial_engraver import commit_global_serial as _commit_global
+    _cli_serial = _commit_global()
+    print(f"[gradient_surface_diagnostic] Global serial: {_cli_serial}")
+    run_pipeline(egm_path, serial=_cli_serial)
+
+
+if __name__ == "__main__":
+    main()

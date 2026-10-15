@@ -1,0 +1,396 @@
+# Deck Blueprint — 23'-6" × 16'-3" Attached Deck  (v15)
+
+Produced by Gemma (Technical Diagramming Specialist) on 2026-05-06.
+
+**v15 = v14 + ONE change (drawio only, 2026-05-06):**
+
+**Drawio stair-elevation cells replaced with native drawio shapes.** In v14 both elevation insets (left-edge stair and far-edge step) were rendered as ASCII text in `<pre>`-style cells — visually out of place against the otherwise clean drawio diagram. v15 replaces both with proper native drawio shapes: rectangles, dimension arrows, dashed lines, and text labels. The matplotlib PNG is effectively identical to v14 (same elevations, same geometry) with only the version badge updated to v15. No structural or dimensional changes. Generator: `gen_drawio_v15.py`.
+
+---
+
+**v14 = v13 + THREE changes (2026-05-06, Option C confirmed by Hollis):**
+
+**Change 1 — Deck depth pulled in 3" to fit 16-ft framing stock.** Overall finished surface depth: 16'-6" → **16'-3"** (PF outer edge to wall). Framing depth: 16'-3" → **16'-0"**. This lets the three perpendicular girders run as clean 16-ft 2×10 lengths with no rip. Outer pier row shifts in 3": y=16'-3" → **y=16'-0"**. The existing concrete patio is unchanged at 23'-6" × 16'-6", so a **3" strip of exposed patio** now shows along the far edge between the deck outer PF edge (y=16'-3") and the patio boundary (y=16'-6"). This strip is hatched and labeled on both pages so a builder reading the plan understands the deck does not extend to the patio edge on the far side. PF cantilever past rim: still 3.00" exact. PF cantilever past fascia: still 2.33" exact.
+
+**Change 2 — Both stair elevation views confirmed and upgraded in drawio.** The left-edge stair (v12, unchanged) had a reference callout in v13's drawio but only a text stub in the drawio XML — the actual graphical elevation existed only in render_v13.py. v14 adds proper graphical elevation cells (`v14-p2-left-stair-elev-*`) in the drawio matching the render. The far-edge step elevation (v13) similarly had a text stub in the drawio; upgraded to graphical cells (`v14-p2-far-step-elev-*`). Both elevations are present in render_v14.py as proper cross-section diagrams. Labels: "LEFT-EDGE STAIR — SIDE ELEVATION" and "FAR-EDGE STEP — SIDE ELEVATION."
+
+**Change 3 — Full v13→v14 version sweep.** Version badges, page names, diagram IDs, title blocks all updated. Pier legend updated to reflect outer row at y=16'-0".
+
+**v13 = v12 + TWO structural changes only:**
+
+**Change 1 — House-side pier row dropped (9 → 6 piers).** Piers P1, P4, P7 at y=12" from house removed. Ledger now carries the three perpendicular-girder house-end reactions as point loads. Simpson HU210-3 (or equivalent) hanger at each of the three girder-to-ledger intersections (x=0', x=11'-6", x=23'-0"). Ledger fastener spec upgraded to ½" HDG carriage bolts back-blocked from basement (confirmed accessible) clustered at each girder connection, plus ½" HDG lag at 18" OC two-row staggered between girder connections per IRC R507.9.1.3. Wall confirmed wood-frame, no masonry. Peel-and-stick + Z-flashing retained from v12.
+
+**Change 2 — Far-edge step added (v13 new).** Single low wide step along the outer (far) 23'-6" edge, right half only. Runs 11'-9" from the right corner (x=23'-6") back to the midpoint (x=11'-9"). Single 6" rise; tread top at 6" AG. Tread = 2× MoistureShield Vision 5.4" planks (10.9" total depth) running perpendicular to the house. Doubled 2×6 PT SYP ribbon lag-bolted to outer rim/drop-board face. Five precast concrete deck blocks (~28" OC) on a 4" compacted #57 gravel pad outside the deck footprint. Block positions (from left): x=23'-0", 20'-2", 17'-4", 14'-6", 11'-9". Open riser. Tiger Claw TC-G or Cortex fasteners matching main deck. Seasonal heave callout: ¼–½" per Hollis; homeowner has accepted. Does not conflict with v12 left-edge stair (separate and independent).
+
+**v12 = v11 + single 42" wide step on L edge starting 6' from house, open risers, gravel + paver landing.** The step assembly sits on the LEFT edge of the deck (negative-x direction from the left girder), with the opening spanning y=6'-0" to y=9'-6" from the house wall. Left PF and fascia are interrupted at those cut joints. Three 2×10 PT cut stringers attach to the left girder outer face via Simpson LSCZ hangers. Middle tread is 2 MoistureShield Vision 5.4" planks running parallel to the left edge at 6" AG. Open risers throughout (no riser boards). Stringer ends bear on 12"×12" precast pavers over a #57 compacted gravel pad. A side-elevation inset detail on both pages shows the step profile with annotated elevations (0", 6", 12" AG).
+
+**v11 = v10 + MoistureShield Vision brand swap (was Trex Transcend). Surgical change: decking brand, fastener system, and plank width updated; framing footprint unchanged.**
+
+**v10 = v9 + outside-corner mitered joint correctly rendered at lower-left and lower-right (fixed open-square artifact); no other changes.** In v9 the left-side and right-side PF boards were drawn as full rectangles that overlapped the far-side PF band at the two outside corners, creating a visible open square gap where the miter should have been a clean diagonal seam. v10 clips the side PF bands at the far PF inner edge and draws the 45° miter seam explicitly, so each outside corner now shows a tight filled diagonal joint with no empty wedge.
+
+**v9 = v8 + version badge in upper-left corner of every page (no other changes).** The badge shows "v9" in large bold text with a page sub-label ("Page 1 of 2 — Framing" / "Page 2 of 2 — Decking"), making it immediately obvious which version is open regardless of caching or file naming.
+
+**v8 adds the Trex decking layer.** No structural changes from v7. The framing is locked. v8 converts the drawio file from single-page to two-page:
+
+- **Page 1 — Framing Plan:** unchanged v7 framing content (what the framer needs).
+- **Page 2 — Decking Plan:** framing at 40% opacity in background; 48 field planks + 4-side picture-frame board at full opacity in foreground (what the deck installer needs).
+
+**v7 history:** v7 was a full structural rewrite that replaced the geometrically impossible joists-over-girders topology with face-hung joists top-flush at 11" AG, Pylex 50 spiral piers through the existing patio slab, and confirmed the 12" AG ceiling at every elevation.
+
+---
+
+## Files
+
+| File | Description |
+|------|-------------|
+| `deck_plan.drawio` | Editable draw.io source **(v15, two pages)**. Open in [draw.io desktop](https://www.drawio.com/) or [app.diagrams.net](https://app.diagrams.net). Page 1 = Framing; Page 2 = Decking. Version badge "v15" in upper-left of both pages. MoistureShield Vision throughout. 6 piers (house-side row dropped, outer row at y=16'-0"), HU210-3 hangers, far-edge step and left-edge stair both shown. 3" exposed patio strip labeled on both pages. Both stair elevation insets now rendered as native drawio shapes (rectangles, dimension arrows, dashed lines) — replaces v14's ASCII `<pre>` cells. |
+| `deck_plan.png` | Raster render of **Page 2 (Decking Plan)**. Produced by `render_v15.py`. Version badge "v15" visible top-left. Elevations unchanged from v14 (native shapes in drawio, matplotlib render identical except badge). |
+| `render_v15.py` | matplotlib render script for v15 Page 2. Version badge v15; all elevations carried from v14 unchanged. |
+| `gen_drawio_v15.py` | Python script to generate v15 drawio from v14. Hides ASCII `<pre>` profile cells; injects 46 native drawio shape cells for both elevation insets; v14→v15 sweep. |
+| `render_v14.py` | v14 render script (kept for reference). Deck depth 16'-0", overall 16'-3", 3" exposed patio strip, both stair elevations confirmed. |
+| `gen_drawio_v14.py` | v14 drawio generation script (kept for reference). Dimensional cascade (-3" on far boundary), exposed patio cells, upgraded elevation cells, v13→v14 sweep. |
+| `render_v13.py` | v13 render script (kept for reference). |
+| `gen_drawio_v13.py` | v13 drawio generation script (kept for reference). |
+| `render_v12.py` | v12 render script (kept for reference). |
+| `render_v11.py` | v11 render script (kept for reference). |
+| `render_v10.py` | v10 render script (kept for reference). |
+| `render_v9.py` | v9 render script (kept for reference). |
+| `render_v8.py` | v8 render script (kept for reference). |
+| `render_v7.py` | v7 render script (kept for reference — framing plan only). |
+| `render_v6.py` | v6 render script (kept for reference — v6 was superseded). |
+| `render_v4.py` | v4 render script (kept for reference). |
+| `render_v3.py` | v3 render script (kept for reference). |
+
+## How to open the .drawio file
+
+- **draw.io desktop (recommended):** File → Open → select `deck_plan.drawio`
+- **Browser:** Go to https://app.diagrams.net → drag-and-drop the file onto the browser window.
+- **VS Code:** Install the "Draw.io Integration" extension, then open the file directly.
+
+---
+
+## Decking — v11 (Page 2)
+
+### Field planks
+
+| Attribute | Value |
+|-----------|-------|
+| Species / product | **MoistureShield Vision** (composite, capped, DiamondDefense scratch coat, 50-yr fade & stain warranty) |
+| Board width | **5.4"** actual face |
+| Gap between planks | 1/8" typical |
+| Effective spacing (c-c) | **5.525"** |
+| Run direction | Perpendicular to house (in the 16' depth direction) |
+| Cut length | **15'-7.2" (187.2")** — from inner edge of house-side PF to inner edge of far-side PF |
+| Practical lumber | 16-ft boards, field-cut |
+| Waste per board | ~4.8" |
+| Count | **49 field planks** |
+
+**How 49 is derived:** Field width = framing 23'-0" minus 2 × 2.4" (PF inboard overlap on each side) = 22'-7.2" = 271.2". 271.2" ÷ 5.525" = 49.09 → 49 planks. The remaining ~0.5" gap sits at the right-side PF edge (absorbed as a slightly wider gap; within MoistureShield installation tolerances).
+
+### Picture-frame boards (4 sides)
+
+| Side | Length | Corner treatment |
+|------|--------|-----------------|
+| House-side | 23'-6" overall | **Butted** at left/right corners (against house wall) |
+| Far-side | 23'-6" overall | **45° mitered** at left/right corners (outside, exposed) |
+| Left-side | 16'-6" overall | Mitered at bottom (outside); butted at top (against house) |
+| Right-side | 16'-6" overall | Mitered at bottom (outside); butted at top (against house) |
+
+All PF boards: **5.4"** wide × **1.0"** thick (MoistureShield Vision composite). Single-board PF, not doubled.
+
+**2 mitered corners, 2 butted corners:**
+- Outside corners (far-left, far-right): 45° miter — both boards cut at 22.5° compound angle
+- Inside corners (top-left, top-right against house wall): butt joint — no miter needed
+
+### Plank count and ordering
+
+| Item | Count |
+|------|-------|
+| Field planks (16-ft boards) | **49** |
+| PF house-side (order 24-ft, or splice 2× 12-ft over a joist/girder) | 1 |
+| PF far-side (same) | 1 |
+| PF left-side (16-ft board, field-cut to 16'-6") | 1 |
+| PF right-side (same) | 1 |
+| **Board subtotal** | **53** |
+| +10% waste factor | +5 |
+| **Total order estimate** | **~58 boards** |
+
+> This is a planning estimate. **Hollis** will produce the precise BOM with an exact cut list.
+
+---
+
+## Deck spec summary (v11)
+
+- **Overall finished surface (PF outer edge to outer edge):** 23'-6" × 16'-6" — UNCHANGED
+- **Framing footprint (rim outer edge):** 23'-0" × 16'-3" — UNCHANGED
+- **Height:** 12" max above grade (hard ceiling, non-negotiable)
+- **Existing concrete patio:** 23'-6" × 16'-6" — matches deck footprint exactly; punched for piers
+- **Deck boards:** **MoistureShield Vision** composite, perpendicular to house (16'-3" direction)
+- **Fastener system:** **Tiger Claw TC-G + Cortex** (color-matched plugs) for field planks; face-screwed PF boards
+- **Picture-frame border:** **5.4"** MoistureShield Vision on all 4 sides (house side butts wall; 3 exposed sides overhang fascia **2.33"**)
+- **Available at:** Home Depot, Lowe's, Richards Building Supply (Hartford metro)
+
+---
+
+## Vertical budget (12" AG ceiling — every elevation verified)
+
+| Layer | Thickness | Elevation |
+|-------|-----------|-----------|
+| Top of MoistureShield Vision decking | — | **12.0" AG** |
+| MoistureShield Vision board | **1.0"** (actual) | top → bottom |
+| Top of joist / girder | — | **11.0" AG** |
+| 2×10 actual depth | 9.25" | top → bottom |
+| Bottom of joist / girder | — | **1.75" AG** |
+| Pylex saddle bracket height | ~1.5" | sits under girder bottom |
+| Saddle top | — | ~1.75" AG (just clears) |
+| Pier shaft above patio | ~0.5" | — |
+| Patio / grade surface | — | **0" AG** |
+| Pier shaft (Pylex 50) | 50" total | through slab, into soil |
+| Pier tip depth | — | ~49" below patio surface |
+| CT frost line | — | 42" — **cleared by ~7"** |
+
+> **EVERY ELEVATION VERIFIED — TOP OF DECK = 12.0" AG**
+
+---
+
+## Foundation — Pylex 50 spiral piers (v7 NEW, replaces sonotube footings)
+
+- **9 piers total, 3 per girder**
+- **All within patio footprint** (homeowner constraint — patio is 23'-6" × 16'-6", matching deck exactly)
+- **Installation:** sledgehammer-punch a ~3-4" diameter hole through the concrete patio at each pier location; screw the Pylex 50 helical pier through the hole; tip reaches ~49" below patio surface, well past the 42" CT frost line
+- **Shaft:** 50" galvanized helical pier shaft; no separate wooden post; no concrete sonotube
+- **Saddle bracket:** Pylex saddle plate bolts to pier shaft top (½" hot-dip galv bolts); girder bears directly in saddle (½" galv lag bolts up into girder bottom)
+- **After install:** patch / grout concrete around shaft at patio surface
+
+### Pier positions
+
+| Pier | Girder | x (along house) | y (out from house) |
+|------|--------|-----------------|---------------------|
+| P1 | Left | x=0' | y=12" (1') |
+| P2 | Left | x=0' | y=8'-1.5" (8.125') |
+| P3 | Left | x=0' | y=16'-3" (16.25') |
+| P4 | Mid | x=11'-6" | y=12" |
+| P5 | Mid | x=11'-6" | y=8'-1.5" |
+| P6 | Mid | x=11'-6" | y=16'-3" |
+| P7 | Right | x=23' | y=12" |
+| P8 | Right | x=23' | y=8'-1.5" |
+| P9 | Right | x=23' | y=16'-3" |
+
+**Note on P1/P4/P7 (house-side piers at 12"):** Offset 12" out from house to clear foundation. Each girder cantilevers 12" past the house-side pier back to the ledger.
+
+---
+
+## Framing topology (v7 — face-hung, top-flush)
+
+**All structural member tops align at 11.0" AG.** No member sits on top of another. This is the only topology that fits within the 12" AG ceiling with 2×10 members.
+
+### Ledger (unchanged identity from v4/v6; new structural relationship in v7)
+- **Single 2×10 PT ground-contact, 23'-0" long**
+- Lag-bolted to house rim joist: ½" hot-dip galv lag bolts (or FastenMaster LedgerLOK), 16" o.c. staggered top/bottom
+- Metal Z-flashing over top of ledger, tucked behind siding/wrap
+- **Top-flush with girders at 11.0" AG** — not on top of them
+- **No piers under ledger** — supported entirely by lag bolts into house framing
+- **MTWDeck lateral-tie callout:** minimum 2× Simpson MTWDeck (or equivalent) per IRC R507.9 / DCA-6; requires 2× band joist + 2× interior blocking bearing on sill plate inside house
+
+### Girders — 3 tripled 2×10 PT, 16'-3" long
+- Located at **x=0'** (left), **x=11'-6"** (mid), **x=23'** (right) along house direction
+- **Top-flush at 11.0" AG**; bottoms at 1.75" AG
+- Bear directly in Pylex saddle brackets at 3 pier positions per girder
+- Cantilever 12" past house-side pier (P1/P4/P7) back toward ledger
+
+### Joists — 2×10 PT, 12" o.c., FACE-HUNG (v7 NEW topology)
+- **Each joist run is broken into 2 segments per girder bay:**
+  - **Seg A:** from right face of left girder to left face of mid girder (~11'-3" long)
+  - **Seg B:** from right face of mid girder to left face of right girder (~11'-3" long)
+- Each segment end is **face-hung with a Simpson LUS210Z hot-dip galv face-mount hanger**
+- **Joist tops = girder tops = 11.0" AG** (top-flush throughout; joists do NOT pass over girders)
+- **16 regular rows** at y=1' through y=16' (12" o.c.)
+- **1 doubled far-side rim** (2 plies of 2×10 PT) at y=16'-3", face-hung in same 2-segment pattern with LUS210-2Z hangers
+- **Final bay:** 3" from last 12"-o.c. row (y=16') to doubled rim (y=16'-3") — intentional, normal
+- **Total:** 17 rows × 2 segments = **34 joist segments + ~68 face-mount hangers in field**
+
+### House-side PF blocking (v7 NEW)
+- Short 2×10 PT blocking pieces between ledger (y=0) and first joist row (y=12") at ~12" o.c. along the house
+- Backs the house-side picture-frame board, which would otherwise span ~12" unsupported above the ledger
+
+### Drop-board sub-fascia (v7 NEW)
+- A continuous 2× member outboard of the left girder outer face, right girder outer face, and far-side doubled rim outer face
+- Mounted at joist elevation, attached to girder/rim outer face
+- **Purpose:** backs the 3" PF cantilever past the rim on the 3 exposed sides (Trex max recommended unsupported cantilever ≈ 1.5"; this gives full backing)
+
+### Field blocking (lateral stiffness)
+- Two rows of solid 2×10 blocking between joist segments, perpendicular to joists:
+  - **Row 1:** x=5'-9" from left edge (midspan of left girder bay)
+  - **Row 2:** x=17'-3" from left edge (midspan of right girder bay)
+- Shown as dashed lines in plan view
+
+---
+
+## Picture-frame border (4 sides, v7 — same as v6 spec)
+
+| Side | Member | Fascia | Overhang |
+|------|--------|--------|----------|
+| House side | **5.4"** MoistureShield Vision PF board | None (wall is boundary) | None past wall; 1/4" thermal gap to siding |
+| Far side | **5.4"** MoistureShield Vision PF board | **0.67"** MoistureShield Vision Fascia | **2.33"** past fascia (3" past rim outer face) |
+| Left side | **5.4"** MoistureShield Vision PF board | **0.67"** MoistureShield Vision Fascia | **2.33"** past fascia (3" past rim outer face) |
+| Right side | **5.4"** MoistureShield Vision PF board | **0.67"** MoistureShield Vision Fascia | **2.33"** past fascia (3" past rim outer face) |
+
+- Mitered joints at the 3 outside corners (far-left, far-right, and at house-side left/right corners)
+- House-side PF board backed by ledger + new house-side 2×10 blocking
+
+---
+
+## Fastener schedule (v7)
+
+| Connection | Fastener |
+|------------|----------|
+| Ledger to house | ½" hot-dip galv lag bolts or FastenMaster LedgerLOK, 16" o.c. staggered |
+| Ledger flashing | Metal Z-flashing, tucked behind siding |
+| Lateral tie | Min. 2× Simpson MTWDeck or equiv. per IRC R507.9 / DCA-6 |
+| Pier saddle to pier shaft | ½" hot-dip galv bolts (Pylex saddle plate) |
+| Girder to pier saddle | ½" galv lag bolts up into girder bottom |
+| Joist segment to girder (face-hung) | Simpson LUS210Z hot-dip galv (~68 total in field) |
+| Doubled rim segments (face-hung) | Simpson LUS210-2Z hot-dip galv |
+| Drop-board to girder/rim | Structural screws or lag bolts |
+| Field plank hidden fastener | **Tiger Claw TC-G + Cortex** (color-matched plugs) |
+| Fascia to rim | Stainless trim screws |
+| 2-ply rim | ½" carriage bolts per AWC specs |
+| Joist tape | Zip System or equivalent on every joist top surface |
+| All hardware | Hot-dip galvanized or stainless (ACQ-compatible) |
+
+---
+
+## Drawing key
+
+Color-coded (see legend in drawing):
+
+| Color | Member |
+|-------|--------|
+| **Red/pink, thick stroke** | Ledger (single 2×10 PT, top-flush @ 11" AG) |
+| **Blue (thick vertical bands)** | Girders (tripled 2×10 PT, top-flush @ 11" AG) |
+| **Green (horizontal segments broken at each girder)** | Face-hung joist segments (2×10 PT, 12" o.c.) |
+| **Yellow (double-thick bar at 16'-3")** | Doubled far-side rim (face-hung in 2 segments) |
+| **Bright yellow (4-side border)** | Picture-frame board (5.5" Trex, all 4 sides) |
+| **Purple** | Trex Universal Fascia (0.75", 3 exposed sides) |
+| **Green-tinted thin strips** | Drop-board sub-fascia (left/right/far edges) |
+| **Light green short pieces between ledger and first joist** | House-side PF blocking |
+| **Dark brown filled circles with outer lighter ring** | Pylex 50 spiral piers (P1–P9); outer ring = punched patio hole |
+| **Gray dashed** | Field blocking rows (at x=5'-9" and x=17'-3") |
+| **Warm tan hatched background** | Existing concrete patio (23'-6" × 16'-6") |
+| **Amber callout** | MTWDeck lateral-tie requirement |
+| **Red/orange box** | Vertical budget + "EVERY ELEVATION VERIFIED" callout |
+
+---
+
+## Version history (v11 → v12 diff)
+
+| Element | v11 | **v12** | Notes |
+|---------|-----|---------|-------|
+| **Step assembly** | Not present | **Single step on LEFT edge** | 42" wide opening at y=6'-0" to y=9'-6" from house wall |
+| **Step projection** | — | **16" outward** (negative-x from deck) | Stringer footprint + tread depth |
+| **Step top tread** | — | **12" AG** (flush with deck surface) | Deck itself is the top landing |
+| **Step middle tread** | — | **6" AG, 10.8" deep** | 2 × MoistureShield Vision 5.4" planks side-by-side, running parallel to L edge |
+| **Risers** | — | **OPEN** (no riser board) | Stringers visible; 2 risers @ 6" each |
+| **Stringers** | — | **3 × 2×10 PT cut stringers** | At y=6', y=7'-9", y=9'-6"; Simpson LSCZ hangers to left girder outer face |
+| **Stringer base** | — | **12"×12" precast pavers** | Metal stringer-to-paver anchors; pavers on #57 compacted gravel base |
+| **Gravel pad** | — | **48"×18" stippled rectangle** | Extends slightly beyond step footprint; shown in plan view on both pages |
+| **Left PF** | Continuous y=0 to 16'-6" | **Interrupted at y=6'-0" and y=9'-6"** | Cut joints shown explicitly in red; PF resumes on both sides of step opening |
+| **Left fascia** | Continuous | **Interrupted at step opening** | Same cut joints as PF |
+| **Side-elevation inset** | Corner detail only | **Step profile added** | Shows 12" AG → 6" riser → 6" AG tread → 6" riser → grade → gravel + paver; open risers labeled |
+| **Legend** | 6 entries | **+ stringer, paver, gravel, cut joint, open riser entries** | All new step symbols documented |
+| **Fastener notes** | — | **+ Simpson LSCZ, metal stringer-to-paver anchors** | Added to Page 1 fastener schedule |
+| **PNG dimensions** | 2570 × 1882 px | **2701 × 1958 px** | Wider canvas to show step projecting left |
+| **Version badge** | v11 | **v12** | Both drawio pages + PNG |
+| **All framing** | Unchanged | **Unchanged** | Left girder is stringer attachment point; no framing modifications needed |
+
+---
+
+## Version history (v10 → v11 diff)
+
+| Element | v10 (Trex) | **v11 (MoistureShield Vision)** | Notes |
+|---------|------------|----------------------------------|-------|
+| **Decking brand** | Trex Transcend | **MoistureShield Vision** | Composite, capped, DiamondDefense scratch coat, 50-yr fade & stain warranty |
+| **Fastener system** | Trex Hideaway hidden fasteners | **Tiger Claw TC-G + Cortex** (color-matched plugs) | — |
+| **Field plank width** | 5.5" | **5.4"** | Per MoistureShield spec |
+| **Field plank thickness** | 0.94" (nominal) | **1.0"** (actual) | Shows in section detail |
+| **Field plank spacing c-c** | 5.625" | **5.525"** | 5.4 + 0.125" gap |
+| **Field plank cut length** | 15'-7" (187") | **15'-7.2" (187.2")** | Minor change |
+| **Field plank count** | 48 | **49** | Tighter board width fits one more |
+| **PF board width** | 5.5" | **5.4"** | All 4 sides |
+| **PF inboard overlap** | 2.5" | **2.4"** | Half of 5.4" less gap |
+| **Fascia thickness** | 0.75" | **0.67"** | MoistureShield Vision composite fascia |
+| **PF overhang past fascia** | 2.25" | **2.33"** | Bumped to keep 3" PF-past-rim unchanged |
+| **PF cantilever past rim** | 3" | **3"** | **UNCHANGED** — that's the whole point |
+| **Framing footprint** | 23'-0" × 16'-3" | **23'-0" × 16'-3"** | **UNCHANGED** |
+| **Overall finished surface** | 23'-6" × 16'-6" | **23'-6" × 16'-6"** | **UNCHANGED** |
+| **Board order estimate** | ~57 boards (48+4+5) | **~58 boards (49+4+5)** | Hollis owns precise BOM |
+| **Version badge** | v10 | **v11** | Both drawio pages + PNG |
+| **Availability** | — | **Home Depot, Lowe's, Richards Building Supply (Hartford metro)** | — |
+
+All structural framing (ledger, girders, joists, piers, blocking, drop-board sub-fascia), the 4-side picture-frame layout, and the v10 outside-corner mitered joint fix are **preserved unchanged**.
+
+---
+
+## Version history (v4 → v7 diff)
+
+| Element | v4 / v6 | **v7 (this version)** |
+|---------|---------|----------------------|
+| Foundation | 6×6 PT posts on 12" sonotube footings to frost depth | **Pylex 50 spiral piers, 50" galv. shaft, through punched patio holes — no posts, no sonotubes** |
+| Pier/post positions y | 0', 8', 16' (v4) / 0', 8'-1.5", 16'-3" (v6) | **12", 8'-1.5", 16'-3" — house-side pier offset 12" to clear foundation; girder cantilevers 12" to ledger** |
+| Framing topology | Joists rest ON TOP of girders (joists-over-girders) | **FACE-HUNG: joists butt girder faces via LUS210Z hangers; all tops co-planar at 11.0" AG** |
+| Joist geometry | Single continuous spans (23'-0" joists spliced at mid girder) | **2 segments per row — Seg A and Seg B — broken at each girder, hung at both ends** |
+| Girder function | Post cap + beam + joists resting on top | **Girder in Pylex saddle; joist tops flush with girder top; joists hang from girder face** |
+| Joist count | 17 total (v4/v6: 1 ledger + 15 regular + 1 rim) | **17 rows (16 regular @ 12" o.c. + 1 doubled rim) × 2 segments = 34 segments** |
+| Hanger count | ~0 (joists bore on girders, not hung in field) | **~68 Simpson LUS210Z face-mount hangers in field + LUS210-2Z at rim** |
+| Patio | Not shown | **23'-6" × 16'-6" existing concrete patio shown as tinted hatched background; pier holes visible** |
+| Drop-board sub-fascia | Mentioned in notes only (v6) | **Shown explicitly in plan: thin green strip outboard of each exposed girder/rim edge** |
+| House-side PF blocking | Not shown | **Shown in plan: short 2×10 pieces between ledger and first joist row at 12" o.c.** |
+| Section detail | Footing → post → post cap → girder → joist → tape → decking | **Fully rewritten: grade + patio + punched hole + Pylex shaft (50" down) + saddle + girder bottom → top-flush joist → tape → decking → 12.0" AG** |
+| Vertical stack feasibility | ~20" required (geometric impossibility at 12" ceiling) | **12.0" AG confirmed: every elevation verified in section detail** |
+
+**v5 note:** v5 was started as an incremental update but abandoned before delivery.
+**v6 note:** v6 was delivered with correct overall dimensions (23'-6" × 16'-6", 4-side PF, fascia, etc.) but retained the geometrically impossible joists-over-girders-over-posts-over-sonotubes stack. v6 is superseded by v7.
+
+---
+
+## Version history (v7 → v8 diff)
+
+| Element | v7 | **v8** |
+|---------|----|-----------------------|
+| Framing | Unchanged | **Unchanged — framing is locked** |
+| draw.io file | Single page | **Two pages: Page 1 = Framing Plan, Page 2 = Decking Plan** |
+| Deck planks | Not shown | **48 field planks (5.5" × 15'-7", ⊥ house, 1/8" gap) + 4-side PF board** |
+| Field plank count | — | **48** (271" field width ÷ 5.625" spacing = 48.18 → 48) |
+| PF joints | — | **2 mitered corners (outside, far-left/far-right), 2 butted (inside, against house)** |
+| PNG render | Page 1 framing only | **Page 2 decking: framing @ 40% opacity background + planks foreground** |
+| PNG dimensions | 2620 × 2363 px | **2563 × 1885 px** |
+| Board count estimate | — | **~57 boards** (48 field + 4 PF + 10% waste) |
+| BOM | — | Hollis to produce precise BOM — this is a planning estimate only |
+
+---
+
+## Version history (v8 → v9 diff)
+
+| Element | v8 | **v9** |
+|---------|----|-----------------------|
+| All structural content | Unchanged | **Unchanged — framing and decking are locked** |
+| Version badge | None | **Bold "v9" badge in upper-left of both drawio pages and PNG** |
+| Page sub-label | None | **"Page 1 of 2 — Framing" / "Page 2 of 2 — Decking" below badge** |
+| Title block | "DECK PLAN v8 …" | **"DECK PLAN v9 …" on both pages** |
+| Diagram IDs / page names | deck-plan-v8-p1, v8-p2 | **deck-plan-v9-p1, v9-p2** |
+
+---
+
+## Version history (v9 → v10 diff)
+
+| Element | v9 | **v10 (this version)** |
+|---------|----|-----------------------|
+| All structural content | Unchanged | **Unchanged — framing and decking are locked** |
+| Outside corner rendering | Open-square artifact: left/right PF rectangles overlapped far PF zone; miter line drawn over overlap but corner had visible gap | **Fixed: left/right PF bands clipped at far PF inner edge; corner overlap square filled with correct PF color; 45° diagonal miter seam drawn explicitly — clean tight joint, no gap** |
+| Left PF / Right PF (Page 2 render) | Full rectangle extending to FAR_PF_Y1=16.5 ft | **5-vertex mitered polygon, terminated at FAR_PF_Y0=16.04 ft with diagonal cut to outer corner** |
+| Fascia corner (Page 2 render) | Left/right fascia strips ended at far fascia top — small gap at outer corner | **Left/right fascia extended to fas_y+FASCIA_T — flush butt-join, no gap** |
+| Page 1 drawio PF cells | Left/right PF h=686 (extended into far PF overlap zone) | **h=668 (trimmed to far PF inner edge); miter fill triangle + seam line added at each outside corner** |
+| Page 2 drawio PF cells | Left/right PF h=660 | **h=641.7 (trimmed); miter fill triangle + seam line added at each outside corner** |
+| Version badge | "v9" | **"v10"** |
+| Title block | "DECK PLAN v9 …" | **"DECK PLAN v10 …" on both pages** |
+| Diagram IDs / page names | deck-plan-v9-p1, v9-p2 | **deck-plan-v10-p1, v10-p2** |

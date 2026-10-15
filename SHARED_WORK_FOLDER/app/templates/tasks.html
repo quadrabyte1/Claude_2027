@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Tasks — AI Team Workspace{% endblock %}
+{% block content %}
+
+<div class="pb-16">
+<div class="mb-8">
+  <h1 class="text-[28px] font-bold text-notion-text leading-tight">Tasks</h1>
+  <p class="text-notion-muted mt-1">All tasks in the workspace.</p>
+</div>
+
+{# ── Status filter tabs ─────────────────────────────────────── #}
+<div class="flex items-center gap-1 mb-6 border-b border-notion-border pb-2 overflow-x-auto">
+  <a href="/tasks"
+     hx-get="/tasks" hx-target="#main-content" hx-swap="innerHTML settle:150ms" hx-push-url="true"
+     class="px-3 py-1.5 text-sm rounded-md transition-default whitespace-nowrap
+       {{ 'bg-notion-hover text-notion-text font-medium' if not current_status else 'text-notion-muted hover:bg-notion-hover hover:text-notion-text' }}">
+    All
+  </a>
+  {% for s in statuses %}
+  <a href="/tasks?status={{ s }}"
+     hx-get="/tasks?status={{ s }}" hx-target="#main-content" hx-swap="innerHTML settle:150ms" hx-push-url="true"
+     class="px-3 py-1.5 text-sm rounded-md transition-default whitespace-nowrap
+       {{ 'bg-notion-hover text-notion-text font-medium' if current_status == s else 'text-notion-muted hover:bg-notion-hover hover:text-notion-text' }}">
+    {{ s | replace('_', ' ') | title }}
+  </a>
+  {% endfor %}
+</div>
+
+{# ── Tasks table ─────────────────────────────────────────────── #}
+{% if tasks %}
+<div class="border border-notion-border rounded-lg overflow-hidden">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="bg-notion-sidebar text-left text-xs text-notion-muted uppercase tracking-wide">
+        <th class="px-4 py-3 font-medium">Title</th>
+        <th class="px-4 py-3 font-medium">Status</th>
+        <th class="px-4 py-3 font-medium">Priority</th>
+        <th class="px-4 py-3 font-medium">Assigned to</th>
+        <th class="px-4 py-3 font-medium">Due</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-notion-border">
+      {% for t in tasks %}
+      <tr class="hover:bg-notion-hover transition-default">
+        <td class="px-4 py-3">
+          <div class="font-medium text-notion-text">{{ t.title }}</div>
+          {% if t.description %}
+          <div class="text-xs text-notion-muted mt-0.5 truncate max-w-xs">{{ t.description[:80] }}</div>
+          {% endif %}
+        </td>
+        <td class="px-4 py-3">
+          {% set status_colors = {
+            'pending': 'bg-gray-100 text-gray-600',
+            'in_progress': 'bg-yellow-50 text-yellow-700',
+            'blocked': 'bg-red-50 text-red-600',
+            'done': 'bg-green-50 text-green-700',
+            'cancelled': 'bg-gray-50 text-gray-400',
+          } %}
+          <span class="inline-flex items-center text-xs px-2 py-0.5 rounded-full {{ status_colors.get(t.status, 'bg-gray-100 text-gray-600') }}">
+            {{ t.status | replace('_', ' ') | title }}
+          </span>
+        </td>
+        <td class="px-4 py-3">
+          {% set prio_colors = {
+            'low': 'text-gray-400',
+            'normal': 'text-notion-muted',
+            'high': 'text-orange-500',
+            'urgent': 'text-red-500 font-medium',
+          } %}
+          <span class="text-xs {{ prio_colors.get(t.priority, 'text-notion-muted') }}">
+            {{ t.priority | title }}
+          </span>
+        </td>
+        <td class="px-4 py-3 text-notion-muted">
+          {{ t.assignee_name or '—' }}
+        </td>
+        <td class="px-4 py-3 text-xs text-notion-muted whitespace-nowrap">
+          {{ t.due_date[:10] if t.due_date else '—' }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="rounded-lg border border-notion-border border-dashed p-12 text-center">
+  <p class="text-notion-muted">
+    {% if current_status %}
+    No {{ current_status | replace('_', ' ') }} tasks.
+    {% else %}
+    No tasks yet.
+    {% endif %}
+  </p>
+</div>
+{% endif %}
+
+</div>{# /pb-16 #}
+
+<footer class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-[50px] py-3 flex items-center justify-center gap-3 z-30 shadow-sm">
+  <span class="text-xs text-gray-900">© Copyright 2026, <a href="https://fourierflight.com" target="_blank" class="hover:underline">IWI Enterprise</a></span>
+  <span class="text-xs text-gray-400 font-mono">{{ app_version }}</span>
+  <div x-data="{ count: 0 }"
+       x-init="(async () => {
+         const update = async () => {
+           try { const r = await fetch('/api/tasks/running_count'); if (r.ok) { count = (await r.json()).count; } }
+           catch(e) {}
+         };
+         update();
+         setInterval(update, 1000);
+       })()"
+       x-show="count > 0"
+       x-cloak
+       class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200"
+       :title="count + ' task' + (count === 1 ? '' : 's') + ' currently running'">
+    <span class="relative flex h-2 w-2">
+      <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+      <span class="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+    </span>
+    <span x-text="count + (count === 1 ? ' task' : ' tasks')"></span>
+  </div>
+</footer>
+
+{% endblock %}

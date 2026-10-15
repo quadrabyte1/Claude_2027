@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Journal — AI Team Workspace{% endblock %}
+{% block content %}
+
+<div class="pb-16">
+<div class="flex items-center justify-between mb-8">
+  <div>
+    <h1 class="text-[28px] font-bold text-notion-text leading-tight">Journal</h1>
+    <p class="text-notion-muted mt-1">{{ entries|length }} entr{{ 'ies' if entries|length != 1 else 'y' }}.</p>
+  </div>
+  <a href="/journal/new"
+     hx-get="/journal/new" hx-target="#main-content" hx-swap="innerHTML settle:150ms" hx-push-url="true"
+     class="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-white bg-notion-accent rounded-lg hover:opacity-90 transition-default">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    New entry
+  </a>
+</div>
+
+<div class="space-y-2">
+  {% for e in entries %}
+  <a href="/journal/{{ e.date }}"
+     hx-get="/journal/{{ e.date }}" hx-target="#main-content" hx-swap="innerHTML settle:150ms" hx-push-url="true"
+     class="block rounded-lg border border-notion-border p-5 hover:shadow-sm hover:border-notion-accent/30 transition-default group">
+    <div class="flex items-start justify-between gap-4">
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2.5 mb-1.5">
+          <span class="text-xs text-notion-muted bg-notion-sidebar px-2 py-0.5 rounded font-mono">{{ e.date }}</span>
+        </div>
+        <h3 class="font-semibold text-base text-notion-text group-hover:text-notion-accent transition-default">
+          {{ e.title or 'Untitled' }}
+        </h3>
+        {% if e.content %}
+        <p class="text-sm text-notion-muted mt-1.5 line-clamp-2">
+          {{ e.content[:200] | replace('#', '') | replace('*', '') | replace('-', '') | truncate(200) }}
+        </p>
+        {% endif %}
+      </div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+
+{% if not entries %}
+<div class="rounded-lg border border-notion-border border-dashed p-12 text-center">
+  <p class="text-notion-muted mb-3">No journal entries yet.</p>
+  <a href="/journal/new"
+     hx-get="/journal/new" hx-target="#main-content" hx-swap="innerHTML settle:150ms" hx-push-url="true"
+     class="text-sm text-notion-accent hover:underline">Write your first entry</a>
+</div>
+{% endif %}
+
+</div>{# /pb-16 #}
+
+<footer class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-[50px] py-3 flex items-center justify-center gap-3 z-30 shadow-sm">
+  <span class="text-xs text-gray-900">© Copyright 2026, <a href="https://fourierflight.com" target="_blank" class="hover:underline">IWI Enterprise</a></span>
+  <span class="text-xs text-gray-400 font-mono">{{ app_version }}</span>
+  <div x-data="{ count: 0 }"
+       x-init="(async () => {
+         const update = async () => {
+           try { const r = await fetch('/api/tasks/running_count'); if (r.ok) { count = (await r.json()).count; } }
+           catch(e) {}
+         };
+         update();
+         setInterval(update, 1000);
+       })()"
+       x-show="count > 0"
+       x-cloak
+       class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200"
+       :title="count + ' task' + (count === 1 ? '' : 's') + ' currently running'">
+    <span class="relative flex h-2 w-2">
+      <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+      <span class="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+    </span>
+    <span x-text="count + (count === 1 ? ' task' : ' tasks')"></span>
+  </div>
+</footer>
+
+{% endblock %}

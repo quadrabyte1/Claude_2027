@@ -1,0 +1,3619 @@
+{% extends "base.html" %}
+{# Boundary Editor v5.10 — Grid value 0 = empty cell (deleted on commit, dropped on load). Grid lines recolored to indigo; Cmd+drag multi-cell selection with shared-value edit (task 726) #}
+{% block title %}Boundary Editor — AI Team Workspace{% endblock %}
+{% block content_width %}max-w-6xl{% endblock %}
+{% block content %}
+
+<div x-data="polygonEditor()" x-init="init()" class="space-y-4 pb-16" @keydown.window="handleKey($event)">
+
+  {# ── Header ─────────────────────────────────────────────── #}
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-notion-text">Boundary Editor</h1>
+      <p class="text-sm text-notion-muted mt-0.5">Drag vertices to adjust hole boundaries, then save.</p>
+    </div>
+  </div>
+
+  {# ── Action bar ─────────────────────────────────────────── #}
+  <div class="flex items-center gap-3 flex-nowrap overflow-x-auto">
+    <button @click="openNewProjectDialog()"
+            title="Start a new hole project from a source image (course, hole number, image)."
+            class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md bg-notion-accent hover:bg-blue-600 text-white transition-default">
+      New Project
+    </button>
+
+    <button @click="openProjectDialog()"
+            title="Open a previously saved hole project (.egm file)."
+            class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md bg-white border border-notion-border hover:bg-notion-hover text-notion-text transition-default">
+      Open Project
+    </button>
+  </div>
+
+  {# ── Per-hole settings ─────────────────────────────────── #}
+  <div x-show="imgLoaded" x-cloak
+       class="bg-white border border-notion-border rounded-lg px-5 py-4 space-y-3">
+    <div class="flex flex-wrap gap-x-6 gap-y-3 items-end">
+
+      {# Green style #}
+      <div class="flex flex-col gap-1 min-w-[130px]"
+           title="How the green's slope is rendered. Terraced = stepped contour bands (Contour step controls the height increment); Smooth = continuous gradient.">
+        <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Green style</label>
+        <select x-model="greenStyle" @change="autoSave()"
+                class="text-sm border border-notion-border rounded-md px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent">
+          <option value="terraced">Terraced</option>
+          <option value="smooth">Smooth</option>
+        </select>
+      </div>
+
+      {# Contour step #}
+      <div class="flex flex-col gap-1 min-w-[110px]"
+           title="Elevation increment between contour bands when Green style = Terraced. Smaller values give finer stepping.">
+        <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Contour step (mm)</label>
+        <input type="number" x-model.number="contourStep" @change="autoSave()"
+               step="0.1" min="0.1"
+               class="text-sm border border-notion-border rounded-md px-2.5 py-1.5 bg-white w-full focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent">
+      </div>
+
+      {# Grass amplitude #}
+      <div class="flex flex-col gap-1 min-w-[130px]"
+           title="Height of the grass-texture bumps on the green surface. 0 = flat (no grass texture).">
+        <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Grass amplitude (mm)</label>
+        <input type="number" x-model.number="grassAmplitude" @change="autoSave()"
+               step="0.1" min="0"
+               class="text-sm border border-notion-border rounded-md px-2.5 py-1.5 bg-white w-full focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent">
+      </div>
+
+      {# Grass spacing #}
+      <div class="flex flex-col gap-1 min-w-[120px]"
+           title="Center-to-center distance between grass bumps on the green. Smaller = denser texture.">
+        <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Grass spacing (mm)</label>
+        <input type="number" x-model.number="grassSpacing" @change="autoSave()"
+               step="0.1" min="0.5"
+               class="text-sm border border-notion-border rounded-md px-2.5 py-1.5 bg-white w-full focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent">
+      </div>
+
+      {# Elevation range #}
+      <div class="flex flex-col gap-1 min-w-[130px]"
+           title="Total Z variation across the green (highest point minus lowest point).">
+        <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Elevation range (mm)</label>
+        <input type="number" x-model.number="elevationRange" @change="autoSave()"
+               step="0.1" min="0.1"
+               class="text-sm border border-notion-border rounded-md px-2.5 py-1.5 bg-white w-full focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent">
+      </div>
+
+      {# Z scale — vertical amplitude multiplier for green and fringe relief #}
+      <div class="flex flex-col gap-1 min-w-[120px]"
+           title="Vertical amplitude multiplier applied to green and fringe relief above the base plate. 1.0 = no change (default), 1.5 = 50% taller, 2.0 = twice as tall. Does not affect the base plate thickness or XY dimensions.">
+        <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Z scale ×</label>
+        <input type="number" x-model.number="zScale" @change="autoSave()"
+               step="0.1" min="0.5" max="5.0"
+               class="text-sm border border-notion-border rounded-md px-2.5 py-1.5 bg-white w-full focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent">
+      </div>
+
+      {# Green scale — XY-only multiplier applied to the green polygon (1.0065 = default, ~0.65% larger) #}
+      <div class="flex flex-col gap-1 min-w-[120px]"
+           title="XY-only multiplier applied to the green polygon around its center (default 1.0065 = ~0.65% larger; 1.0 = no change; 1.05 = 5% larger). Fringe, traps, water, and boulders are unaffected.">
+        <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Green scale</label>
+        <input type="number" x-model.number="greenScale" @change="autoSave()"
+               step="0.001" min="0.5"
+               class="text-sm border border-notion-border rounded-md px-2.5 py-1.5 bg-white w-full focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent">
+      </div>
+
+      {# Fringe edge height #}
+      <div class="flex flex-col gap-1 min-w-[140px]"
+           title="Height of the fringe's outer wall around the printed piece.">
+        <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Fringe edge height (mm)</label>
+        <input type="number" x-model.number="fringeEdgeHeight" @change="autoSave()"
+               step="0.5" min="0.5"
+               class="text-sm border border-notion-border rounded-md px-2.5 py-1.5 bg-white w-full focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent">
+      </div>
+
+      {# Base thickness — slab of filament below the surface topology #}
+      <div class="flex flex-col gap-1 min-w-[130px]"
+           title="Thickness of the flat filament base slab that sits under the surface topology.">
+        <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Base thickness (mm)</label>
+        <input type="number" x-model.number="baseThicknessMm" @change="autoSave()"
+               step="0.1" min="0.1"
+               class="text-sm border border-notion-border rounded-md px-2.5 py-1.5 bg-white w-full focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent">
+      </div>
+
+      {# Include boundary region (auto-derived 5 mm boulders ring around water) #}
+      <div class="flex flex-col gap-1 min-w-[180px]"
+           title="When on, the pipeline auto-derives a 5 mm boulders ring around each water polygon (replaces manual boulders polygons).">
+        <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Boundary region</label>
+        <label class="inline-flex items-center gap-2 text-sm text-notion-text cursor-pointer select-none">
+          <input type="checkbox" x-model="includeBoundaryRegion" @change="autoSave()"
+                 class="h-4 w-4 rounded border-notion-border text-notion-accent focus:ring-2 focus:ring-notion-accent/30">
+          <span>Include boundary region</span>
+        </label>
+        <span class="text-xs text-notion-muted">Auto-derives a 5 mm boulders ring around each water polygon.</span>
+      </div>
+
+      {# Cap fringe at frame height — clip fringe top vertices near the frame perimeter so the fringe doesn't rise above the plaque frame on water holes #}
+      <div class="flex flex-col gap-1 min-w-[200px]"
+           title="On water holes, clip fringe top vertices near the frame perimeter so the fringe never rises above the frame. Uncheck to let the fringe rise to its natural height (may exceed the frame).">
+        <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Fringe cap</label>
+        <label class="inline-flex items-center gap-2 text-sm text-notion-text cursor-pointer select-none">
+          <input type="checkbox" x-model="applyFringeFrameCap" @change="autoSave()"
+                 class="h-4 w-4 rounded border-notion-border text-notion-accent focus:ring-2 focus:ring-notion-accent/30">
+          <span>Cap fringe at frame height</span>
+        </label>
+        <span class="text-xs text-notion-muted">Prevents the fringe from rising above the plaque frame near the edges (water holes only).</span>
+      </div>
+
+      {# Include fringe without grass — when checked, a second plate is generated holding a smooth (grass-less) fringe sample #}
+      <div class="flex flex-col gap-1 min-w-[200px]"
+           title="When checked, a second plate is added to the 3MF containing a smooth fringe sample (no grass texture) — useful for comparing grass vs. smooth in the same file. Plate 1 always has grass regardless of this setting.">
+        <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Fringe comparison</label>
+        <label class="inline-flex items-center gap-2 text-sm text-notion-text cursor-pointer select-none">
+          <input type="checkbox" x-model="includeFringeWithoutGrass" @change="autoSave()"
+                 class="h-4 w-4 rounded border-notion-border text-notion-accent focus:ring-2 focus:ring-notion-accent/30">
+          <span>Include Fringe Without Grass</span>
+        </label>
+        <span class="text-xs text-notion-muted">Adds a plate 2 smooth fringe sample. Plate 1 always has grass.</span>
+      </div>
+
+      {# Divider #}
+      <div class="hidden sm:block w-px self-stretch bg-notion-border mx-1"></div>
+
+      {# Flag offsets #}
+      <div class="flex flex-col gap-1"
+           title="Shift the flagstick away from the green's center. Positive X moves right, positive Y moves up. 0, 0 = anchored at the green center.">
+        <div class="flex items-center gap-1.5">
+          <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Flag offset</label>
+          <span class="text-xs text-notion-muted normal-case tracking-normal">Positive X = right, positive Y = up. Defaults to 0,0 = green center.</span>
+        </div>
+        <div class="flex gap-3">
+          <div class="flex flex-col gap-0.5 min-w-[110px]">
+            <label class="text-xs text-notion-muted">X offset (mm)</label>
+            <input type="number" x-model.number="flagOffsetXMm" @change="autoSave()"
+                   step="0.5"
+                   title="Horizontal flag offset (mm). Positive = right, negative = left."
+                   class="text-sm border border-notion-border rounded-md px-2.5 py-1.5 bg-white w-full focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent">
+          </div>
+          <div class="flex flex-col gap-0.5 min-w-[110px]">
+            <label class="text-xs text-notion-muted">Y offset (mm)</label>
+            <input type="number" x-model.number="flagOffsetYMm" @change="autoSave()"
+                   step="0.5"
+                   title="Vertical flag offset (mm). Positive = up, negative = down."
+                   class="text-sm border border-notion-border rounded-md px-2.5 py-1.5 bg-white w-full focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent">
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  {# ── GPS Backend panel ─────────────────────────────────── #}
+  <div x-show="imgLoaded && hasGreenPolygon()" x-cloak
+       class="bg-white border border-notion-border rounded-lg px-5 py-4 space-y-4">
+
+    <div class="flex items-center justify-between">
+      <h3 class="text-sm font-semibold text-notion-text">GPS Backend</h3>
+      <div class="flex items-center gap-2">
+        <label class="inline-flex items-center gap-1.5 text-xs text-notion-muted cursor-pointer select-none"
+               title="When on, the Generate pipeline uses real GPS elevation data instead of image arrows. Easy to A/B test.">
+          <input type="checkbox" x-model="gpsEnabled" @change="onGpsParamChange()"
+                 class="h-3.5 w-3.5 rounded border-notion-border text-notion-accent focus:ring-2 focus:ring-notion-accent/30">
+          <span class="font-medium" :class="gpsEnabled ? 'text-teal-700' : 'text-notion-muted'">Use GPS backend</span>
+        </label>
+        <button @click="openGeoRefDialog()"
+                title="Set up course geo-reference: enter the SW and NE corner lat/lngs so pixel coordinates map to real-world lat/lng."
+                class="text-notion-muted hover:text-notion-text transition-default text-sm" style="line-height:1;">⚙</button>
+      </div>
+    </div>
+
+    {# ── GPS backend body — v4.60: hidden when checkbox is off ─ #}
+    <div id="gps-backend-body"
+         x-show="gpsEnabled"
+         x-transition:enter="transition-all ease-out duration-150"
+         x-transition:enter-start="opacity-0 -translate-y-1"
+         x-transition:enter-end="opacity-100 translate-y-0"
+         x-transition:leave="transition-all ease-in duration-150"
+         x-transition:leave-start="opacity-100 translate-y-0"
+         x-transition:leave-end="opacity-0 -translate-y-1"
+         class="space-y-4">
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+      {# GPS file picker #}
+      <div class="flex flex-col gap-1 sm:col-span-2">
+        <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">GPS File</label>
+        <div class="flex gap-2 items-center">
+          <select x-model="gpsFile" @change="onGpsParamChange()"
+                  class="flex-1 text-sm border border-notion-border rounded-md px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent">
+            <option value="">-- select GPS file --</option>
+            <template x-for="f in gpsFileList" :key="f.path">
+              <option :value="f.path" x-text="f.name"></option>
+            </template>
+          </select>
+          <button @click="refreshGpsFiles()"
+                  title="Refresh GPS file list"
+                  class="text-sm px-2 py-1.5 rounded-md border border-notion-border bg-white hover:bg-notion-hover text-notion-muted transition-default">↺</button>
+        </div>
+        <p x-show="gpsFile" class="text-xs text-notion-muted truncate" x-text="gpsFile"></p>
+      </div>
+
+      {# vertExag slider #}
+      <div class="flex flex-col gap-1"
+           title="Vertical exaggeration — multiplies GPS altitude differences. 1.0 = real scale; 3-10 typical for printing.">
+        <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Vert exag <span class="font-mono" x-text="gpsVertExag.toFixed(1)"></span></label>
+        <input type="range" x-model.number="gpsVertExag" @input="onGpsParamChange()"
+               min="1.0" max="10.0" step="0.1"
+               class="w-full h-1.5 rounded-full appearance-none bg-gray-200 accent-notion-accent">
+        <div class="flex justify-between text-xs text-notion-muted">
+          <span>1.0</span><span>10.0</span>
+        </div>
+      </div>
+
+      {# approachM #}
+      <div class="flex flex-col gap-1"
+           title="Metres outside the green boundary to include in the GPS heightmap mask.">
+        <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Approach (m)</label>
+        <input type="number" x-model.number="gpsApproachM" @change="onGpsParamChange()"
+               min="0" max="20" step="0.5"
+               class="text-sm border border-notion-border rounded-md px-2.5 py-1.5 bg-white w-full focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent">
+      </div>
+
+      {# gridSize dropdown #}
+      <div class="flex flex-col gap-1"
+           title="Grid resolution for the GPS heightmap. Higher = more detail, slower generation.">
+        <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Grid size</label>
+        <select x-model.number="gpsGridSize" @change="onGpsParamChange()"
+                class="text-sm border border-notion-border rounded-md px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent">
+          <option value="100">100 × 100</option>
+          <option value="150">150 × 150</option>
+          <option value="200">200 × 200</option>
+          <option value="300">300 × 300</option>
+        </select>
+      </div>
+
+      {# Bbox display + Snap button #}
+      <div class="flex flex-col gap-1 sm:col-span-2">
+        <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Bounding box</label>
+        <div class="flex gap-2 items-start">
+          <div class="flex-1 text-xs font-mono bg-gray-50 border border-notion-border rounded px-2 py-1.5 text-notion-muted leading-relaxed min-h-[3rem]">
+            <template x-if="gpsBbox">
+              <span x-text="'SW (' + gpsBbox.lat_min.toFixed(5) + ', ' + gpsBbox.lng_min.toFixed(5) + ') · NE (' + gpsBbox.lat_max.toFixed(5) + ', ' + gpsBbox.lng_max.toFixed(5) + ')'"></span>
+            </template>
+            <template x-if="!gpsBbox">
+              <span class="text-notion-muted">Not set — click &quot;Snap to green&quot; or drag on map</span>
+            </template>
+          </div>
+          <button @click="snapBboxToGreen()"
+                  :disabled="!hasGreenPolygon() || !courseGeoRef"
+                  :title="courseGeoRef ? 'Auto-compute bbox from green polygon + approach padding' : 'Set up geo-reference first (⚙)'"
+                  :class="(hasGreenPolygon() && courseGeoRef) ? 'bg-teal-600 hover:bg-teal-700 text-white' : 'bg-gray-100 text-gray-400 cursor-not-allowed'"
+                  class="text-xs px-3 py-1.5 rounded-md transition-default whitespace-nowrap">
+            Snap to green
+          </button>
+        </div>
+      </div>
+
+    </div>
+
+    {# Map view (course image + GPS dots + bbox overlay) #}
+    <div x-show="courseGeoRef" class="space-y-2">
+      <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Map view</label>
+      <div class="relative inline-block border border-notion-border rounded overflow-hidden" style="width:300px;height:300px;">
+        <canvas x-ref="gpsMapCanvas"
+                width="300" height="300"
+                @mousedown="gpsMapMouseDown($event)"
+                @mousemove="gpsMapMouseMove($event)"
+                @mouseup="gpsMapMouseUp($event)"
+                style="cursor:crosshair; display:block;"
+                title="Drag to select a bounding box. The course image is shown dimmed; GPS points are colored by altitude.">
+        </canvas>
+        <div x-show="gpsMapLoading" class="absolute inset-0 flex items-center justify-center bg-white/70 text-xs text-notion-muted">
+          Loading GPS points…
+        </div>
+        <div x-show="!courseGeoRef" class="absolute inset-0 flex items-center justify-center bg-white/80 text-xs text-notion-muted text-center px-4">
+          Set geo-reference first (⚙)
+        </div>
+      </div>
+      <p class="text-xs text-notion-muted">Drag to select bbox · Dots = GPS altitude (blue=low, red=high)</p>
+    </div>
+
+    {# Live preview PNG #}
+    <div x-show="gpsEnabled && gpsBbox && gpsFile" class="space-y-2">
+      <div class="flex items-center gap-2">
+        <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Heightmap preview</label>
+        <span x-show="gpsPreviewLoading" class="text-xs text-notion-muted">generating…</span>
+        <span x-show="gpsPreviewError" class="text-xs text-red-500" x-text="gpsPreviewError"></span>
+      </div>
+      <div class="border border-notion-border rounded overflow-hidden bg-gray-50" style="width:300px;min-height:60px;">
+        <img x-show="gpsPreviewDataUrl" :src="gpsPreviewDataUrl"
+             alt="GPS heightmap preview" style="width:300px;height:auto;display:block;">
+        <div x-show="!gpsPreviewDataUrl && !gpsPreviewLoading" class="text-xs text-notion-muted px-3 py-4 text-center">
+          Preview will appear here once params are set.
+        </div>
+      </div>
+      <p x-show="gpsPreviewNotes && gpsPreviewNotes.length > 0"
+         class="text-xs text-amber-600"
+         x-text="'Notes: ' + gpsPreviewNotes.join('; ')"></p>
+    </div>
+
+    </div>{# /gps-backend-body #}
+
+  </div>
+
+  {# ── Geo-ref setup dialog ──────────────────────────────── #}
+  <div x-show="showGeoRefDialog" x-cloak
+       class="fixed inset-0 flex items-center justify-center" style="z-index:9999" @keydown.escape.window="showGeoRefDialog = false">
+    <div class="absolute inset-0 bg-black/30" @click="showGeoRefDialog = false"></div>
+    <div class="relative bg-white rounded-xl shadow-xl border border-notion-border p-6 w-full max-w-sm space-y-5">
+      <h2 class="text-lg font-semibold text-notion-text">Course Geo-Reference Setup</h2>
+      <p class="text-sm text-notion-muted">
+        Enter the SW (bottom-left) and NE (top-right) corner lat/lng of the course source image.
+        Used to convert editor pixel coords ↔ real-world lat/lng.
+      </p>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs font-medium text-notion-muted uppercase tracking-wide mb-1">SW Corner (bottom-left)</label>
+          <div class="flex gap-2">
+            <input type="number" x-model.number="georefForm.swLat" placeholder="Lat e.g. 36.990" step="0.0001"
+                   class="flex-1 text-sm border border-notion-border rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-notion-accent/30">
+            <input type="number" x-model.number="georefForm.swLng" placeholder="Lng e.g. -122.010" step="0.0001"
+                   class="flex-1 text-sm border border-notion-border rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-notion-accent/30">
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-notion-muted uppercase tracking-wide mb-1">NE Corner (top-right)</label>
+          <div class="flex gap-2">
+            <input type="number" x-model.number="georefForm.neLat" placeholder="Lat e.g. 37.010" step="0.0001"
+                   class="flex-1 text-sm border border-notion-border rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-notion-accent/30">
+            <input type="number" x-model.number="georefForm.neLng" placeholder="Lng e.g. -121.990" step="0.0001"
+                   class="flex-1 text-sm border border-notion-border rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-notion-accent/30">
+          </div>
+        </div>
+      </div>
+      <p class="text-xs text-notion-muted">Image size: <span x-text="imgW + ' × ' + imgH + ' px'"></span></p>
+      <div class="flex justify-end gap-2 pt-2">
+        <button @click="showGeoRefDialog = false"
+                class="text-sm px-4 py-2 rounded-md border border-notion-border bg-white hover:bg-notion-hover text-notion-text transition-default">
+          Cancel
+        </button>
+        <button @click="saveGeoRef()"
+                :disabled="!georefForm.swLat || !georefForm.swLng || !georefForm.neLat || !georefForm.neLng"
+                :class="(!georefForm.swLat || !georefForm.swLng || !georefForm.neLat || !georefForm.neLng) ? 'opacity-40 cursor-not-allowed' : 'hover:bg-blue-600'"
+                class="text-sm px-4 py-2 rounded-md bg-notion-accent text-white transition-default">
+          Save Geo-Reference
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {# ── New Project dialog ────────────────────────────────── #}
+  <div x-show="showNewDialog" x-cloak
+       class="fixed inset-0 flex items-center justify-center" style="z-index:9999" @keydown.escape.window="showNewDialog = false">
+      <div class="absolute inset-0 bg-black/30" @click="showNewDialog = false"></div>
+      <div class="relative bg-white rounded-xl shadow-xl border border-notion-border p-6 w-full max-w-md space-y-5">
+
+        {# ── Step 1: main form ── #}
+        <template x-if="newDlgStep === 'form'">
+          <div class="space-y-5">
+            <h2 class="text-lg font-semibold text-notion-text">New Project</h2>
+
+            <div class="space-y-4">
+              <div>
+                <label class="block text-xs font-medium text-notion-muted uppercase tracking-wide mb-1.5">Golf Course</label>
+                <input type="text" x-model="dlgCourse" x-ref="dlgCourseInput"
+                       list="course-suggestions"
+                       placeholder="e.g. Moffett Field" autocomplete="off"
+                       class="w-full text-sm border border-notion-border rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent">
+                <datalist id="course-suggestions">
+                  <template x-for="c in existingCourses" :key="c">
+                    <option :value="c"></option>
+                  </template>
+                </datalist>
+              </div>
+
+              <div>
+                <label class="block text-xs font-medium text-notion-muted uppercase tracking-wide mb-1.5">Hole Number</label>
+                <input type="text" x-model="dlgHole" placeholder="e.g. 9" autocomplete="off"
+                       class="w-full text-sm border border-notion-border rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent">
+              </div>
+
+              <div>
+                <label class="block text-xs font-medium text-notion-muted uppercase tracking-wide mb-1.5">Source Image</label>
+                <select x-model="dlgImage"
+                        :disabled="dlgImagesLoading || dlgImagesError"
+                        class="w-full text-sm border border-notion-border rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent disabled:opacity-60">
+                  <template x-if="dlgImagesLoading">
+                    <option value="" disabled>Loading images…</option>
+                  </template>
+                  <template x-if="dlgImagesError">
+                    <option value="" disabled>Failed to load images — try closing and reopening</option>
+                  </template>
+                  <template x-if="!dlgImagesLoading && !dlgImagesError">
+                    <option value="">-- select --</option>
+                  </template>
+                  <template x-for="img in dlgImages" :key="img.url">
+                    <option :value="img.filename" x-text="img.filename"></option>
+                  </template>
+                </select>
+              </div>
+            </div>
+
+            <div class="flex justify-end gap-2 pt-2">
+              <button @click="showNewDialog = false"
+                      class="text-sm px-4 py-2 rounded-md border border-notion-border bg-white hover:bg-notion-hover text-notion-text transition-default">
+                Cancel
+              </button>
+              <button @click="checkCourseAndProceed()"
+                      :disabled="!dlgImage || !dlgCourse.trim() || !dlgHole.trim()"
+                      :class="(!dlgImage || !dlgCourse.trim() || !dlgHole.trim()) ? 'opacity-40 cursor-not-allowed' : 'hover:bg-blue-600'"
+                      class="text-sm px-4 py-2 rounded-md bg-notion-accent text-white transition-default">
+                OK
+              </button>
+            </div>
+          </div>
+        </template>
+
+        {# ── Step 2: course-match confirmation ── #}
+        <template x-if="newDlgStep === 'confirm'">
+          <div class="space-y-5">
+            <h2 class="text-lg font-semibold text-notion-text">Course folder check</h2>
+
+            <template x-if="dlgCourseMatches.length > 0">
+              <div class="space-y-3">
+                <p class="text-sm text-notion-text">
+                  No exact match for <strong x-text="'«' + dlgCourse.trim() + '»'"></strong>.
+                  Use an existing folder instead?
+                </p>
+                <div class="space-y-1.5">
+                  <template x-for="m in dlgCourseMatches" :key="m">
+                    <button @click="confirmUseExisting(m)"
+                            class="w-full text-left text-sm px-3 py-2 rounded-md border border-notion-border hover:bg-notion-hover text-notion-text transition-default">
+                      Use <strong x-text="m"></strong>
+                    </button>
+                  </template>
+                </div>
+                <div class="border-t border-notion-border pt-3 flex justify-between gap-2">
+                  <button @click="newDlgStep = 'form'"
+                          class="text-sm px-4 py-2 rounded-md border border-notion-border bg-white hover:bg-notion-hover text-notion-text transition-default">
+                    Back
+                  </button>
+                  <button @click="confirmCreateNew()"
+                          class="text-sm px-4 py-2 rounded-md bg-amber-500 hover:bg-amber-600 text-white transition-default">
+                    Create new <strong x-text="'«' + dlgCourse.trim() + '»'"></strong>
+                  </button>
+                </div>
+              </div>
+            </template>
+
+            <template x-if="dlgCourseMatches.length === 0">
+              <div class="space-y-4">
+                <p class="text-sm text-notion-text">
+                  No existing folder matches <strong x-text="'«' + dlgCourse.trim() + '»'"></strong>.
+                  This will create a new course folder.
+                </p>
+                <div class="flex justify-between gap-2">
+                  <button @click="newDlgStep = 'form'"
+                          class="text-sm px-4 py-2 rounded-md border border-notion-border bg-white hover:bg-notion-hover text-notion-text transition-default">
+                    Back
+                  </button>
+                  <button @click="confirmCreateNew()"
+                          class="text-sm px-4 py-2 rounded-md bg-notion-accent hover:bg-blue-600 text-white transition-default">
+                    Create new folder
+                  </button>
+                </div>
+              </div>
+            </template>
+          </div>
+        </template>
+
+      </div>
+    </div>
+  {# /dialog #}
+
+  {# ── Open Project dialog ───────────────────────────────── #}
+  <div x-show="showOpenDialog" x-cloak
+       class="fixed inset-0 flex items-center justify-center" style="z-index:9999" @keydown.escape.window="showOpenDialog = false">
+    <div class="absolute inset-0 bg-black/30" @click="showOpenDialog = false"></div>
+    <div class="relative bg-white rounded-xl shadow-xl border border-notion-border p-6 w-full max-w-md space-y-5">
+      <h2 class="text-lg font-semibold text-notion-text">Open Project</h2>
+
+      <div x-show="openProjectsLoading" class="text-sm text-notion-muted py-4 text-center">Loading projects...</div>
+      <div x-show="!openProjectsLoading && openProjects.length === 0" class="text-sm text-notion-muted py-4 text-center">No saved projects found.</div>
+
+      <div x-show="!openProjectsLoading && openProjects.length > 0" class="space-y-2 max-h-72 overflow-y-auto pr-1">
+        <template x-for="(proj, i) in openProjects" :key="i">
+          <button @click="loadProject(proj)"
+                  :class="selectedOpenProject && selectedOpenProject.filename === proj.filename ? 'border-notion-accent bg-blue-50' : 'border-notion-border hover:bg-notion-hover'"
+                  class="w-full text-left px-4 py-3 rounded-lg border transition-default">
+            <div class="text-sm font-medium text-notion-text" x-text="proj.course + ' — Hole ' + proj.hole"></div>
+            <div class="text-xs text-notion-muted mt-0.5" x-text="proj.image + ' · ' + proj.polygon_count + ' region(s)'"></div>
+          </button>
+        </template>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-2">
+        <button @click="showOpenDialog = false"
+                class="text-sm px-4 py-2 rounded-md border border-notion-border bg-white hover:bg-notion-hover text-notion-text transition-default">
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+  {# /open dialog #}
+
+  {# ── Canvas ─────────────────────────────────────────────── #}
+  <div class="border border-notion-border rounded-lg overflow-hidden bg-gray-100 relative" style="min-height:400px;">
+    <canvas x-ref="canvas"
+            @mousedown="onMouseDown($event)"
+            @mousemove="onMouseMove($event)"
+            @mouseup="onMouseUp($event)"
+            @dblclick="onDblClick($event)"
+            @contextmenu.prevent="onRightClick($event)"
+            class="block w-full"
+            style="cursor: default;">
+    </canvas>
+    <div x-show="!imgLoaded" class="absolute inset-0 flex items-center justify-center text-notion-muted text-sm">
+      <span x-show="!selectedImage">Click <strong>New Project</strong> to begin.</span>
+      <span x-show="selectedImage && !imgLoaded">Loading image...</span>
+    </div>
+    {# ── Tee-hole marker ───────────────────────────────────────
+       Single draggable crosshair-in-circle marker showing where a tee/pin
+       hole will be drilled through the fringe. Position is stored in mm
+       relative to the print top-left; overlay is positioned via image-px
+       computed from mm on the fly (see teeHoleImgPx()). #}
+    <template x-if="teeHole && imgLoaded">
+      <div class="absolute select-grab active:cursor-grabbing"
+           :style="(() => { const p = teeHoleImgPx(); const sz = (TEE_HOLE_MARKER_MM * (imgW && printSizeMm ? Math.max(imgW, imgH) / printSizeMm : 1)) * scale; return `left:${p.x * scale + offsetX}px; top:${p.y * scale + offsetY}px; width:${sz}px; height:${sz}px; transform:translate(-50%,-50%); z-index:22;`; })()"
+           @pointerdown="teeHolePointerDown($event)"
+           title="Tee hole — drag to reposition. Stored in mm from print top-left.">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+             style="width:100%; height:100%; display:block; cursor:grab; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.35));">
+          <circle cx="12" cy="12" r="10" fill="rgba(255,255,255,0.55)" stroke="#D94F1F" stroke-width="2"/>
+          <line x1="12" y1="2"  x2="12" y2="8"  stroke="#D94F1F" stroke-width="1.75" stroke-linecap="round"/>
+          <line x1="12" y1="16" x2="12" y2="22" stroke="#D94F1F" stroke-width="1.75" stroke-linecap="round"/>
+          <line x1="2"  y1="12" x2="8"  y2="12" stroke="#D94F1F" stroke-width="1.75" stroke-linecap="round"/>
+          <line x1="16" y1="12" x2="22" y2="12" stroke="#D94F1F" stroke-width="1.75" stroke-linecap="round"/>
+          <circle cx="12" cy="12" r="1.6" fill="#D94F1F"/>
+        </svg>
+      </div>
+    </template>
+
+    {# ── Grid cell elevation input overlay (v5.00) ─────────────────────────
+       Shown over the canvas when a grid cell is active (_gridActiveCell != null).
+       Positioned in CSS px from the canvas container top-left edge, matching
+       the cell's canvas position computed in _gridCellCanvasPx(). #}
+    <template x-if="_gridActiveCell !== null">
+      <div class="absolute pointer-events-none"
+           :style="`left:0;top:0;width:100%;height:100%;z-index:30;`">
+        <div class="absolute pointer-events-auto"
+             :style="`left:${_gridActiveCell.canvasPx.x}px;
+                      top:${_gridActiveCell.canvasPx.y}px;
+                      width:${Math.max(80, _gridActiveCell.canvasPx.w)}px;
+                      transform: translateY(-100%);
+                      z-index:31;`">
+          <input
+            x-ref="gridCellInput"
+            type="number"
+            style="min-width:80px;"
+            :min="gridMode === 'absolute' ? 0 : -20"
+            :max="gridMode === 'absolute' ? 30 : 20"
+            step="0.5"
+            x-model="_gridInputValue"
+            @keydown.enter.prevent="commitGridCell()"
+            @keydown.escape.prevent="cancelGridCell()"
+            @keydown.delete.stop
+            @keydown.backspace.stop
+            @blur="commitGridCell()"
+            autofocus
+            class="w-full text-xs font-mono text-center rounded bg-white shadow-md px-2 py-0.5 focus:outline-none focus:ring-1"
+            :class="gridMode === 'absolute' ? 'border border-orange-400 focus:ring-orange-500' : 'border border-indigo-400 focus:ring-indigo-500'"
+            placeholder="mm"
+            :title="gridMode === 'absolute' ? 'Enter absolute fringe height in mm (0 to 30). Enter to commit, Esc to cancel, Delete to clear.' : 'Enter offset from algorithm in mm (±20). Enter to commit, Esc to cancel, Delete to clear.'"
+          />
+        </div>
+      </div>
+    </template>
+
+    {# ── Grid dot hover tooltip (v5.04) ───────────────────────────────────────
+       Floats above the canvas near a set-cell dot when the mouse hovers over it.
+       Hidden while the cell input is open (_gridActiveCell is set).
+       Positioned at the dot's canvas coordinates; shifts up+right via transform. #}
+    <div x-show="_gridHoveredCell !== null && _gridActiveCell === null && gridMode !== 'off'"
+         x-cloak
+         class="absolute pointer-events-none z-40 px-2 py-0.5 rounded text-white text-xs font-mono shadow-lg whitespace-nowrap"
+         :class="gridMode === 'absolute' ? 'bg-orange-600' : 'bg-gray-800'"
+         :style="_gridHoveredCell ? `left:${_gridHoveredCell.canvasPx.x + _gridHoveredCell.canvasPx.w * 0.5}px; top:${_gridHoveredCell.canvasPx.y}px; transform:translate(-50%, -110%);` : ''"
+         x-text="_gridHoveredCell ? (gridMode === 'absolute' ? (gridCellHeights[_gridHoveredCell.idx] + ' mm absolute') : ((gridCellHeights[_gridHoveredCell.idx] > 0 ? '+' : '') + gridCellHeights[_gridHoveredCell.idx] + ' mm offset')) : ''">
+    </div>
+  </div>
+
+  {# ── Below-canvas action row ─────────────────────────────── #}
+  <div class="flex items-center gap-3 flex-nowrap overflow-x-auto">
+    <button @click="generateSTL()"
+            :disabled="!(polygons.length > 0 && courseName && holeName) || generating"
+            :class="(polygons.length > 0 && courseName && holeName) && !generating ? 'bg-teal-600 hover:bg-teal-700' : 'bg-teal-600/40 cursor-not-allowed'"
+            class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md text-white transition-default"
+            title="Run the render pipeline for this hole and produce a 3MF (and STL) output file. Typically takes 1–3 minutes.">
+      <svg x-show="generating" xmlns="http://www.w3.org/2000/svg" class="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+        <path d="M12 3a9 9 0 1 0 9 9" />
+      </svg>
+      <span x-text="generating ? ('Generating… ' + generatingElapsed + 's') : 'Generate'"></span>
+    </button>
+
+    <label class="inline-flex items-center gap-1.5 text-sm text-notion-text cursor-pointer select-none">
+      <input type="checkbox" x-model="openInSlicer" class="rounded border-notion-border">
+      Open in default slicer
+    </label>
+
+    <button @click="addTrap()"
+            :disabled="!imgLoaded"
+            :class="imgLoaded ? 'bg-amber-500 hover:bg-amber-600' : 'bg-amber-500/40 cursor-not-allowed'"
+            class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md text-white transition-default"
+            title="Add a new sand-trap polygon (red) to the canvas — drag its vertices to shape it.">
+      Add Trap
+    </button>
+
+    <button @click="addWater()"
+            :disabled="!imgLoaded"
+            :class="imgLoaded ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-yellow-500/40 cursor-not-allowed'"
+            class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md text-white transition-default"
+            title="Add a new water polygon (yellow) to the canvas — drag its vertices to shape it.">
+      Add Water
+    </button>
+
+    <button @click="toggleTeeHole()"
+            :disabled="!imgLoaded"
+            :class="!imgLoaded ? 'bg-rose-600/40 cursor-not-allowed' : (teeHole ? 'bg-rose-700 hover:bg-rose-800' : 'bg-rose-600 hover:bg-rose-700')"
+            class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md text-white transition-default"
+            :title="teeHole ? 'Remove the tee-hole marker from this hole.' : 'Add a tee-hole marker (default 30 mm in from the top-left of the print bounds). Drag to reposition.'">
+      <span x-text="teeHole ? 'Remove T Hole' : 'Add T Hole'"></span>
+    </button>
+
+    {# Side picker — only visible when the tee-hole marker exists. Mirrors the
+       x_mm around the print-center on toggle. Reflects the current side even
+       when the user drags across center (bind is via computed teeHoleSide). #}
+    <div x-show="teeHole" x-transition
+         class="inline-flex items-center gap-2 pl-1 pr-2 py-1 rounded-md border border-notion-border bg-stone-50/70">
+      <span class="text-xs text-notion-muted font-medium tracking-wide uppercase">Side</span>
+      <label class="inline-flex items-center gap-1 text-sm text-notion-text cursor-pointer select-none">
+        <input type="radio" name="tee-hole-side" value="left"
+               :checked="teeHoleSide === 'left'"
+               @change="setTeeHoleSide('left')"
+               class="h-3.5 w-3.5 text-rose-600 border-notion-border focus:ring-rose-500 focus:ring-offset-0">
+        <span>Left</span>
+      </label>
+      <label class="inline-flex items-center gap-1 text-sm text-notion-text cursor-pointer select-none">
+        <input type="radio" name="tee-hole-side" value="right"
+               :checked="teeHoleSide === 'right'"
+               @change="setTeeHoleSide('right')"
+               class="h-3.5 w-3.5 text-rose-600 border-notion-border focus:ring-rose-500 focus:ring-offset-0">
+        <span>Right</span>
+      </label>
+    </div>
+
+    <span x-show="courseName && holeName" class="text-sm text-notion-text font-medium"
+          x-text="courseName + ' — Hole ' + holeName"></span>
+
+    <!-- v4.48 — unsaved-changes badge, shows when autoSave() was blocked by a guard -->
+    <span x-show="_pendingAutoSave" x-transition
+          title="A change is queued and will save automatically once the image finishes loading."
+          class="text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+      unsaved
+    </span>
+
+    {# ── Grid cell elevation status strip (v5.00) — hidden when 0 set ── #}
+    <span x-show="Object.keys(gridCellHeights).length > 0"
+          x-text="Object.keys(gridCellHeights).length + ' cell' + (Object.keys(gridCellHeights).length === 1 ? '' : 's') + ' set'"
+          class="text-[11px] font-medium px-1.5 py-0.5 rounded border"
+          :class="gridMode === 'absolute' ? 'text-orange-700 bg-orange-50 border-orange-200'
+                 : gridMode === 'off'      ? 'text-gray-600 bg-gray-100 border-gray-300'
+                 :                           'text-indigo-700 bg-indigo-50 border-indigo-200'"
+          :title="gridMode === 'absolute' ? 'Grid cell values stored in this EGM. In Absolute mode each value REPLACES the Poisson-nearest default (0–30 mm).'
+                 : gridMode === 'off'      ? 'Grid cell values stored in this EGM. In Off mode overrides are not applied; values are preserved so you can toggle back on.'
+                 :                           'Grid cell offsets stored in this EGM. Values are additive deltas (±20 mm) over the algorithm\'s natural surface.'">
+    </span>
+
+    {# ── Grid-mode 3-position switch (v5.34, task 774) ───────────────────────
+       Delta  = legacy behavior (additive ±20 mm; indigo UI).
+       Absolute = value REPLACES Poisson default (0–30 mm; orange UI).
+       Off    = overlays hidden, overrides not applied; stored values preserved. #}
+    <div class="inline-flex items-center gap-1 pl-1.5 pr-1 py-0.5 rounded-md border border-notion-border bg-stone-50/70"
+         title="How grid cell values are interpreted. Delta=additive offset (default). Absolute=replace Poisson default. Off=hide and ignore (values preserved).">
+      <span class="text-[10px] text-notion-muted font-semibold tracking-wide uppercase pr-0.5">Grid</span>
+      <button type="button"
+              @click="gridMode = 'delta'; autoSave(); draw();"
+              :class="gridMode === 'delta' ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white text-notion-text border-notion-border hover:bg-indigo-50'"
+              class="text-[11px] font-medium px-1.5 py-0.5 rounded border transition-default"
+              title="Delta: value is added to the algorithm's natural surface (±20 mm).">Delta</button>
+      <button type="button"
+              @click="gridMode = 'absolute'; autoSave(); draw();"
+              :class="gridMode === 'absolute' ? 'bg-orange-500 text-white border-orange-500 shadow-sm' : 'bg-white text-notion-text border-notion-border hover:bg-orange-50'"
+              class="text-[11px] font-medium px-1.5 py-0.5 rounded border transition-default"
+              title="Absolute: value REPLACES the algorithm's value at that cell (0 to 30 mm).">Absolute</button>
+      <button type="button"
+              @click="gridMode = 'off'; autoSave(); draw();"
+              :class="gridMode === 'off' ? 'bg-gray-600 text-white border-gray-600 shadow-sm' : 'bg-white text-notion-text border-notion-border hover:bg-gray-100'"
+              class="text-[11px] font-medium px-1.5 py-0.5 rounded border transition-default"
+              title="Off: hide cell overlays and ignore all values. Stored values are preserved.">Off</button>
+    </div>
+
+    <div class="ml-auto flex items-center gap-1.5">
+      <span x-show="statusMsg" x-text="statusMsg" x-transition
+            :class="statusOk ? 'text-green-600' : 'text-red-500'"
+            class="text-sm font-medium"></span>
+      <span x-show="statusMsg && statusFilename" x-text="statusFilename" x-transition
+            class="text-sm bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded"></span>
+      <button x-show="statusMsg" @click="flashDismiss()"
+              title="Dismiss"
+              :class="statusOk ? 'text-green-500 hover:text-green-700' : 'text-red-400 hover:text-red-600'"
+              class="text-sm leading-none px-0.5 transition-colors">&times;</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function polygonEditor() {
+  return {
+    selectedImage: '{{ image | e }}',
+    selectedImageUrl: '',
+    selectedImageCourse: '',  // source course folder the selected image lives in (may differ from courseName)
+    holeName: '',
+    courseName: '',
+
+    // New Project dialog state
+    showNewDialog: false,
+    newDlgStep: 'form',       // 'form' | 'confirm'
+    dlgCourse: '',
+    dlgHole: '',
+    dlgImage: '',
+    dlgImages: [],
+    dlgImagesLoading: false,  // true while /api/images fetch is in flight
+    dlgImagesError: false,    // true if the fetch failed
+    existingCourses: [],      // fetched from /api/courses for the datalist
+    dlgCourseMatches: [],     // partial matches found when user hits OK
+    _pendingDetect: false,
+
+    // Open Project dialog state
+    showOpenDialog: false,
+    openProjects: [],
+    openProjectsLoading: false,
+    selectedOpenProject: null,
+    _pendingRestore: null,
+    polygons: [],
+    selectedPoly: 0,
+    img: null,
+    imgLoaded: false,
+    scale: 1,
+    offsetX: 0,
+    offsetY: 0,
+    imgW: 0,
+    imgH: 0,
+
+    // Drag state
+    dragging: false,
+    dragPolyIdx: -1,
+    dragPointIdx: -1,
+    dragStartX: 0,
+    dragStartY: 0,
+
+    // Selected vertices: array of {poly, idx} — supports multi-select with shift
+    selectedVerts: [],
+
+
+    // Rubber band selection
+    rubberBand: false,
+    rbStartX: 0,
+    rbStartY: 0,
+    rbCurX: 0,
+    rbCurY: 0,
+    rbShift: false,  // whether shift was held when rubber band started
+    preRbSelection: [],  // selection before rubber band started (for shift mode)
+
+    // Undo/redo stacks — each entry is a JSON snapshot of polygons
+    undoStack: [],
+    redoStack: [],
+    maxUndo: 100,
+
+    statusMsg: '',
+    statusOk: true,
+    statusFilename: '',
+    statusSticky: false,
+    _pendingAutoSave: false,   // v4.48 — set when autoSave() skips due to unmet prereqs; re-fires once they clear
+
+    // ── Grid cell elevation overlay (v5.00) ──────────────────────────────────
+    // 20×20 sparse dict keyed by cell_index = row*20+col. Values in mm (0–50).
+    gridCellHeights: {},
+    // Grid interpretation mode (task 774, v5.34):
+    //   'delta'    — values are additive offsets to Poisson default (±20 mm). Blue/indigo UI.
+    //   'absolute' — values REPLACE the Poisson default (0 to 30 mm). Orange UI.
+    //   'off'      — overlays hidden, no overrides applied; stored values are preserved for A/B toggling.
+    gridMode: 'delta',
+    _gridActiveCell: null,   // {col, row, idx, canvasPx:{x,y}} or null
+    _gridInputValue: '',     // staging area while input is open
+    _gridHoveredCell: null,  // {idx, canvasPx:{x,y,w,h}} or null — drives dot tooltip (v5.04)
+    _gridMouseDownAt: null,  // {x, y, col, row, idx, time} — pending click until drag threshold resolved (v5.05)
+    _gridMultiSelect: null,  // Set of cell indices selected via Cmd/Ctrl+drag (v5.09); null when inactive
+    _gridMultiSelectAnchor: null, // {col, row, idx} of the first cell in the multi-select drag (v5.09)
+
+    generating: false,
+    generatingElapsed: 0,      // seconds since Generate was clicked (updated every 1s)
+    _generatingTimer: null,    // interval handle for the elapsed counter
+    _flashTimer: null,
+
+    POINT_RADIUS: 8,
+    EDGE_HIT_DIST: 10,
+    GRID_DRAG_THRESHOLD_PX: 5,  // px moved before a grid mousedown is treated as a drag, not a click (v5.05)
+
+    // Fringe-expansion constants (fetched from server; set after load)
+    printSizeMm: 171.45,
+    fringeXyExpansionMm: -1.057,
+    // Derived: extra padding on each side in image-pixel units (set by resizeCanvas)
+    fringePadPx: 0,     // max(fringePadX, fringePadY) — used for polygon-vertex clamping
+    fringePadXpx: 0,    // per-axis X pad — used for spike spawn / drag clamp
+    fringePadYpx: 0,    // per-axis Y pad — used for spike spawn / drag clamp
+
+    // Tee-hole marker — a single optional point (in mm from print top-left)
+    // marking where a physical pin/tee hole should be drilled into the fringe.
+    // Diameter is a geometry constant owned by Topo (default 2 mm), NOT stored here.
+    // Persisted at the top level of the .egm payload as `tee_hole` (or absent).
+    teeHole: null,         // null when disabled, or {x_mm, y_mm} from print top-left
+    _teeHoleDrag: null,    // {startClientX, startClientY, startImgX, startImgY, moved} during drag
+    TEE_HOLE_DEFAULT_MM: 30.0,  // default inset from top/left of print bounds (mm)
+    TEE_HOLE_MARKER_MM: 6.0,    // visual diameter of the marker (mm) — outer circle
+    TEE_HOLE_EDGE_CLAMP_MM: 5.0, // minimum distance from any print-bound edge (mm) — buffer past collar radius
+
+    // Contour lines — open polylines (type: "contour", closed: false)
+    contours: [],          // [{name, direction, points:[{x,y}]}]
+    contourMode: false,    // whether we are currently drawing a contour
+    contourDraft: [],      // points being drawn in the current session
+    contourStep: 0.5,         // mm elevation increment per contour line
+    grassAmplitude: 0.5,      // grass bump height in mm
+    grassSpacing: 0.05,       // distance between bump centers in mm
+    greenStyle: 'terraced',   // 'smooth' or 'terraced'
+    elevationRange: 14.5,     // total Z amplitude of the green's slope (mm)
+    zScale: 1.0,              // vertical amplitude multiplier for green and fringe relief (1.0 = no change)
+    openInSlicer: true,       // open generated 3MF in the default slicer after generation
+    greenScale: 1.0065,       // XY multiplier applied to the green polygon only (fringe/traps/water unaffected)
+    fringeEdgeHeight: 10.0,   // outer wall height of the fringe (mm)
+    baseThicknessMm: 1.5,     // flat filament base below the surface topology (mm)
+    includeBoundaryRegion: false,  // auto-derive a 5 mm boulders ring from each water polygon
+    applyFringeFrameCap: true,     // clip fringe top vertices near the frame perimeter (water-hole rule); default ON preserves legacy behavior
+    includeFringeWithoutGrass: false, // when true, generate a second plate with a smooth (grass-less) fringe sample; plate 1 always has grass
+    flagOffsetXMm: 0.0,    // mm: move flag right (+) or left (-)
+    flagOffsetYMm: 0.0,    // mm: move flag up (+) or down (-)
+
+    // ── GPS backend state ─────────────────────────────────────────────────────
+    // Persisted to EGM as gpsBackend + courseGeoRef blocks.
+    gpsEnabled: false,           // gpsBackend.enabled
+    gpsFile: '',                 // gpsBackend.gpsFile (absolute path)
+    gpsBbox: null,               // {lat_min, lng_min, lat_max, lng_max} or null
+    gpsVertExag: 3.0,            // gpsBackend.vertExag
+    gpsApproachM: 8.0,           // gpsBackend.approachM
+    gpsGridSize: 200,            // gpsBackend.gridSize (single int → [n, n])
+    courseGeoRef: null,          // courseGeoRef block: {imageWidth, imageHeight, swCornerLatLng, neCornerLatLng}
+
+    // GPS map view state
+    gpsFileList: [],             // [{name, path}] from /api/gps_files
+    gpsMapLoading: false,
+    gpsPoints: [],               // [{lat, lng, alt}] loaded GPS points (for map view)
+    _gpsMapDrag: null,           // {startX, startY, curX, curY} during bbox drag
+
+    // Preview state
+    gpsPreviewDataUrl: '',
+    gpsPreviewLoading: false,
+    gpsPreviewError: '',
+    gpsPreviewNotes: [],
+    _gpsPreviewTimer: null,      // debounce timer handle
+
+    // Geo-ref dialog state
+    showGeoRefDialog: false,
+    georefForm: { swLat: null, swLng: null, neLat: null, neLng: null },
+
+    selectedContour: -1,   // index into contours[]
+    // contour vertex drag state
+    draggingContour: false,
+    dragContourIdx: -1,
+    dragContourPtIdx: -1,
+    // direction-button hit area stored per contour
+    _contourArrowBtns: [],  // [{cx, cy, idx}] in canvas (logical) px
+
+    // Initial boundary data from hole9_boundaries.py
+    hole9Data: {
+      green: [
+        [235,80],[258,66],[285,56],[315,50],[345,48],[375,50],[405,56],[430,66],[452,80],
+        [470,98],[484,120],[494,145],[500,172],[502,200],[500,230],[494,258],[484,284],[470,308],
+        [452,328],[430,344],[405,358],[378,368],[350,374],[322,374],[295,368],
+        [270,356],[248,340],[230,320],[216,296],
+        [206,270],[198,242],[194,214],[192,186],[194,160],[200,136],[210,114],[222,96],[235,80]
+      ],
+      trapLeft: [
+        [95,240],[120,232],[142,236],[160,248],[172,268],[180,294],[184,326],[186,360],
+        [184,394],[180,424],[176,448],[172,468],[170,488],[172,510],[176,530],[178,548],
+        [174,564],[164,576],[148,582],[130,580],[112,572],[94,558],[78,540],[64,516],
+        [52,488],[42,456],[36,422],[34,388],[36,354],[42,322],[50,294],[62,270],[76,252],[95,240]
+      ],
+      trapRight: [
+        [520,308],[542,302],[562,304],[580,312],[596,326],[608,346],[618,370],[624,398],[628,428],
+        [626,458],[620,484],[610,506],[598,524],[582,540],[562,552],[540,560],[516,564],[494,562],
+        [476,556],[460,544],[450,526],[444,504],[444,478],[448,452],[454,428],[462,404],[472,382],
+        [484,362],[498,344],[508,326],[520,308]
+      ]
+    },
+
+    init() {
+      if (this.selectedImage) {
+        this.loadImage();
+      }
+    },
+
+    loadImage() {
+      if (!this.selectedImage) return;
+      this.imgLoaded = false;
+      this.img = new Image();
+      const onImageReady = () => {
+        this.imgW = this.img.naturalWidth;
+        this.imgH = this.img.naturalHeight;
+        this.imgLoaded = true;
+        if (this._pendingRestore) {
+          const restored = this._pendingRestore;
+          this._pendingRestore = null;
+          this.polygons = restored.filter(p => p.type !== 'contour').map(p => ({
+            name: p.name,
+            type: p.type,
+            color: p.type === 'green' ? '#22C55E' : p.type === 'water' ? '#EAB308' : p.type === 'boulders' ? '#EC4899' : '#EF4444',
+            points: p.points.map(pt => ({ x: pt.x, y: pt.y })),
+          }));
+          this.contours = restored.filter(p => p.type === 'contour').map(p => ({
+            name: p.name,
+            direction: p.direction || 'left',
+            color: '#FFE600',
+            points: p.points.map(pt => ({ x: pt.x, y: pt.y })),
+          }));
+          this.selectedPoly = 0;
+          this.$nextTick(() => { this.resizeCanvas(); });
+        } else if (this._pendingDetect) {
+          this._pendingDetect = false;
+          this.$nextTick(() => { this.resizeCanvas(); this.runDetection(); });
+        } else {
+          this.initPolygons();
+          this.$nextTick(() => this.resizeCanvas());
+        }
+        // v4.48 — if the user tweaked a field (e.g. grassSpacing) before the
+        // image finished loading, autoSave() will have set _pendingAutoSave.
+        // Fire it once now that the guards are satisfied.
+        if (this._pendingAutoSave) {
+          this.$nextTick(() => { this._pendingAutoSave = false; this.autoSave(); });
+        }
+      };
+      this.img.onload = onImageReady;
+      this.img.onerror = () => {
+        console.error('Image failed to load:', this.selectedImage);
+        this.imgLoaded = true;  // unstick the loading message
+        this.flash('Failed to load image: ' + this.selectedImage, false);
+      };
+      // Cache-buster query param forces the browser to re-request the image,
+      // ensuring onload always fires even if the underlying file is cached.
+      this.img.src = (this.selectedImageUrl || '/team_inbox/' + encodeURIComponent(this.selectedImage)) + '?t=' + Date.now();
+    },
+
+    runDetection() {
+      this.flash('Detecting boundaries...', true);
+      fetch('/api/detect_boundaries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: this.selectedImage, course: this.courseName }),
+      })
+      .then(resp => resp.json())
+      .then(result => {
+        if (result.status === 'ok' && result.polygons.length > 0) {
+          // Separate regular polygons from contour lines
+          const regularPolygons = result.polygons.filter(p => p.type !== 'contour');
+          const detectedContours = result.polygons.filter(p => p.type === 'contour');
+
+          this.polygons = regularPolygons.map(p => ({
+            name: p.name,
+            type: p.type,
+            color: p.type === 'green' ? '#22C55E' : p.type === 'water' ? '#EAB308' : p.type === 'boulders' ? '#EC4899' : '#EF4444',
+            points: p.points,
+          }));
+
+          this.contours = detectedContours.map(c => ({
+            name: c.name,
+            direction: c.direction || 'left',
+            color: '#FFE600',
+            points: c.points.map(pt => ({ x: pt.x, y: pt.y })),
+          }));
+
+          if (result.contourStep != null) {
+            this.contourStep = result.contourStep;
+          }
+          if (result.zScale != null) { this.zScale = result.zScale; }
+
+          this.selectedPoly = 0;
+          this.draw();
+          this.flash('Detected ' + this.polygons.length + ' region(s) + ' + this.contours.length + ' contour(s)' + ' — scale=' + this.scale.toFixed(3), true);
+          this.autoSave();
+        } else if (result.status === 'error') {
+          console.warn('Detection server error:', result.msg);
+          this.initPolygons();
+          this.draw();
+          this.flash('Detection failed: ' + (result.msg || 'unknown server error') + ' — 100 using defaults', false);
+        } else {
+          // status === 'ok' but polygons.length === 0
+          this.initPolygons();
+          this.draw();
+          this.flash('Detection found no green or traps in this image — 101 using defaults', false);
+        }
+      })
+      .catch((err) => {
+        console.error('Detection error:', err);
+        this.initPolygons();
+        this.draw();
+        this.flash('Detection request failed (network or server crash) — 102 using defaults', false);
+      });
+    },
+
+    initPolygons() {
+      // Default rectangle fallback for any image
+      const w = this.imgW, h = this.imgH;
+      const cx = w / 2, cy = h / 2;
+      this.polygons = [
+        { name: 'Green', type: 'green', color: '#22C55E', points: [
+          {x: cx-w*0.15, y: cy-h*0.15}, {x: cx+w*0.15, y: cy-h*0.15},
+          {x: cx+w*0.15, y: cy+h*0.15}, {x: cx-w*0.15, y: cy+h*0.15}
+        ]},
+      ];
+      this.selectedPoly = 0;
+      // Resample: green gets 8 points, obstacles get 16
+      for (const poly of this.polygons) {
+        const n = poly.type === 'green' ? 8 : 16;
+        poly.points = this.resamplePoly(poly.points, n);
+      }
+    },
+
+    resizeCanvas() {
+      const canvas = this.$refs.canvas;
+      if (!canvas || !this.imgLoaded) return;
+      const container = canvas.parentElement;
+      const maxW = container.clientWidth;
+      const maxH = window.innerHeight * 0.7;
+
+      // Compute the fringe-zone padding in image-pixel space.
+      //
+      // The server uses:  scale_px_to_mm = PRINT_SIZE_MM / max(imgW, imgH)
+      //                   origin_px = [imgW/2, imgH/2]
+      //   mm = (px - origin_px) * scale_px_to_mm
+      //
+      // The fringe rect spans ±FRINGE_HALF_MM where:
+      //   FRINGE_HALF_MM = PRINT_SIZE_MM/2 + FRINGE_XY_EXPANSION_MM/2
+      //
+      // The left edge of the fringe rect in image-pixel space is:
+      //   fringe_left_px = imgW/2 - FRINGE_HALF_MM / scale_px_to_mm
+      //                  = imgW/2 - FRINGE_HALF_MM * maxDim / PRINT_SIZE_MM
+      // fringePadPx = how many pixels left of x=0 (or above y=0) the fringe reaches.
+      //             = -fringe_left_px  (positive when fringe extends beyond image)
+      const maxDim = Math.max(this.imgW, this.imgH);
+      const fringeHalfMm = this.printSizeMm / 2.0 + this.fringeXyExpansionMm / 2.0;
+      const fringeReachPx = fringeHalfMm * maxDim / this.printSizeMm; // half-extent in px
+      // Per-axis pad (may differ because image may not be square):
+      const fringePadX = Math.max(0, fringeReachPx - this.imgW / 2);
+      const fringePadY = Math.max(0, fringeReachPx - this.imgH / 2);
+      // Store a single fringePadPx (used for polygon-vertex clamping) — use the larger of x/y
+      this.fringePadPx = Math.max(fringePadX, fringePadY);
+      // Per-axis pads: elevation-spike overlays are HTML positioned via offsetY, so their
+      // Y-visibility is bounded by fringePadY (not fringePadPx). Using the max value on the
+      // Y axis pushed spawn coords above the container top edge on portrait images and got
+      // clipped by the canvas container's overflow-hidden.
+      this.fringePadXpx = fringePadX;
+      this.fringePadYpx = fringePadY;
+
+      // Expanded canvas dimensions in image-pixel units
+      const expandedImgW = this.imgW + 2 * fringePadX;
+      const expandedImgH = this.imgH + 2 * fringePadY;
+      const aspect = expandedImgW / expandedImgH;
+
+      let cw, ch;
+      if (maxW / aspect <= maxH) {
+        cw = maxW;
+        ch = maxW / aspect;
+      } else {
+        ch = maxH;
+        cw = maxH * aspect;
+      }
+
+      // scale maps image pixels → canvas CSS pixels
+      this.scale = cw / expandedImgW;
+      // offsetX/Y: where the top-left corner of the image sits in canvas CSS pixels
+      this.offsetX = fringePadX * this.scale;
+      this.offsetY = fringePadY * this.scale;
+
+      // Use devicePixelRatio for crisp rendering
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = cw * dpr;
+      canvas.height = ch * dpr;
+      canvas.style.width = cw + 'px';
+      canvas.style.height = ch + 'px';
+
+      this.draw();
+    },
+
+    // Convert image coords to canvas display coords
+    imgToCanvas(x, y) {
+      const dpr = window.devicePixelRatio || 1;
+      return {
+        x: (x * this.scale + this.offsetX) * dpr,
+        y: (y * this.scale + this.offsetY) * dpr,
+      };
+    },
+
+    // Convert mouse event coords to image coords
+    canvasToImg(e) {
+      const canvas = this.$refs.canvas;
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      return {
+        x: (mx - this.offsetX) / this.scale,
+        y: (my - this.offsetY) / this.scale,
+      };
+    },
+
+    // Trace a closed Catmull-Rom spline through canvas-space points
+    traceSplinePath(ctx, cpts) {
+      const n = cpts.length;
+      if (n < 2) return;
+      ctx.beginPath();
+      const segsPerEdge = 16;
+      const tension = 0.5; // 0.5 = standard Catmull-Rom
+
+      for (let i = 0; i < n; i++) {
+        const p0 = cpts[(i - 1 + n) % n];
+        const p1 = cpts[i];
+        const p2 = cpts[(i + 1) % n];
+        const p3 = cpts[(i + 2) % n];
+
+        for (let s = 0; s < segsPerEdge; s++) {
+          const t = s / segsPerEdge;
+          const t2 = t * t;
+          const t3 = t2 * t;
+
+          // Catmull-Rom basis
+          const x = tension * (
+            (-t3 + 2*t2 - t) * p0.x +
+            (3*t3 - 5*t2 + 2) * p1.x +
+            (-3*t3 + 4*t2 + t) * p2.x +
+            (t3 - t2) * p3.x
+          );
+          const y = tension * (
+            (-t3 + 2*t2 - t) * p0.y +
+            (3*t3 - 5*t2 + 2) * p1.y +
+            (-3*t3 + 4*t2 + t) * p2.y +
+            (t3 - t2) * p3.y
+          );
+
+          if (i === 0 && s === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+      }
+      ctx.closePath();
+    },
+
+    draw() {
+      const canvas = this.$refs.canvas;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw fringe-expansion zone background (entire canvas = fringe rect)
+      // Then draw the image centered inside it.
+      if (this.imgLoaded && this.img) {
+        // Fringe ring: fill whole canvas with a light neutral tone
+        ctx.fillStyle = '#E8E8E8';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Subtle hatching to indicate "fringe-only, no image data here"
+        ctx.save();
+        ctx.strokeStyle = 'rgba(180,180,180,0.45)';
+        ctx.lineWidth = 1;
+        const step = 12 * dpr;
+        for (let hx = -canvas.height; hx < canvas.width + canvas.height; hx += step) {
+          ctx.beginPath();
+          ctx.moveTo(hx, 0);
+          ctx.lineTo(hx + canvas.height, canvas.height);
+          ctx.stroke();
+        }
+        ctx.restore();
+
+        // Draw the image at its offset position (inside the fringe ring)
+        const ix = this.offsetX * dpr;
+        const iy = this.offsetY * dpr;
+        const iw = this.imgW * this.scale * dpr;
+        const ih = this.imgH * this.scale * dpr;
+        ctx.drawImage(this.img, ix, iy, iw, ih);
+
+        // Thin border around the image to mark the image boundary
+        ctx.strokeStyle = 'rgba(100,100,100,0.5)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(ix, iy, iw, ih);
+      }
+
+      // Draw polygons
+      for (let pi = 0; pi < this.polygons.length; pi++) {
+        const poly = this.polygons[pi];
+        const pts = poly.points;
+        if (pts.length < 2) continue;
+
+        const isSelected = (pi === this.selectedPoly);
+
+        // Convert control points to canvas coords
+        const cpts = pts.map(p => this.imgToCanvas(p.x, p.y));
+
+        // Build closed Catmull-Rom spline path
+        this.traceSplinePath(ctx, cpts);
+        ctx.fillStyle = poly.color + (isSelected ? '26' : '1A');
+        ctx.fill();
+
+        this.traceSplinePath(ctx, cpts);
+        ctx.strokeStyle = poly.color;
+        ctx.lineWidth = (isSelected ? 3 : 2) * dpr;
+        ctx.stroke();
+
+        // Vertices
+        const baseR = isSelected ? this.POINT_RADIUS : 4;
+        const baseLW = isSelected ? 2 : 1.5;
+        for (let i = 0; i < pts.length; i++) {
+          const p = this.imgToCanvas(pts[i].x, pts[i].y);
+          const isSelVert = this.isVertSelected(pi, i);
+          const r = (isSelVert ? baseR + 3 : baseR) * dpr;
+
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+          ctx.fillStyle = isSelVert ? '#FFFFFF' : poly.color;
+          ctx.fill();
+          ctx.strokeStyle = isSelVert ? poly.color : '#FFFFFF';
+          ctx.lineWidth = (isSelVert ? 3 : baseLW) * dpr;
+          ctx.stroke();
+        }
+      }
+
+      // Draw contour lines
+      this._contourArrowBtns = [];
+      for (let ci = 0; ci < this.contours.length; ci++) {
+        const c = this.contours[ci];
+        const pts = c.points;
+        if (pts.length < 2) continue;
+        const isSelC = (ci === this.selectedContour);
+
+        const cpts = pts.map(p => this.imgToCanvas(p.x, p.y));
+
+        // Draw solid contour line
+        ctx.beginPath();
+        ctx.strokeStyle = isSelC ? '#FFD000' : '#FFE600';
+        ctx.lineWidth = (isSelC ? 3.5 : 2.5) * dpr;
+        ctx.moveTo(cpts[0].x, cpts[0].y);
+        for (let i = 1; i < cpts.length; i++) ctx.lineTo(cpts[i].x, cpts[i].y);
+        ctx.stroke();
+
+        // Draw vertices
+        for (let i = 0; i < cpts.length; i++) {
+          const p = cpts[i];
+          const isSelV = (this.selectedContour === ci && this.selectedVerts.some(v => v.poly === -1 - ci && v.idx === i));
+          const r = (isSelV ? 7 : 4) * dpr;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+          ctx.fillStyle = isSelV ? '#FFFFFF' : '#FFE600';
+          ctx.fill();
+          ctx.strokeStyle = isSelV ? '#FFD000' : '#FFFFFF';
+          ctx.lineWidth = 1.5 * dpr;
+          ctx.stroke();
+        }
+
+        // Compute midpoint for direction arrow
+        if (pts.length >= 2) {
+          const mi = Math.floor((pts.length - 1) / 2);
+          const a = cpts[mi], b = cpts[mi + 1 < cpts.length ? mi + 1 : mi];
+          const mx = (a.x + b.x) / 2;
+          const my = (a.y + b.y) / 2;
+          // Direction along line
+          const ldx = b.x - a.x, ldy = b.y - a.y;
+          const llen = Math.hypot(ldx, ldy) || 1;
+          const lnx = ldx / llen, lny = ldy / llen;
+          // Normal (left side of line direction = perpendicular CCW)
+          const nnx = -lny, nny = lnx;
+          // "up" side: direction='left' → up is to the left of travel direction
+          const sign = (c.direction === 'left') ? 1 : -1;
+          const arrowLen = 18 * dpr;
+          const ex = mx + sign * nnx * arrowLen;
+          const ey = my + sign * nny * arrowLen;
+
+          // Draw arrow shaft
+          ctx.beginPath();
+          ctx.strokeStyle = '#EF4444';
+          ctx.lineWidth = 2 * dpr;
+          ctx.moveTo(mx, my);
+          ctx.lineTo(ex, ey);
+          ctx.stroke();
+
+          // Arrowhead
+          const hlen = 7 * dpr;
+          const hangle = Math.PI / 6;
+          const adx = ex - mx, ady = ey - my;
+          const alen = Math.hypot(adx, ady) || 1;
+          const ax = adx / alen, ay = ady / alen;
+          ctx.beginPath();
+          ctx.fillStyle = '#EF4444';
+          ctx.moveTo(ex, ey);
+          ctx.lineTo(ex - hlen * (ax - ay * Math.tan(hangle)), ey - hlen * (ay + ax * Math.tan(hangle)));
+          ctx.lineTo(ex - hlen * (ax + ay * Math.tan(hangle)), ey - hlen * (ay - ax * Math.tan(hangle)));
+          ctx.closePath();
+          ctx.fill();
+
+          // Direction toggle button — small circle at arrow tip
+          const btnR = 9 * dpr;
+          ctx.beginPath();
+          ctx.arc(ex, ey, btnR, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(239,68,68,0.18)';
+          ctx.fill();
+          ctx.strokeStyle = '#EF4444';
+          ctx.lineWidth = 1.5 * dpr;
+          ctx.stroke();
+          // Store button hit area in logical pixels (divide out dpr)
+          this._contourArrowBtns.push({ cx: ex / dpr, cy: ey / dpr, idx: ci });
+        }
+      }
+
+      // Draw in-progress contour draft
+      if (this.contourMode && this.contourDraft.length > 0) {
+        const dpts = this.contourDraft.map(p => this.imgToCanvas(p.x, p.y));
+        ctx.beginPath();
+        ctx.setLineDash([6 * dpr, 4 * dpr]);
+        ctx.strokeStyle = '#FFE600';
+        ctx.lineWidth = 2 * dpr;
+        ctx.moveTo(dpts[0].x, dpts[0].y);
+        for (let i = 1; i < dpts.length; i++) ctx.lineTo(dpts[i].x, dpts[i].y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        for (const p of dpts) {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 4 * dpr, 0, Math.PI * 2);
+          ctx.fillStyle = '#FFE600';
+          ctx.fill();
+        }
+      }
+
+      // Draw rubber band rectangle
+      if (this.rubberBand) {
+        const r0 = this.imgToCanvas(this.rbStartX, this.rbStartY);
+        const r1 = this.imgToCanvas(this.rbCurX, this.rbCurY);
+        const rx = Math.min(r0.x, r1.x);
+        const ry = Math.min(r0.y, r1.y);
+        const rw = Math.abs(r1.x - r0.x);
+        const rh = Math.abs(r1.y - r0.y);
+        ctx.setLineDash([6 * dpr, 4 * dpr]);
+        ctx.strokeStyle = '#2383E2';
+        ctx.lineWidth = 1.5 * dpr;
+        ctx.strokeRect(rx, ry, rw, rh);
+        ctx.fillStyle = 'rgba(35, 131, 226, 0.08)';
+        ctx.fillRect(rx, ry, rw, rh);
+        ctx.setLineDash([]);
+      }
+
+      // ── Grid cell elevation overlay (v5.00) ──────────────────────────────
+      // Draw 20×20 cell boundaries over the print area only when an image is
+      // loaded (grid origin = lower-left of print frame, axis-aligned).
+      if (this.imgLoaded) {
+        const GRID_COLS = 20;
+        const GRID_ROWS = 20;
+        const tl = this._printTopLeftPx();
+        const k  = this._pxPerMm();
+        const psm = this.printSizeMm || 171.45;
+        const cellWpx = (psm / GRID_COLS) * k;
+        const cellHpx = (psm / GRID_ROWS) * k;
+
+        ctx.save();
+
+        // Faint cell boundary lines — indigo accent, matching value text (v5.09)
+        ctx.strokeStyle = 'rgba(99,102,241,0.40)';  // indigo @ 0.40 alpha (softer than value text @ 0.92)
+        ctx.lineWidth = 0.75 * dpr;
+        ctx.setLineDash([]);
+
+        // Vertical lines (col boundaries)
+        for (let c = 0; c <= GRID_COLS; c++) {
+          const xImg = tl.x + c * cellWpx;
+          const yTop = tl.y;
+          const yBot = tl.y + GRID_ROWS * cellHpx;
+          const p0 = this.imgToCanvas(xImg, yTop);
+          const p1 = this.imgToCanvas(xImg, yBot);
+          ctx.beginPath();
+          ctx.moveTo(p0.x, p0.y);
+          ctx.lineTo(p1.x, p1.y);
+          ctx.stroke();
+        }
+        // Horizontal lines (row boundaries)
+        for (let r = 0; r <= GRID_ROWS; r++) {
+          // Grid origin is lower-left, row 0 is at the bottom of the print area
+          const yImg = tl.y + r * cellHpx;
+          const xLeft  = tl.x;
+          const xRight = tl.x + GRID_COLS * cellWpx;
+          const p0 = this.imgToCanvas(xLeft,  yImg);
+          const p1 = this.imgToCanvas(xRight, yImg);
+          ctx.beginPath();
+          ctx.moveTo(p0.x, p0.y);
+          ctx.lineTo(p1.x, p1.y);
+          ctx.stroke();
+        }
+
+        // Numeric value text for set cells (task 720: replaced blue dot)
+        // Task 774 (v5.34): color/visibility depends on gridMode.
+        //   delta    → indigo text, '+N.N' / '-N.N' label
+        //   absolute → orange text, 'N.N' label (no leading '+')
+        //   off      → skip rendering entirely (values preserved on disk)
+        if (this.gridMode !== 'off') {
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.font = `${11 * dpr}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+          ctx.fillStyle = (this.gridMode === 'absolute')
+            ? 'rgba(249,115,22,0.95)'   // tailwind orange-500
+            : 'rgba(99,102,241,0.92)';  // indigo text accent (delta)
+          for (const [idxStr, mm] of Object.entries(this.gridCellHeights)) {
+            if (mm === 0) continue;  // zero = empty cell
+            const idx = Number(idxStr);
+            const col = idx % GRID_COLS;
+            const row = Math.floor(idx / GRID_COLS);
+            // Cell centre in image-pixel coords (lower-left origin: row 0 = bottom)
+            const cxImg = tl.x + (col + 0.5) * cellWpx;
+            const cyImg = tl.y + (GRID_ROWS - 1 - row + 0.5) * cellHpx;
+            const cp = this.imgToCanvas(cxImg, cyImg);
+            const mmVal = Number(mm);
+            const mmLabel = (this.gridMode === 'absolute')
+              ? mmVal.toFixed(1)
+              : (mmVal > 0 ? '+' + mmVal.toFixed(1) : mmVal.toFixed(1));
+            ctx.fillText(mmLabel, cp.x, cp.y);
+          }
+        }
+
+        // Highlight the active cell (if any)
+        if (this._gridActiveCell) {
+          const { col, row } = this._gridActiveCell;
+          const cxImg = tl.x + col * cellWpx;
+          const cyImg = tl.y + (GRID_ROWS - 1 - row) * cellHpx;
+          const p0 = this.imgToCanvas(cxImg, cyImg);
+          const p1 = this.imgToCanvas(cxImg + cellWpx, cyImg + cellHpx);
+          ctx.fillStyle = 'rgba(99,102,241,0.12)';
+          ctx.fillRect(p0.x, p0.y, p1.x - p0.x, p1.y - p0.y);
+          ctx.strokeStyle = 'rgba(99,102,241,0.70)';
+          ctx.lineWidth = 2 * dpr;
+          ctx.strokeRect(p0.x, p0.y, p1.x - p0.x, p1.y - p0.y);
+        }
+
+        // ── Multi-select highlight (v5.09) — Cmd/Ctrl+drag selection ─────────
+        // Draw thicker indigo borders around cells in _gridMultiSelect.
+        if (this._gridMultiSelect && this._gridMultiSelect.size > 0) {
+          ctx.strokeStyle = 'rgba(99,102,241,0.90)';  // strong indigo for selected border
+          ctx.lineWidth = 3.5 * dpr;                   // thicker than normal 0.75px grid lines
+          ctx.fillStyle = 'rgba(99,102,241,0.10)';     // subtle fill tint
+          for (const idx of this._gridMultiSelect) {
+            const col = idx % GRID_COLS;
+            const row = Math.floor(idx / GRID_COLS);
+            const cxImg = tl.x + col * cellWpx;
+            const cyImg = tl.y + (GRID_ROWS - 1 - row) * cellHpx;
+            const p0 = this.imgToCanvas(cxImg, cyImg);
+            const p1 = this.imgToCanvas(cxImg + cellWpx, cyImg + cellHpx);
+            ctx.fillRect(p0.x, p0.y, p1.x - p0.x, p1.y - p0.y);
+            ctx.strokeRect(p0.x, p0.y, p1.x - p0.x, p1.y - p0.y);
+          }
+        }
+
+        ctx.restore();
+      }
+    },
+
+    // Find which point (if any) is under the mouse
+    hitTestPoint(imgX, imgY) {
+      const hitR = this.POINT_RADIUS / this.scale + 2;
+      // Check selected polygon first for priority
+      const order = [this.selectedPoly, ...this.polygons.map((_, i) => i).filter(i => i !== this.selectedPoly)];
+      for (const pi of order) {
+        if (pi < 0 || pi >= this.polygons.length) continue;
+        const pts = this.polygons[pi].points;
+        for (let i = 0; i < pts.length; i++) {
+          const dx = imgX - pts[i].x;
+          const dy = imgY - pts[i].y;
+          if (Math.sqrt(dx * dx + dy * dy) < hitR) {
+            return { polyIdx: pi, pointIdx: i };
+          }
+        }
+      }
+      return null;
+    },
+
+    // Sample Catmull-Rom spline points (in image coords) for a polygon.
+    // Returns an array of {x, y, edgeIdx} where edgeIdx is the control-point
+    // edge index that each sample belongs to, so callers can map back to the
+    // original edge after finding the nearest sample.
+    sampleSplinePoints(pts, segsPerEdge = 16) {
+      const n = pts.length;
+      if (n < 2) return [];
+      const tension = 0.5;
+      const samples = [];
+      for (let i = 0; i < n; i++) {
+        const p0 = pts[(i - 1 + n) % n];
+        const p1 = pts[i];
+        const p2 = pts[(i + 1) % n];
+        const p3 = pts[(i + 2) % n];
+        for (let s = 0; s <= segsPerEdge; s++) {
+          const t = s / segsPerEdge;
+          const t2 = t * t;
+          const t3 = t2 * t;
+          const x = tension * (
+            (-t3 + 2*t2 - t) * p0.x +
+            (3*t3 - 5*t2 + 2) * p1.x +
+            (-3*t3 + 4*t2 + t) * p2.x +
+            (t3 - t2) * p3.x
+          );
+          const y = tension * (
+            (-t3 + 2*t2 - t) * p0.y +
+            (3*t3 - 5*t2 + 2) * p1.y +
+            (-3*t3 + 4*t2 + t) * p2.y +
+            (t3 - t2) * p3.y
+          );
+          samples.push({ x, y, edgeIdx: i });
+        }
+      }
+      return samples;
+    },
+
+    // Find the nearest edge across all polygons (selected polygon checked first).
+    // Uses sampled Catmull-Rom spline segments for hit testing so that clicks
+    // near the visible curve are detected correctly, even when control points
+    // are sparse.  The returned edgeIdx always refers to the control-point edge
+    // index so that onRightClick can splice the new point at the right position.
+    hitTestEdge(imgX, imgY) {
+      const hitD = this.EDGE_HIT_DIST / this.scale + 2;
+      const order = [this.selectedPoly, ...this.polygons.map((_, i) => i).filter(i => i !== this.selectedPoly)];
+      let bestDist = Infinity;
+      let bestPoly = -1;
+      let bestIdx = -1;
+      for (const pi of order) {
+        if (pi < 0 || pi >= this.polygons.length) continue;
+        const pts = this.polygons[pi].points;
+        const samples = this.sampleSplinePoints(pts, 16);
+        // Walk consecutive sample pairs as short straight segments
+        for (let s = 0; s < samples.length - 1; s++) {
+          const a = samples[s];
+          const b = samples[s + 1];
+          // Skip the seam between the last sample of one edge and the first of
+          // the next — those are from different control-point edges and the gap
+          // would produce a spurious segment across the whole polygon.
+          if (a.edgeIdx !== b.edgeIdx) continue;
+          const d = this.distToSegment(imgX, imgY, a.x, a.y, b.x, b.y);
+          if (d < bestDist) {
+            bestDist = d;
+            bestPoly = pi;
+            bestIdx = a.edgeIdx;
+          }
+        }
+      }
+      if (bestDist < hitD) {
+        return { polyIdx: bestPoly, edgeIdx: bestIdx };
+      }
+      return null;
+    },
+
+    distToSegment(px, py, x1, y1, x2, y2) {
+      const dx = x2 - x1, dy = y2 - y1;
+      const lenSq = dx * dx + dy * dy;
+      if (lenSq === 0) return Math.hypot(px - x1, py - y1);
+      let t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
+      t = Math.max(0, Math.min(1, t));
+      return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+    },
+
+    isVertSelected(poly, idx) {
+      return this.selectedVerts.some(v => v.poly === poly && v.idx === idx);
+    },
+
+    toggleVertSelection(poly, idx, shift) {
+      if (shift) {
+        // Toggle this vertex in the selection
+        const existing = this.selectedVerts.findIndex(v => v.poly === poly && v.idx === idx);
+        if (existing >= 0) {
+          this.selectedVerts.splice(existing, 1);
+        } else {
+          this.selectedVerts.push({ poly, idx });
+        }
+      } else {
+        // Replace selection with just this vertex
+        this.selectedVerts = [{ poly, idx }];
+      }
+    },
+
+    onMouseDown(e) {
+      if (e.button !== 0) return; // left click only
+      const { x, y } = this.canvasToImg(e);
+
+      // In contour drawing mode, clicks add points to the draft
+      if (this.contourMode) {
+        this.contourDraft.push({ x: Math.round(x), y: Math.round(y) });
+        this.draw();
+        return;
+      }
+
+      // Check direction arrow buttons first (logical canvas coords)
+      const canvas = this.$refs.canvas;
+      const rect = canvas.getBoundingClientRect();
+      const lx = e.clientX - rect.left;
+      const ly = e.clientY - rect.top;
+      for (const btn of this._contourArrowBtns) {
+        if (Math.hypot(lx - btn.cx, ly - btn.cy) < 12) {
+          this.contours[btn.idx].direction = (this.contours[btn.idx].direction === 'left') ? 'right' : 'left';
+          this.draw();
+          this.autoSave();
+          return;
+        }
+      }
+
+      // Check contour vertices
+      const chit = this.hitTestContourPoint(x, y);
+      if (chit) {
+        this.selectedContour = chit.contourIdx;
+        this.selectedVerts = [{ poly: -1 - chit.contourIdx, idx: chit.pointIdx }];
+        this.pushUndo();
+        this.draggingContour = true;
+        this.dragContourIdx = chit.contourIdx;
+        this.dragContourPtIdx = chit.pointIdx;
+        this.dragStartX = x;
+        this.dragStartY = y;
+        this.$refs.canvas.style.cursor = 'grabbing';
+        this.draw();
+        return;
+      }
+
+      const hit = this.hitTestPoint(x, y);
+      if (hit) {
+        this.selectedPoly = hit.polyIdx;
+        this.selectedContour = -1;
+
+        // If clicking an already-selected vertex, start drag without changing selection
+        if (!this.isVertSelected(hit.polyIdx, hit.pointIdx)) {
+          this.toggleVertSelection(hit.polyIdx, hit.pointIdx, e.shiftKey);
+        }
+
+        this.pushUndo();
+        this.dragging = true;
+        this.dragPolyIdx = hit.polyIdx;
+        this.dragPointIdx = hit.pointIdx;
+        this.dragStartX = x;
+        this.dragStartY = y;
+        this.$refs.canvas.style.cursor = 'grabbing';
+        this.draw();
+      } else {
+        // ── Cmd/Ctrl+click on grid cell → enter multi-select mode (v5.09) ────
+        const gridCell = this._gridCellFromImgPx(x, y);
+        if (gridCell && (e.metaKey || e.ctrlKey)) {
+          // Cancel any active single-cell input first
+          this._gridActiveCell = null;
+          this._gridInputValue = '';
+          // Start (or extend) a multi-select with this first cell
+          this._gridMultiSelect = new Set([gridCell.idx]);
+          this._gridMultiSelectAnchor = { col: gridCell.col, row: gridCell.row, idx: gridCell.idx };
+          this._gridHoveredCell = null;
+          this.$refs.canvas.style.cursor = 'crosshair';
+          this.draw();
+          // Attach global mouseup listener — will be added below for all paths
+        } else {
+          // Check if the click lands inside a grid cell — record a pending click but
+          // don't open the input yet.  We wait until mouseup to confirm it wasn't a drag.
+          // This restores rubber-band selection drag on the grid (v5.05).
+          if (gridCell) {
+            const canvas2 = this.$refs.canvas;
+            const rect2 = canvas2.getBoundingClientRect();
+            this._gridMouseDownAt = {
+              clientX: e.clientX - rect2.left,
+              clientY: e.clientY - rect2.top,
+              col: gridCell.col,
+              row: gridCell.row,
+              idx: gridCell.idx,
+            };
+            // Fall through — don't return; let the rubber-band / global-mouseup path proceed.
+          }
+
+          // Click on empty space — start rubber band selection
+          this.selectedContour = -1;
+          this.rubberBand = true;
+          this.rbStartX = x;
+          this.rbStartY = y;
+          this.rbCurX = x;
+          this.rbCurY = y;
+          this.rbShift = e.shiftKey;
+          this.preRbSelection = e.shiftKey ? [...this.selectedVerts] : [];
+          if (!e.shiftKey) {
+            this.selectedVerts = [];
+          }
+          this.$refs.canvas.style.cursor = 'crosshair';
+          this.draw();
+        }
+      }
+
+      // Attach a global mouseup listener so releasing outside the canvas still commits the drag.
+      // Stored as _globalMouseUp so we can remove the exact same reference in onMouseUp.
+      if (!this._globalMouseUp) {
+        this._globalMouseUp = (ev) => this.onMouseUp(ev);
+        window.addEventListener('mouseup', this._globalMouseUp);
+      }
+    },
+
+    onMouseMove(e) {
+      const { x, y } = this.canvasToImg(e);
+
+      // ── Grid click-vs-drag discrimination (v5.05) ─────────────────────────
+      // If a pending grid-cell click was recorded and the cursor has moved more
+      // than GRID_DRAG_THRESHOLD_PX, abandon the pending click so the rubber-band
+      // drag path takes over unobstructed.
+      if (this._gridMouseDownAt) {
+        const canvas0 = this.$refs.canvas;
+        const rect0 = canvas0.getBoundingClientRect();
+        const mx0 = e.clientX - rect0.left;
+        const my0 = e.clientY - rect0.top;
+        const dx0 = mx0 - this._gridMouseDownAt.clientX;
+        const dy0 = my0 - this._gridMouseDownAt.clientY;
+        if (dx0 * dx0 + dy0 * dy0 > this.GRID_DRAG_THRESHOLD_PX * this.GRID_DRAG_THRESHOLD_PX) {
+          this._gridMouseDownAt = null;  // drag detected — abandon pending grid cell add
+        }
+      }
+
+      // ── Cmd/Ctrl multi-select drag accumulation (v5.09) ──────────────────
+      // If multi-select mode is active (mousedown with metaKey/ctrlKey), add each
+      // cell the pointer enters to the selection set.  Button 1 (left) must be down.
+      if (this._gridMultiSelect !== null && (e.buttons & 1)) {
+        const dragCell = this._gridCellFromImgPx(x, y);
+        if (dragCell && !this._gridMultiSelect.has(dragCell.idx)) {
+          this._gridMultiSelect.add(dragCell.idx);
+          this.draw();
+        }
+        return;  // skip rubber-band and hover logic while multi-selecting
+      }
+
+      // Soft clamp: allow vertices to reach the fringe-zone boundary (fringePadPx beyond image edge)
+      const clampX = (v) => Math.max(-this.fringePadPx, Math.min(this.imgW + this.fringePadPx, Math.round(v)));
+      const clampY = (v) => Math.max(-this.fringePadPx, Math.min(this.imgH + this.fringePadPx, Math.round(v)));
+
+      if (this.draggingContour) {
+        const dx = x - this.dragStartX;
+        const dy = y - this.dragStartY;
+        this.dragStartX = x;
+        this.dragStartY = y;
+        const pt = this.contours[this.dragContourIdx].points[this.dragContourPtIdx];
+        pt.x = clampX(pt.x + dx);
+        pt.y = clampY(pt.y + dy);
+        this.draw();
+        return;
+      }
+
+      if (this.dragging) {
+        const dx = x - this.dragStartX;
+        const dy = y - this.dragStartY;
+        this.dragStartX = x;
+        this.dragStartY = y;
+
+        // Move all selected vertices by the delta; clamp to fringe-rect boundary
+        for (const sv of this.selectedVerts) {
+          const pt = this.polygons[sv.poly].points[sv.idx];
+          pt.x = clampX(pt.x + dx);
+          pt.y = clampY(pt.y + dy);
+        }
+        this.draw();
+        return;
+      }
+
+      if (this.rubberBand) {
+        this.rbCurX = x;
+        this.rbCurY = y;
+        // Compute which vertices fall inside the rectangle
+        const minX = Math.min(this.rbStartX, x);
+        const maxX = Math.max(this.rbStartX, x);
+        const minY = Math.min(this.rbStartY, y);
+        const maxY = Math.max(this.rbStartY, y);
+        const inRect = [];
+        for (let pi = 0; pi < this.polygons.length; pi++) {
+          const pts = this.polygons[pi].points;
+          for (let i = 0; i < pts.length; i++) {
+            if (pts[i].x >= minX && pts[i].x <= maxX && pts[i].y >= minY && pts[i].y <= maxY) {
+              inRect.push({ poly: pi, idx: i });
+            }
+          }
+        }
+        // Merge with pre-existing selection if shift was held
+        if (this.rbShift) {
+          const merged = [...this.preRbSelection];
+          for (const v of inRect) {
+            if (!merged.some(m => m.poly === v.poly && m.idx === v.idx)) {
+              merged.push(v);
+            }
+          }
+          this.selectedVerts = merged;
+        } else {
+          this.selectedVerts = inRect;
+        }
+        this.draw();
+        return;
+      }
+
+      // Cursor hint — no visual highlight until clicked
+      const hit = this.hitTestPoint(x, y);
+      this.$refs.canvas.style.cursor = hit ? 'grab' : 'default';
+
+      // ── Grid dot hover detection (v5.04) ─────────────────────────────────
+      // Check whether the mouse is over a set-cell dot so we can show a tooltip.
+      // Done only when no cell input is currently open.
+      // Task 774: in 'off' mode, overlays are hidden — don't register hovers either.
+      if (!this._gridActiveCell && this.gridMode !== 'off' && Object.keys(this.gridCellHeights).length > 0) {
+        const GRID_COLS = 20;
+        const GRID_ROWS = 20;
+        const canvas = this.$refs.canvas;
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;   // CSS px from canvas left
+        const my = e.clientY - rect.top;    // CSS px from canvas top
+        let foundHover = null;
+        for (const idxStr of Object.keys(this.gridCellHeights)) {
+          const idx = Number(idxStr);
+          if (this.gridCellHeights[idx] === undefined) continue;
+          const col = idx % GRID_COLS;
+          const row = Math.floor(idx / GRID_COLS);
+          const pos = this._gridCellCanvasPx(col, row);
+          // Centre of the dot in CSS px (top-left of cell + half width/height)
+          const dotCx = pos.x + pos.w * 0.5;
+          const dotCy = pos.y + pos.h * 0.5;
+          const dotR = Math.max(5, Math.min(pos.w, 10));  // hit radius in CSS px
+          const dx = mx - dotCx;
+          const dy = my - dotCy;
+          if (dx * dx + dy * dy <= dotR * dotR) {
+            foundHover = { idx, canvasPx: pos };
+            break;
+          }
+        }
+        this._gridHoveredCell = foundHover;
+      } else if (!this._gridActiveCell) {
+        this._gridHoveredCell = null;
+      }
+    },
+
+    onMouseUp(e) {
+      // Remove the global window listener attached during mousedown (handles out-of-canvas releases).
+      if (this._globalMouseUp) {
+        window.removeEventListener('mouseup', this._globalMouseUp);
+        this._globalMouseUp = null;
+      }
+      if (this.draggingContour) {
+        this.draggingContour = false;
+        this.$refs.canvas.style.cursor = 'default';
+        this.autoSave();
+      }
+      if (this.dragging) {
+        this.dragging = false;
+        this.$refs.canvas.style.cursor = 'default';
+        this.autoSave();
+      }
+      if (this.rubberBand) {
+        this.rubberBand = false;
+        this.$refs.canvas.style.cursor = 'default';
+        this.draw();
+      }
+
+      // ── Grid multi-select finalization (v5.09) ────────────────────────────
+      // If a Cmd/Ctrl+drag was in progress, release opens the shared-value input.
+      if (this._gridMultiSelect !== null && e.button === 0) {
+        // If it's a right-click release or multi-select was cancelled, skip.
+        // Open the single shared input to commit one value to all selected cells.
+        this.$refs.canvas.style.cursor = 'default';
+        const anchor = this._gridMultiSelectAnchor;
+        if (anchor) {
+          // Re-use openGridCell which positions the input near the anchor cell.
+          // openGridCell sets _gridActiveCell; multi-select set stays in _gridMultiSelect.
+          this.openGridCell(anchor.col, anchor.row, anchor.idx);
+        }
+        return;  // don't fall through to bare-click path
+      }
+
+      // ── Grid click-vs-drag resolution (v5.05) ─────────────────────────────
+      // If a pending grid mousedown was never abandoned by the drag threshold,
+      // this is a bare click — open the cell input now.
+      if (this._gridMouseDownAt) {
+        const pending = this._gridMouseDownAt;
+        this._gridMouseDownAt = null;  // consume the pending state
+        // Only fire if the button released is left button
+        if (e.button === 0) {
+          this.selectedContour = -1;
+          this.selectedVerts = [];
+          this.openGridCell(pending.col, pending.row, pending.idx);
+        }
+      }
+    },
+
+    onDblClick(e) {
+      // In contour mode, double-click finishes the contour
+      if (this.contourMode) {
+        this.finishContour();
+        return;
+      }
+
+      const { x, y } = this.canvasToImg(e);
+      // First check if clicking a point (no-op)
+      if (this.hitTestPoint(x, y)) return;
+      // Check for edge hit to insert vertex
+      const edge = this.hitTestEdge(x, y);
+      if (edge) {
+        this.pushUndo();
+        const pts = this.polygons[edge.polyIdx].points;
+        const newPt = { x: Math.round(x), y: Math.round(y) };
+        pts.splice(edge.edgeIdx + 1, 0, newPt);
+        this.draw();
+        this.flash('Vertex added', true);
+        this.autoSave();
+      }
+    },
+
+    onRightClick(e) {
+      const { x, y } = this.canvasToImg(e);
+
+      // ── Grid dot right-click → delete (v5.05) ────────────────────────────
+      // Mirror the contour-vertex right-click convention: right-click a set-cell
+      // dot to delete it.  Uses the same CSS-px hit detection as the hover tooltip.
+      // Task 774: skip in 'off' mode — overlays are hidden and values are preserved.
+      if (this.gridMode !== 'off' && Object.keys(this.gridCellHeights).length > 0) {
+        const GRID_COLS = 20;
+        const canvas = this.$refs.canvas;
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        for (const idxStr of Object.keys(this.gridCellHeights)) {
+          const idx = Number(idxStr);
+          const col = idx % GRID_COLS;
+          const row = Math.floor(idx / GRID_COLS);
+          const pos = this._gridCellCanvasPx(col, row);
+          const dotCx = pos.x + pos.w * 0.5;
+          const dotCy = pos.y + pos.h * 0.5;
+          const dotR = Math.max(5, Math.min(pos.w, 10));
+          const dx = mx - dotCx;
+          const dy = my - dotCy;
+          if (dx * dx + dy * dy <= dotR * dotR) {
+            delete this.gridCellHeights[idx];
+            this._gridHoveredCell = null;
+            this.draw();
+            this.flash('Grid cell cleared', true);
+            this.autoSave();
+            return;
+          }
+        }
+      }
+      // Right-click missed all grid dots — fall through to contour/polygon checks.
+
+      // Check contour vertex right-click (delete vertex)
+      const chit = this.hitTestContourPoint(x, y);
+      if (chit) {
+        const pts = this.contours[chit.contourIdx].points;
+        if (pts.length > 2) {
+          this.pushUndo();
+          pts.splice(chit.pointIdx, 1);
+          this.draw();
+          this.flash('Contour vertex removed', true);
+          this.autoSave();
+        } else {
+          // Delete the whole contour if only 1 or 2 pts remain
+          this.pushUndo();
+          this.contours.splice(chit.contourIdx, 1);
+          this.selectedContour = -1;
+          this.draw();
+          this.flash('Contour deleted', true);
+          this.autoSave();
+        }
+        return;
+      }
+
+      const hit = this.hitTestPoint(x, y);
+      if (hit) {
+        // Right-click on a vertex — remove it
+        const pts = this.polygons[hit.polyIdx].points;
+        if (pts.length > 3) {
+          this.pushUndo();
+          pts.splice(hit.pointIdx, 1);
+          this.selectedVerts = this.selectedVerts.filter(v => !(v.poly === hit.polyIdx && v.idx === hit.pointIdx));
+          for (const sv of this.selectedVerts) {
+            if (sv.poly === hit.polyIdx && sv.idx > hit.pointIdx) sv.idx--;
+          }
+          this.draw();
+          this.flash('Vertex removed', true);
+          this.autoSave();
+        } else if (this.polygons[hit.polyIdx].type === 'trap' || this.polygons[hit.polyIdx].type === 'water' || this.polygons[hit.polyIdx].type === 'boulders') {
+          // 3-vertex trap/water/boulders — delete the whole polygon rather than erroring
+          this.selectedVerts = [];
+          this.removePoly(hit.polyIdx);
+        } else {
+          this.flash('Minimum 3 vertices required', false);
+        }
+      } else {
+        // Right-click on an edge — insert a vertex and start dragging it
+        const edge = this.hitTestEdge(x, y);
+        if (edge) {
+          this.pushUndo();
+          const newIdx = edge.edgeIdx + 1;
+          const pts = this.polygons[edge.polyIdx].points;
+          const newPt = { x: Math.round(x), y: Math.round(y) };
+          pts.splice(newIdx, 0, newPt);
+          this.selectedPoly = edge.polyIdx;
+          this.selectedVerts = [{ poly: edge.polyIdx, idx: newIdx }];
+          // Start dragging the new point immediately
+          this.dragging = true;
+          this.dragPolyIdx = edge.polyIdx;
+          this.dragPointIdx = newIdx;
+          this.dragStartX = x;
+          this.dragStartY = y;
+          this.$refs.canvas.style.cursor = 'grabbing';
+          this.draw();
+        }
+      }
+    },
+
+    resamplePoly(pts, n) {
+      if (pts.length < 2 || n < 3) return pts;
+      // Compute cumulative arc lengths along the closed polygon
+      const len = pts.length;
+      const cumLen = [0];
+      for (let i = 1; i <= len; i++) {
+        const a = pts[(i - 1) % len];
+        const b = pts[i % len];
+        const d = Math.hypot(b.x - a.x, b.y - a.y);
+        cumLen.push(cumLen[i - 1] + d);
+      }
+      const totalLen = cumLen[len];
+      if (totalLen === 0) return pts;
+
+      // Place n points at equal arc-length intervals
+      const result = [];
+      for (let i = 0; i < n; i++) {
+        const target = (i / n) * totalLen;
+        // Find which segment this falls on
+        let seg = 0;
+        while (seg < len && cumLen[seg + 1] < target) seg++;
+        const segStart = cumLen[seg];
+        const segEnd = cumLen[seg + 1];
+        const t = segEnd > segStart ? (target - segStart) / (segEnd - segStart) : 0;
+        const a = pts[seg % len];
+        const b = pts[(seg + 1) % len];
+        result.push({
+          x: Math.round(a.x + t * (b.x - a.x)),
+          y: Math.round(a.y + t * (b.y - a.y)),
+        });
+      }
+      return result;
+    },
+
+    // -- Contour helpers --
+    addContour() {
+      if (this.contourMode) {
+        // Toggle off: cancel any draft in progress
+        this.contourMode = false;
+        this.contourDraft = [];
+        this.draw();
+        return;
+      }
+      this.contourMode = true;
+      this.contourDraft = [];
+      this.flash('Contour mode: click to place points, double-click or Enter to finish', true);
+    },
+
+    finishContour() {
+      if (!this.contourMode) return;
+      this.contourMode = false;
+      // Remove duplicate last point added by the double-click mousedown
+      const draft = this.contourDraft;
+      if (draft.length >= 4) {
+        // double-click fires mousedown twice before dblclick, remove last dup
+        const last = draft[draft.length - 1];
+        const prev = draft[draft.length - 2];
+        if (Math.hypot(last.x - prev.x, last.y - prev.y) < 3) {
+          draft.pop();
+        }
+      }
+      if (draft.length < 2) {
+        this.contourDraft = [];
+        this.flash('Contour needs at least 2 points — cancelled', false);
+        this.draw();
+        return;
+      }
+      this.pushUndo();
+      const ci = this.contours.length + 1;
+      this.contours.push({
+        name: 'Contour ' + ci,
+        direction: 'left',
+        points: [...draft],
+      });
+      this.contourDraft = [];
+      this.selectedContour = this.contours.length - 1;
+      this.draw();
+      this.flash('Contour ' + ci + ' added — click ↑ arrow to flip uphill side', true);
+      this.autoSave();
+    },
+
+    hitTestContourPoint(imgX, imgY) {
+      const hitR = this.POINT_RADIUS / this.scale + 2;
+      for (let ci = 0; ci < this.contours.length; ci++) {
+        const pts = this.contours[ci].points;
+        for (let i = 0; i < pts.length; i++) {
+          const dx = imgX - pts[i].x;
+          const dy = imgY - pts[i].y;
+          if (Math.sqrt(dx * dx + dy * dy) < hitR) {
+            return { contourIdx: ci, pointIdx: i };
+          }
+        }
+      }
+      return null;
+    },
+
+    // -- Undo/Redo --
+    snapshotPolygons() {
+      return JSON.stringify({
+        polygons: this.polygons.map(p => ({
+          name: p.name, type: p.type, color: p.color,
+          points: p.points.map(pt => ({ x: pt.x, y: pt.y })),
+        })),
+        contours: this.contours.map(c => ({
+          name: c.name, direction: c.direction,
+          points: c.points.map(pt => ({ x: pt.x, y: pt.y })),
+        })),
+      });
+    },
+
+    pushUndo() {
+      this.undoStack.push(this.snapshotPolygons());
+      if (this.undoStack.length > this.maxUndo) this.undoStack.shift();
+      this.redoStack = [];
+    },
+
+    restoreSnapshot(json) {
+      const data = JSON.parse(json);
+      // Support both old format (plain array) and new format ({polygons, contours})
+      if (Array.isArray(data)) {
+        this.polygons = data;
+      } else {
+        this.polygons = data.polygons || data;
+        this.contours = (data.contours || []).map(c => ({
+          name: c.name, direction: c.direction || 'left',
+          points: c.points.map(pt => ({ x: pt.x, y: pt.y })),
+        }));
+      }
+      this.selectedVerts = [];
+      if (this.selectedPoly >= this.polygons.length) {
+        this.selectedPoly = Math.max(0, this.polygons.length - 1);
+      }
+      this.draw();
+    },
+
+    undo() {
+      if (this.undoStack.length === 0) { this.flash('Nothing to undo', false); return; }
+      this.redoStack.push(this.snapshotPolygons());
+      this.restoreSnapshot(this.undoStack.pop());
+      this.flash('Undo', true);
+      this.autoSave();
+    },
+
+    redo() {
+      if (this.redoStack.length === 0) { this.flash('Nothing to redo', false); return; }
+      this.undoStack.push(this.snapshotPolygons());
+      this.restoreSnapshot(this.redoStack.pop());
+      this.flash('Redo', true);
+      this.autoSave();
+    },
+
+    resampleAll() {
+      this.pushUndo();
+      const n = Math.max(3, Math.min(200, this.numPoints || 20));
+      for (const poly of this.polygons) {
+        poly.points = this.resamplePoly(poly.points, n);
+      }
+      this.selectedVerts = [];
+      this.draw();
+      this.flash('Resampled to ' + n + ' points each', true);
+      this.autoSave();
+    },
+
+    addTrap() {
+      this.pushUndo();
+      const trapCount = this.polygons.filter(p => p.type === 'trap').length;
+      const cx = this.imgW / 2;
+      const cy = this.imgH / 2;
+      const r = Math.min(this.imgW, this.imgH) * 0.08;
+      // Create a small octagon at center
+      const pts = [];
+      for (let i = 0; i < 8; i++) {
+        const a = (Math.PI * 2 * i) / 8 - Math.PI / 2;
+        pts.push({ x: Math.round(cx + r * Math.cos(a)), y: Math.round(cy + r * Math.sin(a)) });
+      }
+      this.polygons.push({
+        name: 'Trap ' + (trapCount + 1),
+        type: 'trap',
+        color: '#EF4444',
+        points: pts,
+      });
+      this.selectedPoly = this.polygons.length - 1;
+      this.draw();
+      this.flash('Trap added - drag to position', true);
+      this.autoSave();
+    },
+
+    addWater() {
+      this.pushUndo();
+      const waterCount = this.polygons.filter(p => p.type === 'water').length;
+      const cx = this.imgW / 2;
+      const cy = this.imgH / 2;
+      const r = Math.min(this.imgW, this.imgH) * 0.08;
+      const pts = [];
+      for (let i = 0; i < 8; i++) {
+        const a = (Math.PI * 2 * i) / 8 - Math.PI / 2;
+        pts.push({ x: Math.round(cx + r * Math.cos(a)), y: Math.round(cy + r * Math.sin(a)) });
+      }
+      this.polygons.push({
+        name: 'Water ' + (waterCount + 1),
+        type: 'water',
+        color: '#EAB308',
+        points: pts,
+      });
+      this.selectedPoly = this.polygons.length - 1;
+      this.draw();
+      this.flash('Water trap added - drag to position', true);
+      this.autoSave();
+    },
+
+    // ── Tee-hole marker ──────────────────────────────────────
+    // Convert mm-from-print-top-left ↔ image-pixel coords.
+    //
+    // The rendering pipeline uses:
+    //   scale_px_to_mm = PRINT_SIZE_MM / max(imgW, imgH)
+    //   origin_px      = (imgW/2, imgH/2)  (image center = print center)
+    // so the print-rect top-left in image-pixel coords is:
+    //   printLeftPx = imgW/2 - (PRINT_SIZE_MM/2) / scale_px_to_mm
+    //               = imgW/2 - maxDim/2
+    //   printTopPx  = imgH/2 - maxDim/2
+    // (same on both axes because the print is square and image is centered).
+    // Then: img_px = printTopLeft_px + mm / scale_px_to_mm
+    //             = printTopLeft_px + mm * maxDim / PRINT_SIZE_MM
+    _pxPerMm() {
+      const maxDim = Math.max(this.imgW || 1, this.imgH || 1);
+      const psm = this.printSizeMm || 171.45;
+      return maxDim / psm;
+    },
+    _printTopLeftPx() {
+      const maxDim = Math.max(this.imgW || 1, this.imgH || 1);
+      return {
+        x: this.imgW / 2 - maxDim / 2,
+        y: this.imgH / 2 - maxDim / 2,
+      };
+    },
+    teeHoleImgPx() {
+      if (!this.teeHole) return { x: 0, y: 0 };
+      const tl = this._printTopLeftPx();
+      const k = this._pxPerMm();
+      return {
+        x: tl.x + this.teeHole.x_mm * k,
+        y: tl.y + this.teeHole.y_mm * k,
+      };
+    },
+    _imgPxToTeeHoleMm(imgX, imgY) {
+      const tl = this._printTopLeftPx();
+      const k = this._pxPerMm();
+      // Clamp to print bounds minus a per-edge buffer (TEE_HOLE_EDGE_CLAMP_MM).
+      // The collar around the hole is ~3.78 mm radius (Topo's 7/32" hole + doubled
+      // collar OD); 5 mm keeps ~1.2 mm past the collar edge and honors the 1 mm
+      // fringe-cap rule near the frame perimeter.
+      const psm = this.printSizeMm || 171.45;
+      const c = this.TEE_HOLE_EDGE_CLAMP_MM;
+      const mmX = (imgX - tl.x) / k;
+      const mmY = (imgY - tl.y) / k;
+      return {
+        x_mm: Math.max(c, Math.min(psm - c, mmX)),
+        y_mm: Math.max(c, Math.min(psm - c, mmY)),
+      };
+    },
+    toggleTeeHole() {
+      if (!this.imgLoaded) return;
+      if (this.teeHole) {
+        this.teeHole = null;
+        this.flash('Tee hole removed', true);
+      } else {
+        this.teeHole = {
+          x_mm: this.TEE_HOLE_DEFAULT_MM,
+          y_mm: this.TEE_HOLE_DEFAULT_MM,
+        };
+        this.flash('Tee hole added — drag to reposition', true);
+      }
+      this.autoSave();
+    },
+    // Which side of the print (left / right) the tee hole currently sits on.
+    // Derived from x_mm — no dedicated EGM field. Returns 'left' when marker
+    // is missing (radio group is hidden anyway, but keep the getter safe).
+    get teeHoleSide() {
+      if (!this.teeHole) return 'left';
+      const psm = this.printSizeMm || 171.45;
+      return (this.teeHole.x_mm < psm / 2) ? 'left' : 'right';
+    },
+    // Mirror the tee hole across the print's vertical centerline so its
+    // distance from the opposite frame edge is preserved. Y is untouched.
+    // No-op when marker is missing or when the requested side already matches.
+    setTeeHoleSide(side) {
+      if (!this.teeHole) return;
+      if (side !== 'left' && side !== 'right') return;
+      if (this.teeHoleSide === side) return;
+      const psm = this.printSizeMm || 171.45;
+      const newX = psm - this.teeHole.x_mm;
+      this.teeHole = {
+        x_mm: Math.round(newX * 10) / 10,
+        y_mm: this.teeHole.y_mm,
+      };
+      this.autoSave();
+    },
+    teeHolePointerDown(e) {
+      if (!this.teeHole) return;
+      if (e.button !== undefined && e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const startImg = this.teeHoleImgPx();
+      this._teeHoleDrag = {
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        startImgX: startImg.x,
+        startImgY: startImg.y,
+        moved: false,
+      };
+      const onMove = (ev) => {
+        const d = this._teeHoleDrag;
+        if (!d || !this.teeHole) return;
+        // scale is CSS-px per image-px; delta in image-px = delta in CSS-px / scale
+        const dx = (ev.clientX - d.startClientX) / this.scale;
+        const dy = (ev.clientY - d.startClientY) / this.scale;
+        if (Math.abs(dx) + Math.abs(dy) > 1) d.moved = true;
+        const newImgX = d.startImgX + dx;
+        const newImgY = d.startImgY + dy;
+        const mm = this._imgPxToTeeHoleMm(newImgX, newImgY);
+        // Round to 0.1 mm for stability in the saved file
+        this.teeHole = {
+          x_mm: Math.round(mm.x_mm * 10) / 10,
+          y_mm: Math.round(mm.y_mm * 10) / 10,
+        };
+      };
+      const onUp = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        const d = this._teeHoleDrag;
+        this._teeHoleDrag = null;
+        if (d && d.moved) this.autoSave();
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+    },
+
+    // ── Grid cell elevation helpers (v5.00) ──────────────────────────────────
+
+    // Convert an image-pixel coordinate to a grid (col, row) or null if outside.
+    // Row 0 is at the BOTTOM of the print area (lower-left origin per spec).
+    _gridCellFromImgPx(imgX, imgY) {
+      const GRID_COLS = 20;
+      const GRID_ROWS = 20;
+      const tl  = this._printTopLeftPx();
+      const k   = this._pxPerMm();
+      const psm = this.printSizeMm || 171.45;
+      const cellWpx = (psm / GRID_COLS) * k;
+      const cellHpx = (psm / GRID_ROWS) * k;
+      // Offset from print top-left in pixel space
+      const relX = imgX - tl.x;
+      const relY = imgY - tl.y;
+      if (relX < 0 || relX >= GRID_COLS * cellWpx) return null;
+      if (relY < 0 || relY >= GRID_ROWS * cellHpx) return null;
+      const col = Math.floor(relX / cellWpx);
+      // row 0 = bottom row; relY=0 is the TOP of the print area image
+      const row = (GRID_ROWS - 1) - Math.floor(relY / cellHpx);
+      return { col, row, idx: row * GRID_COLS + col };
+    },
+
+    // Return canvas CSS-px position (top-left) of a grid cell for positioning
+    // the input overlay. (Canvas CSS px = image-px * scale + offset.)
+    _gridCellCanvasPx(col, row) {
+      const GRID_COLS = 20;
+      const GRID_ROWS = 20;
+      const tl  = this._printTopLeftPx();
+      const k   = this._pxPerMm();
+      const psm = this.printSizeMm || 171.45;
+      const cellWpx = (psm / GRID_COLS) * k;
+      const cellHpx = (psm / GRID_ROWS) * k;
+      // Row 0 = bottom; row GRID_ROWS-1 = top of print area image
+      const imgX = tl.x + col * cellWpx;
+      const imgY = tl.y + (GRID_ROWS - 1 - row) * cellHpx;
+      return {
+        x: imgX * this.scale + this.offsetX,
+        y: imgY * this.scale + this.offsetY,
+        w: cellWpx * this.scale,
+        h: cellHpx * this.scale,
+      };
+    },
+
+    // Open the inline input for a grid cell.
+    // Task 774 (v5.34): in 'off' mode editing is disabled — show a hint toast and bail.
+    openGridCell(col, row, idx) {
+      if (this.gridMode === 'off') {
+        this.flash('Grid mode is Off — switch to Delta or Absolute to edit cells', false);
+        return;
+      }
+      const existing = this.gridCellHeights[idx];
+      this._gridInputValue = (existing !== undefined) ? String(existing) : '';
+      const pos = this._gridCellCanvasPx(col, row);
+      this._gridActiveCell = { col, row, idx, canvasPx: pos };
+      this._gridHoveredCell = null;  // hide tooltip while input is open (v5.04)
+      this.draw();
+      this.$nextTick(() => {
+        const inp = this.$refs.gridCellInput;
+        if (inp) { inp.select(); inp.focus(); }
+      });
+    },
+
+    // Commit the current input value to gridCellHeights.
+    // Task 774 (v5.34): clamp depends on gridMode (delta: ±20, absolute: 0–30).
+    commitGridCell() {
+      if (!this._gridActiveCell) return;
+      const raw = parseFloat(this._gridInputValue);
+      if (!isNaN(raw)) {
+        const clamped = (this.gridMode === 'absolute')
+          ? Math.max(0, Math.min(30, raw))
+          : Math.max(-20, Math.min(20, raw));
+        const targets = (this._gridMultiSelect && this._gridMultiSelect.size > 0)
+          ? [...this._gridMultiSelect] : [this._gridActiveCell.idx];
+        // Zero = empty cell: delete the key instead of storing 0.
+        for (const i of targets) { if (clamped === 0) delete this.gridCellHeights[i]; else this.gridCellHeights[i] = clamped; }
+      }
+      // Commit → autoSave so changes persist.
+      this._gridActiveCell       = null;
+      this._gridInputValue       = '';
+      this._gridMultiSelect      = null;
+      this._gridMultiSelectAnchor = null;
+      this.draw();
+      this.autoSave();
+    },
+
+    // Cancel the current input without updating state.
+    cancelGridCell() {
+      this._gridActiveCell       = null;
+      this._gridInputValue       = '';
+      this._gridMultiSelect      = null;
+      this._gridMultiSelectAnchor = null;
+      this.draw();
+    },
+
+    // Delete a grid cell's stored value (called from handleKey on Delete).
+    deleteGridCell(idx) {
+      delete this.gridCellHeights[idx];
+      this._gridActiveCell = null;
+      this._gridInputValue = '';
+      this.draw();
+      this.autoSave();
+    },
+
+    removePoly(idx) {
+      if (this.polygons[idx].type !== 'trap' && this.polygons[idx].type !== 'water' && this.polygons[idx].type !== 'boulders') return;
+      this.pushUndo();
+      this.polygons.splice(idx, 1);
+      if (this.selectedPoly >= this.polygons.length) {
+        this.selectedPoly = this.polygons.length - 1;
+      }
+      // Rename traps, water traps, and boulder regions
+      let tc = 0, wc = 0, bc = 0;
+      for (const p of this.polygons) {
+        if (p.type === 'trap') { tc++; p.name = 'Trap ' + tc; }
+        if (p.type === 'water') { wc++; p.name = 'Water ' + wc; }
+        if (p.type === 'boulders') { bc++; p.name = 'Boulders ' + bc; }
+      }
+      this.draw();
+      this.flash('Polygon removed', true);
+      this.autoSave();
+    },
+
+    async autoSave() {
+      // v4.48 — instead of silently returning, tell the user *why* the save
+      // was skipped and queue a retry once the prereqs clear (loadImage tail).
+      const missing = [];
+      if (!this.imgLoaded)                missing.push('image still loading');
+      if (this.polygons.length === 0)     missing.push('no polygons yet');
+      if (!this.courseName.trim())        missing.push('course name empty');
+      if (!this.holeName.trim())          missing.push('hole name empty');
+      if (missing.length) {
+        this._pendingAutoSave = true;
+        this.flash('Change kept in memory — will save once ' + missing.join(', '), true, '', 4000);
+        return;
+      }
+      // Build combined polygons list: regular polygons + contour lines
+      const allPolygons = [
+        ...this.polygons.map(p => ({
+          name: p.name,
+          type: p.type,
+          closed: true,
+          points: p.points.map(pt => ({ x: pt.x, y: pt.y })),
+        })),
+        ...this.contours.map(c => ({
+          name: c.name,
+          type: 'contour',
+          closed: false,
+          direction: c.direction,
+          points: c.points.map(pt => ({ x: pt.x, y: pt.y })),
+        })),
+      ];
+      const data = {
+        course: this.courseName.trim(),
+        hole: this.holeName.trim(),
+        image: this.selectedImage,
+        imageCourse: this.selectedImageCourse || this.courseName.trim(),
+        imageSize: { width: this.imgW, height: this.imgH },
+        contourStep: this.contourStep,
+        grassAmplitude: this.grassAmplitude,
+        grassSpacing: this.grassSpacing,
+        greenStyle: this.greenStyle,
+        elevationRange: this.elevationRange,
+        zScale: this.zScale,
+        greenScale: this.greenScale,
+        fringeEdgeHeight: this.fringeEdgeHeight,
+        baseThicknessMm: this.baseThicknessMm,
+        includeBoundaryRegion: this.includeBoundaryRegion,
+        applyFringeFrameCap: this.applyFringeFrameCap,
+        includeFringeWithoutGrass: this.includeFringeWithoutGrass,
+        flagOffsetXMm: this.flagOffsetXMm,
+        flagOffsetYMm: this.flagOffsetYMm,
+        polygons: allPolygons,
+      };
+      // Only serialize tee_hole when set — keeps EGMs without a tee hole
+      // byte-identical to their pre-v4.24 form (backward compat).
+      if (this.teeHole && typeof this.teeHole.x_mm === 'number' && typeof this.teeHole.y_mm === 'number') {
+        data.tee_hole = {
+          x_mm: Math.round(this.teeHole.x_mm * 10) / 10,
+          y_mm: Math.round(this.teeHole.y_mm * 10) / 10,
+        };
+      }
+      // GPS backend block — only written when at least one GPS field has been set
+      // so legacy EGMs without GPS remain untouched (backward compat).
+      if (this.gpsEnabled || this.gpsFile || this.gpsBbox) {
+        data.gpsBackend = {
+          enabled: this.gpsEnabled,
+          gpsFile: this.gpsFile || '',
+          bbox: this.gpsBbox || null,
+          approachM: this.gpsApproachM,
+          vertExag: this.gpsVertExag,
+          gridSize: [this.gpsGridSize, this.gpsGridSize],
+        };
+      }
+      // courseGeoRef — stored once per course, survives round-trips
+      if (this.courseGeoRef) {
+        data.courseGeoRef = this.courseGeoRef;
+      }
+      // gridCellHeights — only written when at least one cell is set so that
+      // legacy EGMs without this field are not unnecessarily enlarged.
+      if (Object.keys(this.gridCellHeights).length > 0) {
+        data.gridCellHeights = Object.assign({}, this.gridCellHeights);
+      }
+      // gridMode — task 774 (v5.34). Only persist when non-default so legacy EGMs
+      // round-trip unchanged (loader defaults missing field to 'delta').
+      if (this.gridMode && this.gridMode !== 'delta') {
+        data.gridMode = this.gridMode;
+      }
+      try {
+        await fetch('/api/boundaries', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
+        this._pendingAutoSave = false;  // v4.48 — clear any deferred-save badge
+      } catch (err) {
+        // Silent — don't interrupt the user
+      }
+    },
+
+    async refreshImageList() {
+      this.dlgImagesLoading = true;
+      this.dlgImagesError = false;
+      try {
+        const resp = await fetch('/api/images');
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        this.dlgImages = await resp.json();
+      } catch (e) {
+        console.error('Failed to refresh image list:', e);
+        this.dlgImagesError = true;
+        this.dlgImages = [];
+      } finally {
+        this.dlgImagesLoading = false;
+      }
+    },
+
+    async openNewProjectDialog() {
+      this.dlgCourse = this.courseName;
+      this.dlgHole = '';
+      this.dlgImage = this.selectedImage || '';
+      this.dlgImages = [];
+      this.dlgImagesError = false;
+      this.newDlgStep = 'form';
+      this.showNewDialog = true;          // show dialog immediately with loading state
+      await Promise.all([this.refreshImageList(), this.refreshCourseList()]);
+    },
+
+    async refreshCourseList() {
+      try {
+        const resp = await fetch('/api/courses');
+        const data = await resp.json();
+        this.existingCourses = data.courses || [];
+      } catch (e) {
+        console.error('Failed to refresh course list:', e);
+      }
+    },
+
+    // Case-insensitive substring match: does `haystack` contain `needle`?
+    _courseSubstrMatch(needle, haystack) {
+      return haystack.toLowerCase().includes(needle.toLowerCase());
+    },
+
+    checkCourseAndProceed() {
+      if (!this.dlgImage || !this.dlgCourse.trim() || !this.dlgHole.trim()) return;
+      const typed = this.dlgCourse.trim();
+      // Exact match (case-insensitive) → proceed silently
+      const exactMatch = this.existingCourses.find(
+        c => c.toLowerCase() === typed.toLowerCase()
+      );
+      if (exactMatch) {
+        // Normalise capitalisation to the canonical folder name
+        this.dlgCourse = exactMatch;
+        this.startNewProject();
+        return;
+      }
+      // Subset match: typed contains existing name OR existing name contains typed
+      const matches = this.existingCourses.filter(c =>
+        this._courseSubstrMatch(typed, c) || this._courseSubstrMatch(c, typed)
+      );
+      if (matches.length > 0) {
+        // Show confirmation step
+        this.dlgCourseMatches = matches;
+        this.newDlgStep = 'confirm';
+      } else {
+        // No matches at all — still confirm creating a brand-new folder
+        this.dlgCourseMatches = [];
+        this.newDlgStep = 'confirm';
+      }
+    },
+
+    confirmUseExisting(courseName) {
+      this.dlgCourse = courseName;
+      this.newDlgStep = 'form';
+      this.startNewProject();
+    },
+
+    confirmCreateNew() {
+      this.newDlgStep = 'form';
+      this.startNewProject();
+    },
+
+    async openProjectDialog() {
+      this.showOpenDialog = true;
+      this.openProjectsLoading = true;
+      this.openProjects = [];
+      this.selectedOpenProject = null;
+      try {
+        const resp = await fetch('/api/boundaries/list?t=' + Date.now());
+        const data = await resp.json();
+        this.openProjects = data.projects || [];
+      } catch (err) {
+        this.flash('Failed to load projects', false);
+      } finally {
+        this.openProjectsLoading = false;
+      }
+    },
+
+    // Clear all per-project state immediately — called at the top of loadProject()
+    // so that a failed load always leaves the editor blank, never stale.
+    clearEditorState() {
+      // Image
+      this.selectedImage      = '';
+      this.selectedImageUrl   = '';
+      this.selectedImageCourse = '';
+      this.img                = null;
+      this.imgLoaded          = false;
+      this.imgW               = 0;
+      this.imgH               = 0;
+      // Identity
+      this.courseName         = '';
+      this.holeName           = '';
+      // Polygons / contours
+      this.polygons              = [];
+      this.contours              = [];
+      this.selectedPoly          = 0;
+      this.selectedVerts      = [];
+      this._pendingRestore    = null;
+      // Undo / redo
+      this.undoStack          = [];
+      this.redoStack          = [];
+      // Per-hole settings — reset to defaults
+      this.contourStep        = 0.5;
+      this.grassAmplitude     = 0.5;
+      this.grassSpacing       = 0.05;
+      this.greenStyle         = 'terraced';
+      this.elevationRange     = 14.5;
+      this.zScale             = 1.0;
+      this.greenScale         = 1.0065;
+      this.fringeEdgeHeight   = 10.0;
+      this.baseThicknessMm    = 1.5;
+      this.includeBoundaryRegion    = false;
+      this.applyFringeFrameCap      = true;
+      this.includeFringeWithoutGrass = false;
+      this.flagOffsetXMm      = 0.0;
+      this.flagOffsetYMm      = 0.0;
+      // Tee-hole
+      this.teeHole            = null;
+      // GPS backend
+      this.gpsEnabled         = false;
+      this.gpsFile            = '';
+      this.gpsBbox            = null;
+      this.gpsVertExag        = 3.0;
+      this.gpsApproachM       = 8.0;
+      this.gpsGridSize        = 200;
+      this.courseGeoRef       = null;
+      // GPS preview
+      this.gpsPreviewDataUrl  = '';
+      this.gpsPreviewError    = '';
+      this.gpsPreviewNotes    = [];
+      // Grid cell elevation
+      this.gridCellHeights    = {};
+      this.gridMode           = 'delta';
+      this._gridMultiSelect   = null;
+      this._gridMultiSelectAnchor = null;
+      this._gridActiveCell    = null;
+      this._gridInputValue    = '';
+      this._gridHoveredCell   = null;
+      this._gridMouseDownAt   = null;
+      // Unsaved-changes guard
+      this._pendingAutoSave   = false;
+      // Clear the canvas so no stale image is visible while the fetch is in flight
+      const canvas = this.$refs && this.$refs.canvas;
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+    },
+
+    async loadProject(proj) {
+      this.selectedOpenProject = proj;
+      this.showOpenDialog = false;
+      // Clear all stale state BEFORE the fetch so that if the load fails
+      // the user sees a blank editor, not the previous project's data.
+      this.clearEditorState();
+      try {
+        console.log('loadProject: fetching', proj.filename);
+        const resp = await fetch('/api/boundaries/load?filename=' + encodeURIComponent(proj.filename));
+        // fetch() does not throw on 4xx/5xx — check resp.ok explicitly so we
+        // can surface the HTTP status + response body instead of a generic
+        // "Error loading project" toast (which was hiding server 500s on
+        // machines that were missing a heavy import).
+        if (!resp.ok) {
+          let bodyText = '';
+          try { bodyText = await resp.text(); } catch (_) { bodyText = '(could not read body)'; }
+          const snippet = bodyText.length > 400 ? bodyText.slice(0, 400) + '…' : bodyText;
+          console.error('loadProject HTTP error:', resp.status, resp.statusText, 'body:', bodyText, 'filename=', proj.filename);
+          this.flash('HTTP ' + resp.status + ' loading project: ' + snippet, false, '', 15000);
+          return;
+        }
+        const data = await resp.json();
+        if (data.status !== 'ok') {
+          console.error('loadProject server-side error:', data, 'filename=', proj.filename);
+          this.flash('Failed to load project: ' + (data.msg || 'unknown'), false, '', 15000);
+          return;
+        }
+        this.courseName = data.course;
+        this.holeName = data.hole;
+        this.selectedImage = data.image;
+        this.selectedImageCourse = data.imageCourse || data.course || '';
+        this.selectedImageUrl = this.selectedImageCourse
+          ? '/egm/images/' + encodeURIComponent(this.selectedImageCourse) + '/' + encodeURIComponent(data.image)
+          : '/team_inbox/' + encodeURIComponent(data.image);
+        this.contourStep = data.contourStep != null ? data.contourStep : 0.5;
+        this.grassAmplitude = data.grassAmplitude != null ? data.grassAmplitude : 0.5;
+        this.grassSpacing = data.grassSpacing != null ? data.grassSpacing : 0.05;
+        this.greenStyle = data.greenStyle || 'terraced';
+        this.elevationRange = data.elevationRange != null ? data.elevationRange : 14.5;
+        this.greenScale = data.greenScale != null ? data.greenScale : 1.0065;
+        this.fringeEdgeHeight = data.fringeEdgeHeight != null ? data.fringeEdgeHeight : 10.0;
+        this.baseThicknessMm = data.baseThicknessMm != null ? data.baseThicknessMm : 1.5;
+        this.includeBoundaryRegion = data.includeBoundaryRegion === true;
+        // Legacy .egm files without applyFringeFrameCap must default to true
+        // (preserves the historical always-on behavior).
+        this.applyFringeFrameCap = data.applyFringeFrameCap !== false;
+        // New field (task 724): default false (single plate). Legacy field is
+        // ignored — semantics are inverted. Use strict truthy check so missing
+        // key defaults to false (single plate, no comparison sample).
+        this.includeFringeWithoutGrass = !!data.includeFringeWithoutGrass;
+        this.flagOffsetXMm = data.flagOffsetXMm != null ? data.flagOffsetXMm : 0.0;
+        this.flagOffsetYMm = data.flagOffsetYMm != null ? data.flagOffsetYMm : 0.0;
+        if (data.zScale != null) { this.zScale = data.zScale; }
+        // Absorb print constants from server (avoids hardcoding in JS)
+        if (data.print_size_mm != null) this.printSizeMm = data.print_size_mm;
+        if (data.fringe_xy_expansion_mm != null) this.fringeXyExpansionMm = data.fringe_xy_expansion_mm;
+        // GPS backend fields — absent in legacy EGMs → defaults
+        const gps = data.gpsBackend || {};
+        this.gpsEnabled  = gps.enabled === true;
+        this.gpsFile     = gps.gpsFile  || '';
+        this.gpsBbox     = gps.bbox     || null;
+        this.gpsVertExag = typeof gps.vertExag  === 'number' ? gps.vertExag  : 3.0;
+        this.gpsApproachM= typeof gps.approachM === 'number' ? gps.approachM : 8.0;
+        const gs = Array.isArray(gps.gridSize) ? gps.gridSize[0] : (gps.gridSize || 200);
+        this.gpsGridSize = [100, 150, 200, 300].includes(gs) ? gs : 200;
+        this.courseGeoRef = data.courseGeoRef || null;
+        this.undoStack = [];
+        this.redoStack = [];
+        this.selectedVerts = [];
+        this.polygons = [];
+        this.contours = [];
+        // elevationSpikes field in legacy EGMs is silently ignored (T5: OCR pipeline stripped).
+        // fringeBoundaryHeights field in legacy EGMs is gracefully ignored —
+        // exterior ring numbers are distance-from-pin, not altitude (2026-10-02).
+        // Tee-hole: absent field = default-populate at (30, 30) on the left.
+        // A saved position (even in an older EGM) always wins over the default.
+        // The default is client-side only — it isn't persisted to disk until the
+        // user next triggers autoSave() (e.g. drags the marker, saves, etc.).
+        if (data.tee_hole && typeof data.tee_hole.x_mm === 'number' && typeof data.tee_hole.y_mm === 'number') {
+          this.teeHole = { x_mm: data.tee_hole.x_mm, y_mm: data.tee_hole.y_mm };
+        } else {
+          this.teeHole = {
+            x_mm: this.TEE_HOLE_DEFAULT_MM,
+            y_mm: this.TEE_HOLE_DEFAULT_MM,
+          };
+        }
+        // gridCellHeights — v5.00. Absent in legacy EGMs → default to empty dict.
+        this.gridCellHeights = Object.fromEntries(Object.entries(data.gridCellHeights || {}).filter(([, v]) => Number(v) !== 0));  // zero = empty
+        // gridMode — v5.34 (task 774). Absent in legacy EGMs → default to 'delta'
+        // (current/legacy behavior).  Defensive validation: unknown values collapse to 'delta'.
+        {
+          const m = String(data.gridMode || 'delta').toLowerCase();
+          this.gridMode = (m === 'delta' || m === 'absolute' || m === 'off') ? m : 'delta';
+        }
+        this._gridActiveCell = null;
+        this._gridInputValue = '';
+        // v4.83 — off-frame points are intentional (users can drag control
+        // points outside the image frame deliberately). Polygon coords are
+        // loaded as-is; no clamping, no dirty-flag, no toast.
+        this._pendingRestore = data.polygons;
+        this.loadImage();
+        this.refreshGpsFiles();  // populate GPS file picker for the loaded course
+        this.scheduleGpsPreview();
+
+        this.flash('Loaded: ' + data.course + ' — Hole ' + data.hole, true);
+      } catch (err) {
+        console.error('loadProject failed:', err, 'filename=', proj.filename);
+        this.flash('Error loading project: ' + (err && err.message ? err.message : err), false, '', 15000);
+      }
+    },
+
+    async startNewProject() {
+      if (!this.dlgImage || !this.dlgCourse.trim() || !this.dlgHole.trim()) return;
+      this.courseName = this.dlgCourse.trim();
+      this.holeName = this.dlgHole.trim();
+      this.selectedImage = this.dlgImage;
+      const wantedCourse = this.dlgCourse.trim();
+      const matchedImg =
+            this.dlgImages.find(i => i.filename === this.dlgImage && i.course === wantedCourse)
+         || this.dlgImages.find(i => i.filename === this.dlgImage && i.course == null)
+         || this.dlgImages.find(i => i.filename === this.dlgImage);
+      this.selectedImageUrl = matchedImg ? matchedImg.url : '';
+      this.selectedImageCourse = (matchedImg && matchedImg.course) ? matchedImg.course : '';
+      // Reset editor settings to defaults so a new project starts from a clean slate
+      // rather than inheriting tweaks from whatever project was open before.
+      this.contourStep = 0.5;
+      this.grassAmplitude = 0.5;
+      this.grassSpacing = 0.05;
+      this.greenStyle = 'terraced';
+      this.elevationRange = 14.5;
+      this.zScale = 1.0;
+      this.greenScale = 1.0065;
+      this.fringeEdgeHeight = 10.0;
+      this.baseThicknessMm = 1.5;
+      this.includeBoundaryRegion    = false;
+      this.applyFringeFrameCap      = true;
+      this.includeFringeWithoutGrass = false;
+      this.flagOffsetXMm = 0.0;
+      this.flagOffsetYMm = 0.0;
+      // GPS backend — reset to defaults on new project
+      this.gpsEnabled   = false;
+      this.gpsFile      = '';
+      this.gpsBbox      = null;
+      this.gpsVertExag  = 3.0;
+      this.gpsApproachM = 8.0;
+      this.gpsGridSize  = 200;
+      // courseGeoRef persists if we're reusing the same course folder —
+      // but a new project dialog has a potentially different course, so clear.
+      this.courseGeoRef = null;
+      this.gpsPreviewDataUrl = '';
+      this.gpsPreviewError = '';
+      this.showNewDialog = false;
+      // Fetch print constants so the fringe-expansion zone is correctly sized
+      try {
+        const cr = await fetch('/api/print_constants');
+        const cd = await cr.json();
+        if (cd.status === 'ok') {
+          this.printSizeMm = cd.print_size_mm;
+          this.fringeXyExpansionMm = cd.fringe_xy_expansion_mm;
+        }
+      } catch (_) { /* use defaults */ }
+      this.undoStack = [];
+      this.redoStack = [];
+      this.selectedVerts = [];
+      this.polygons = [];
+      // Grid cell elevation — reset on new project
+      this.gridCellHeights  = {};
+      this.gridMode         = 'delta';  // v5.34 (task 774) — reset to default mode
+      this._gridActiveCell  = null;
+      this._gridInputValue  = '';
+      this._gridHoveredCell = null;
+      this._gridMouseDownAt = null;  // v5.05
+      // Default-populate the tee hole on the left side (30 mm inset) — same
+      // convention as loadProject(). User can remove it explicitly.
+      this.teeHole = {
+        x_mm: this.TEE_HOLE_DEFAULT_MM,
+        y_mm: this.TEE_HOLE_DEFAULT_MM,
+      };
+      this._pendingDetect = true;
+      this.loadImage();
+      this.refreshGpsFiles();  // populate GPS file picker for the new course
+    },
+
+    async findContours() {
+      // Find the green polygon from the current editor state
+      const greenPoly = this.polygons.find(p => p.type === 'green');
+      if (!greenPoly) {
+        this.flash('No green polygon found', false);
+        return;
+      }
+      if (!this.selectedImage) {
+        this.flash('No image loaded', false);
+        return;
+      }
+
+      // Clear all existing contours first
+      this.contours = [];
+      this.draw();
+      this.flash('Finding contours...', true);
+
+      // Sample the Catmull-Rom spline to get a dense set of points
+      // (the API needs a good polygon, not just control points)
+      const splinePts = this.sampleSplinePoints(greenPoly.points, 16);
+      const greenPoints = splinePts.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) }));
+
+      try {
+        const resp = await fetch('/api/find_contours', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            image: this.selectedImage,
+            course: this.courseName,
+            imageCourse: this.selectedImageCourse || this.courseName,
+            green_points: greenPoints,
+            imageSize: { width: this.imgW, height: this.imgH },
+          }),
+        });
+        const result = await resp.json();
+        if (result.status === 'ok' && result.contours && result.contours.length > 0) {
+          // Add detected contours to the editor
+          for (const c of result.contours) {
+            this.contours.push({
+              name: c.name || ('Contour ' + (this.contours.length + 1)),
+              direction: c.direction || 'left',
+              color: '#FFE600',
+              points: c.points.map(pt => ({ x: pt.x, y: pt.y })),
+            });
+          }
+          this.draw();
+          this.flash('Found ' + result.contours.length + ' contour(s)', true);
+          this.autoSave();
+        } else {
+          this.flash('No contours found', false);
+        }
+      } catch (err) {
+        this.flash('Contour detection error: ' + err.message, false);
+      }
+    },
+
+    // ── GPS backend helpers ───────────────────────────────────────────────────
+
+    hasGreenPolygon() {
+      return this.polygons.some(p => p.type === 'green');
+    },
+
+    getGreenPolygon() {
+      return this.polygons.find(p => p.type === 'green') || null;
+    },
+
+    async refreshGpsFiles() {
+      if (!this.courseName) return;
+      try {
+        const resp = await fetch('/api/gps_files?course=' + encodeURIComponent(this.courseName));
+        const data = await resp.json();
+        // Alphabetise case-insensitively per feedback_alphabetize_dropdowns
+        this.gpsFileList = (data.files || []).sort((a, b) =>
+          a.name.toLowerCase().localeCompare(b.name.toLowerCase())
+        );
+      } catch (e) {
+        console.error('refreshGpsFiles error:', e);
+      }
+    },
+
+    onGpsParamChange() {
+      this.autoSave();
+      this.scheduleGpsPreview();
+    },
+
+    scheduleGpsPreview() {
+      if (this._gpsPreviewTimer) clearTimeout(this._gpsPreviewTimer);
+      if (!this.gpsEnabled || !this.gpsFile || !this.gpsBbox) {
+        this.gpsPreviewDataUrl = '';
+        return;
+      }
+      this._gpsPreviewTimer = setTimeout(() => this.loadGpsPreview(), 500);
+    },
+
+    async loadGpsPreview() {
+      if (!this.gpsFile || !this.gpsBbox) return;
+      this.gpsPreviewLoading = true;
+      this.gpsPreviewError = '';
+      try {
+        const params = new URLSearchParams({
+          gps_file: this.gpsFile,
+          bbox: JSON.stringify(this.gpsBbox),
+          approach_m: String(this.gpsApproachM),
+          grid_size: String(Math.min(this.gpsGridSize, 150)),  // use smaller grid for preview speed
+        });
+        const resp = await fetch('/api/gps_heightmap_preview?' + params.toString());
+        if (!resp.ok) {
+          const body = await resp.json().catch(() => ({ msg: resp.statusText }));
+          this.gpsPreviewError = body.msg || 'Preview failed';
+          return;
+        }
+        const blob = await resp.blob();
+        this.gpsPreviewDataUrl = URL.createObjectURL(blob);
+      } catch (e) {
+        this.gpsPreviewError = 'Preview error: ' + e.message;
+      } finally {
+        this.gpsPreviewLoading = false;
+      }
+    },
+
+    // Snap bbox to green polygon bounding box expanded by approachM + 5 m.
+    // Requires courseGeoRef to convert pixel → lat/lng.
+    snapBboxToGreen() {
+      const green = this.getGreenPolygon();
+      if (!green || !this.courseGeoRef) return;
+      const pts = green.points;
+      if (!pts || pts.length < 3) return;
+
+      // Convert green polygon pixel points to lat/lng
+      const georef = this.courseGeoRef;
+      const w = georef.imageWidth, h = georef.imageHeight;
+      const latSw = georef.swCornerLatLng[0], lngSw = georef.swCornerLatLng[1];
+      const latNe = georef.neCornerLatLng[0], lngNe = georef.neCornerLatLng[1];
+
+      const latlngs = pts.map(pt => {
+        const fracX = pt.x / w;
+        const fracY = pt.y / h;
+        const lng = lngSw + fracX * (lngNe - lngSw);
+        const lat = latNe - fracY * (latNe - latSw);
+        return { lat, lng };
+      });
+
+      const latMin = Math.min(...latlngs.map(p => p.lat));
+      const latMax = Math.max(...latlngs.map(p => p.lat));
+      const lngMin = Math.min(...latlngs.map(p => p.lng));
+      const lngMax = Math.max(...latlngs.map(p => p.lng));
+
+      // Convert padding from metres to degrees (approximate flat-earth)
+      const padM = this.gpsApproachM + 5;
+      // 1 degree lat ≈ 111_000 m; 1 degree lng ≈ 111_000 * cos(lat) m
+      const latMid = (latMin + latMax) / 2;
+      const padLat = padM / 111000;
+      const padLng = padM / (111000 * Math.cos(latMid * Math.PI / 180));
+
+      this.gpsBbox = {
+        lat_min: Math.round((latMin - padLat) * 1e7) / 1e7,
+        lng_min: Math.round((lngMin - padLng) * 1e7) / 1e7,
+        lat_max: Math.round((latMax + padLat) * 1e7) / 1e7,
+        lng_max: Math.round((lngMax + padLng) * 1e7) / 1e7,
+      };
+      this.onGpsParamChange();
+      this.drawGpsMap();
+    },
+
+    openGeoRefDialog() {
+      // Pre-populate form from existing courseGeoRef if present
+      if (this.courseGeoRef) {
+        this.georefForm.swLat = this.courseGeoRef.swCornerLatLng[0];
+        this.georefForm.swLng = this.courseGeoRef.swCornerLatLng[1];
+        this.georefForm.neLat = this.courseGeoRef.neCornerLatLng[0];
+        this.georefForm.neLng = this.courseGeoRef.neCornerLatLng[1];
+      } else {
+        this.georefForm = { swLat: null, swLng: null, neLat: null, neLng: null };
+      }
+      this.showGeoRefDialog = true;
+    },
+
+    saveGeoRef() {
+      const sw = [Number(this.georefForm.swLat), Number(this.georefForm.swLng)];
+      const ne = [Number(this.georefForm.neLat), Number(this.georefForm.neLng)];
+      if (!sw[0] || !sw[1] || !ne[0] || !ne[1]) return;
+      this.courseGeoRef = {
+        imageWidth: this.imgW,
+        imageHeight: this.imgH,
+        swCornerLatLng: sw,
+        neCornerLatLng: ne,
+      };
+      this.showGeoRefDialog = false;
+      this.autoSave();
+      this.drawGpsMap();
+      this.flash('Geo-reference saved', true);
+    },
+
+    // GPS map canvas: draw course image (dimmed) + GPS point cloud + bbox overlay
+    async drawGpsMap() {
+      const canvas = this.$refs.gpsMapCanvas;
+      if (!canvas || !this.courseGeoRef) return;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, 300, 300);
+
+      // Draw course image dimmed
+      if (this.img && this.imgLoaded) {
+        ctx.save();
+        ctx.globalAlpha = 0.35;
+        ctx.drawImage(this.img, 0, 0, 300, 300);
+        ctx.restore();
+      } else {
+        ctx.fillStyle = '#e5e7eb';
+        ctx.fillRect(0, 0, 300, 300);
+      }
+
+      const georef = this.courseGeoRef;
+      const w = georef.imageWidth, h = georef.imageHeight;
+      const latSw = georef.swCornerLatLng[0], lngSw = georef.swCornerLatLng[1];
+      const latNe = georef.neCornerLatLng[0], lngNe = georef.neCornerLatLng[1];
+
+      // lat/lng → map pixel (300×300 canvas)
+      const toMapPx = (lat, lng) => {
+        const fracX = (lng - lngSw) / (lngNe - lngSw);
+        const fracY = (latNe - lat) / (latNe - latSw);
+        return { x: fracX * 300, y: fracY * 300 };
+      };
+
+      // Draw GPS points if we have them
+      if (this.gpsPoints && this.gpsPoints.length > 0) {
+        const alts = this.gpsPoints.map(p => p.alt);
+        const altMin = Math.min(...alts), altMax = Math.max(...alts);
+        const altRange = altMax - altMin || 1;
+        const toColor = (alt) => {
+          const t = (alt - altMin) / altRange;
+          // Blue → Green → Red
+          const r = Math.round(255 * Math.min(1, t * 2));
+          const g = Math.round(255 * Math.min(1, 1 - Math.abs(t - 0.5) * 2));
+          const b = Math.round(255 * Math.max(0, 1 - t * 2));
+          return `rgb(${r},${g},${b})`;
+        };
+        for (const pt of this.gpsPoints) {
+          const { x, y } = toMapPx(pt.lat, pt.lng);
+          ctx.fillStyle = toColor(pt.alt);
+          ctx.beginPath();
+          ctx.arc(x, y, 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // Draw bbox overlay
+      if (this.gpsBbox) {
+        const sw2 = toMapPx(this.gpsBbox.lat_min, this.gpsBbox.lng_min);
+        const ne2 = toMapPx(this.gpsBbox.lat_max, this.gpsBbox.lng_max);
+        const rx = ne2.x, ry = ne2.y;
+        const rw = sw2.x - ne2.x, rh = sw2.y - ne2.y;
+        ctx.save();
+        ctx.fillStyle = 'rgba(59,130,246,0.12)';
+        ctx.fillRect(rx, ry, rw, rh);
+        ctx.strokeStyle = 'rgba(59,130,246,0.8)';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(rx, ry, rw, rh);
+        ctx.restore();
+      }
+
+      // Draw active drag selection
+      if (this._gpsMapDrag && this._gpsMapDrag.active) {
+        const d = this._gpsMapDrag;
+        const rx = Math.min(d.startX, d.curX);
+        const ry = Math.min(d.startY, d.curY);
+        const rw = Math.abs(d.curX - d.startX);
+        const rh = Math.abs(d.curY - d.startY);
+        ctx.save();
+        ctx.fillStyle = 'rgba(245,158,11,0.15)';
+        ctx.fillRect(rx, ry, rw, rh);
+        ctx.strokeStyle = '#F59E0B';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 3]);
+        ctx.strokeRect(rx, ry, rw, rh);
+        ctx.restore();
+      }
+    },
+
+    gpsMapMouseDown(e) {
+      if (!this.courseGeoRef) return;
+      const rect = e.target.getBoundingClientRect();
+      this._gpsMapDrag = {
+        active: true,
+        startX: e.clientX - rect.left,
+        startY: e.clientY - rect.top,
+        curX:   e.clientX - rect.left,
+        curY:   e.clientY - rect.top,
+      };
+    },
+
+    gpsMapMouseMove(e) {
+      if (!this._gpsMapDrag || !this._gpsMapDrag.active) return;
+      const rect = e.target.getBoundingClientRect();
+      this._gpsMapDrag.curX = e.clientX - rect.left;
+      this._gpsMapDrag.curY = e.clientY - rect.top;
+      this.drawGpsMap();
+    },
+
+    gpsMapMouseUp(e) {
+      if (!this._gpsMapDrag || !this._gpsMapDrag.active) return;
+      const d = this._gpsMapDrag;
+      d.active = false;
+      const georef = this.courseGeoRef;
+      if (!georef) return;
+      const latSw = georef.swCornerLatLng[0], lngSw = georef.swCornerLatLng[1];
+      const latNe = georef.neCornerLatLng[0], lngNe = georef.neCornerLatLng[1];
+
+      // Map drag rect → lat/lng (canvas is 300×300)
+      const toLatLng = (cx, cy) => {
+        const fracX = cx / 300;
+        const fracY = cy / 300;
+        return {
+          lat: latNe - fracY * (latNe - latSw),
+          lng: lngSw + fracX * (lngNe - lngSw),
+        };
+      };
+      const ptA = toLatLng(d.startX, d.startY);
+      const ptB = toLatLng(d.curX,   d.curY);
+      const minDragPx = 5;
+      if (Math.abs(d.curX - d.startX) < minDragPx || Math.abs(d.curY - d.startY) < minDragPx) {
+        this._gpsMapDrag = null;
+        return;
+      }
+      this.gpsBbox = {
+        lat_min: Math.round(Math.min(ptA.lat, ptB.lat) * 1e7) / 1e7,
+        lng_min: Math.round(Math.min(ptA.lng, ptB.lng) * 1e7) / 1e7,
+        lat_max: Math.round(Math.max(ptA.lat, ptB.lat) * 1e7) / 1e7,
+        lng_max: Math.round(Math.max(ptA.lng, ptB.lng) * 1e7) / 1e7,
+      };
+      this._gpsMapDrag = null;
+      this.onGpsParamChange();
+      this.drawGpsMap();
+    },
+
+    // ── End GPS backend helpers ───────────────────────────────────────────────
+
+    async generateSTL() {
+      if (!this.courseName.trim() || !this.holeName.trim()) {
+        this.flash('Set course name and hole number first', false);
+        return;
+      }
+      if (this.polygons.length === 0) {
+        this.flash('No polygons to generate models from', false);
+        return;
+      }
+      // Auto-save first so the pipeline reads the latest EGM (including grass params).
+      // Wrap in try/catch so a save failure never silently blocks the fetch below —
+      // Thomas has seen "Generate" appear to hang when the real cause was an
+      // autoSave exception that swallowed the click.
+      try {
+        await this.autoSave();
+      } catch (saveErr) {
+        this.flash('Auto-save failed before generate: ' + (saveErr && saveErr.message ? saveErr.message : saveErr), false);
+        return;
+      }
+      const allPolygons = [
+        ...this.polygons.map(p => ({
+          name: p.name,
+          type: p.type,
+          closed: true,
+          points: p.points.map(pt => ({ x: pt.x, y: pt.y })),
+        })),
+        ...this.contours.map(c => ({
+          name: c.name,
+          type: 'contour',
+          closed: false,
+          direction: c.direction,
+          points: c.points.map(pt => ({ x: pt.x, y: pt.y })),
+        })),
+      ];
+      const data = {
+        course: this.courseName.trim(),
+        hole: this.holeName.trim(),
+        image: this.selectedImage,
+        imageCourse: this.selectedImageCourse || this.courseName.trim(),
+        imageSize: { width: this.imgW, height: this.imgH },
+        contourStep: this.contourStep,
+        grassAmplitude: this.grassAmplitude,
+        grassSpacing: this.grassSpacing,
+        greenStyle: this.greenStyle,
+        elevationRange: this.elevationRange,
+        zScale: this.zScale,
+        greenScale: this.greenScale,
+        fringeEdgeHeight: this.fringeEdgeHeight,
+        baseThicknessMm: this.baseThicknessMm,
+        includeBoundaryRegion: this.includeBoundaryRegion,
+        applyFringeFrameCap: this.applyFringeFrameCap,
+        includeFringeWithoutGrass: this.includeFringeWithoutGrass,
+        flagOffsetXMm: this.flagOffsetXMm,
+        flagOffsetYMm: this.flagOffsetYMm,
+        polygons: allPolygons,
+        open_in_slicer: this.openInSlicer,
+      };
+      if (this.teeHole && typeof this.teeHole.x_mm === 'number' && typeof this.teeHole.y_mm === 'number') {
+        data.tee_hole = {
+          x_mm: Math.round(this.teeHole.x_mm * 10) / 10,
+          y_mm: Math.round(this.teeHole.y_mm * 10) / 10,
+        };
+      }
+      this.generating = true;
+      // Immediate user feedback — the pipeline is minutes-long, so without this
+      // the button just sits at "Generating…" and Thomas reports it as hung.
+      this.flash('Generation started — this typically takes 1–3 minutes…', true, '', 3500);
+      // Elapsed-seconds ticker so the button label counts up ("Generating… 42s")
+      this.generatingElapsed = 0;
+      if (this._generatingTimer) clearInterval(this._generatingTimer);
+      const _startedAt = Date.now();
+      this._generatingTimer = setInterval(() => {
+        this.generatingElapsed = Math.round((Date.now() - _startedAt) / 1000);
+      }, 1000);
+      try {
+        const resp = await fetch('/api/generate_models', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
+        const result = await resp.json();
+        const elapsed = Math.round((Date.now() - _startedAt) / 1000);
+        if (result.status === 'ok') {
+          const fname = result.file && result.file.name ? result.file.name : '';
+          let msg = 'Generated in ' + elapsed + 's' + (fname ? ':' : '');
+          if (result.slicer_opened) {
+            msg += ' · Opened in default slicer';
+          } else if (result.slicer_error) {
+            msg += ' · Slicer open failed: ' + result.slicer_error;
+          }
+          this.flash(msg, result.slicer_error ? false : true, fname, result.slicer_error ? null : 8000);
+        } else {
+          this.flash('Generation failed after ' + elapsed + 's: ' + (result.msg || result.error || 'unknown error'), false);
+        }
+      } catch (err) {
+        const elapsed = Math.round((Date.now() - _startedAt) / 1000);
+        this.flash('Generation error after ' + elapsed + 's: ' + err.message, false);
+      } finally {
+        this.generating = false;
+        if (this._generatingTimer) { clearInterval(this._generatingTimer); this._generatingTimer = null; }
+      }
+    },
+
+    // flash(msg, ok, filename, durationMs)
+    //   ok=true  (info/success): auto-dismisses after durationMs (default 4500ms)
+    //   ok=false (error):        sticky — stays until the user clicks ×, unless an
+    //                            explicit durationMs is passed (e.g. a 500ms transient)
+    flash(msg, ok, filename = '', durationMs = null) {
+      if (this._flashTimer) { clearTimeout(this._flashTimer); this._flashTimer = null; }
+      this.statusMsg = msg;
+      this.statusOk = ok;
+      this.statusFilename = filename;
+      // Determine auto-dismiss duration:
+      //   • caller supplied explicit ms → honour it
+      //   • ok=true  (info/success)     → 4500ms
+      //   • ok=false (error)            → sticky (no timer)
+      const ms = durationMs !== null ? durationMs : (ok ? 4500 : null);
+      this.statusSticky = (ms === null);
+      if (ms !== null) {
+        this._flashTimer = setTimeout(() => { this.statusMsg = ''; this.statusFilename = ''; this._flashTimer = null; }, ms);
+      }
+    },
+
+    flashDismiss() {
+      if (this._flashTimer) { clearTimeout(this._flashTimer); this._flashTimer = null; }
+      this.statusMsg = '';
+      this.statusFilename = '';
+      this.statusSticky = false;
+    },
+
+    handleKey(e) {
+      // ── Grid cell input intercepts — must run before polygon key handlers ──
+      if (this._gridActiveCell) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          this.cancelGridCell();
+          return;
+        }
+        // Delete on an active cell clears it (even while the HTML input is focused
+        // the window keydown fires first on some browsers; guard with _gridActiveCell).
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
+            // Let the browser handle normal text deletion inside the input
+          } else {
+            e.preventDefault();
+            this.deleteGridCell(this._gridActiveCell.idx);
+            return;
+          }
+        }
+      }
+      // Undo: Cmd+Z / Ctrl+Z
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        this.undo();
+        return;
+      }
+      // Redo: Cmd+Shift+Z / Ctrl+Shift+Z or Ctrl+Y
+      if (((e.metaKey || e.ctrlKey) && e.key === 'z' && e.shiftKey) ||
+          ((e.metaKey || e.ctrlKey) && e.key === 'y')) {
+        e.preventDefault();
+        this.redo();
+        return;
+      }
+      // Enter: finish contour if in drawing mode
+      if (e.key === 'Enter' && this.contourMode) {
+        e.preventDefault();
+        this.finishContour();
+        return;
+      }
+      // Escape: cancel contour drawing mode
+      if (e.key === 'Escape' && this.contourMode) {
+        this.contourMode = false;
+        this.contourDraft = [];
+        this.draw();
+        return;
+      }
+      // Cmd+Delete / Ctrl+Delete: remove the selected polygon if it is a trap, water, or boulders
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'Delete' || e.key === 'Backspace')) {
+        if (this.selectedPoly >= 0 && this.selectedPoly < this.polygons.length) {
+          const selType = this.polygons[this.selectedPoly].type;
+          if (selType === 'trap' || selType === 'water' || selType === 'boulders') {
+            e.preventDefault();
+            this.removePoly(this.selectedPoly);
+          }
+        }
+        return;
+      }
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (this.selectedVerts.length === 0) return;
+        this.pushUndo();
+        const sorted = [...this.selectedVerts].sort((a, b) => {
+          if (a.poly !== b.poly) return b.poly - a.poly;
+          return b.idx - a.idx;
+        });
+        // Count how many verts are being removed per polygon
+        const removesPerPoly = {};
+        for (const sv of sorted) {
+          removesPerPoly[sv.poly] = (removesPerPoly[sv.poly] || 0) + 1;
+        }
+        // Identify trap/water/boulders polys that would drop to < 3 — delete the whole polygon
+        const trapPolysToRemove = new Set();
+        for (const [polyIdxStr, count] of Object.entries(removesPerPoly)) {
+          const polyIdx = Number(polyIdxStr);
+          const poly = this.polygons[polyIdx];
+          if ((poly.type === 'trap' || poly.type === 'water' || poly.type === 'boulders') && poly.points.length - count < 3) {
+            trapPolysToRemove.add(polyIdx);
+          }
+        }
+        let removed = 0;
+        let greenBlocked = false;
+        for (const sv of sorted) {
+          if (trapPolysToRemove.has(sv.poly)) continue; // whole trap/water will be removed below
+          const pts = this.polygons[sv.poly].points;
+          if (pts.length > 3) {
+            pts.splice(sv.idx, 1);
+            removed++;
+          } else {
+            greenBlocked = true; // green polygon at minimum
+          }
+        }
+        this.selectedVerts = [];
+        // Remove whole traps (in descending index order to keep indices stable)
+        for (const polyIdx of [...trapPolysToRemove].sort((a, b) => b - a)) {
+          this.polygons.splice(polyIdx, 1);
+          if (this.selectedPoly >= this.polygons.length) {
+            this.selectedPoly = this.polygons.length - 1;
+          }
+        }
+        if (trapPolysToRemove.size > 0) {
+          // Renumber remaining traps, water traps, and boulder regions
+          let tc = 0, wc = 0, bc = 0;
+          for (const p of this.polygons) {
+            if (p.type === 'trap') { tc++; p.name = 'Trap ' + tc; }
+            if (p.type === 'water') { wc++; p.name = 'Water ' + wc; }
+            if (p.type === 'boulders') { bc++; p.name = 'Boulders ' + bc; }
+          }
+        }
+        this.draw();
+        if (trapPolysToRemove.size > 0 || removed > 0) {
+          this.autoSave();
+        }
+        if (greenBlocked) {
+          this.flash('Minimum 3 vertices required', false);
+        } else if (trapPolysToRemove.size > 0 && removed === 0) {
+          this.flash('Polygon removed', true);
+        } else if (removed > 0) {
+          this.flash(removed + ' vertex(es) removed', true);
+        }
+      }
+    },
+  };
+}
+
+// Handle window resize
+let _editorResizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(_editorResizeTimer);
+  _editorResizeTimer = setTimeout(() => {
+    // Find the Alpine component and resize
+    const el = document.querySelector('[x-data]');
+    if (el && el.__x) {
+      el.__x.$data.resizeCanvas();
+    } else if (el && el._x_dataStack) {
+      // Alpine v3
+      const data = el._x_dataStack[0];
+      if (data && data.resizeCanvas) data.resizeCanvas();
+    }
+  }, 100);
+});
+
+// Handle DPR changes when the window moves between monitors with different
+// pixel densities. The resize event does not fire in this case, so we use
+// a matchMedia listener on the current resolution query instead.
+function watchDPR() {
+  const mql = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+  mql.addEventListener('change', () => {
+    // DPR has changed — recalculate canvas backing store and redraw
+    const el = document.querySelector('[x-data]');
+    if (el && el.__x) {
+      el.__x.$data.resizeCanvas();
+    } else if (el && el._x_dataStack) {
+      const data = el._x_dataStack[0];
+      if (data && data.resizeCanvas) data.resizeCanvas();
+    }
+    // Re-register with the new DPR value since the old query no longer matches
+    watchDPR();
+  }, { once: true });
+}
+watchDPR();
+</script>
+
+{# ── Page footer ─────────────────────────────────────────────── #}
+<footer class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-[50px] py-3 flex items-center justify-center gap-3 z-30 shadow-sm">
+  <span class="text-xs text-gray-900">© Copyright 2026, <a href="https://fourierflight.com" target="_blank" class="hover:underline">IWI Enterprise</a></span>
+  <span class="text-xs text-gray-400 font-mono">{{ app_version }}</span>
+  <div x-data="{ count: 0 }"
+       x-init="(async () => {
+         const update = async () => {
+           try { const r = await fetch('/api/tasks/running_count'); if (r.ok) { count = (await r.json()).count; } }
+           catch(e) {}
+         };
+         update();
+         setInterval(update, 1000);
+       })()"
+       x-show="count > 0"
+       x-cloak
+       class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200"
+       :title="count + ' task' + (count === 1 ? '' : 's') + ' currently running'">
+    <span class="relative flex h-2 w-2">
+      <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+      <span class="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+    </span>
+    <span x-text="count + (count === 1 ? ' task' : ' tasks')"></span>
+  </div>
+</footer>
+
+{% endblock %}
