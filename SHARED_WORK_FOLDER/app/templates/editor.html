@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{# Boundary Editor v5.10 — Grid value 0 = empty cell (deleted on commit, dropped on load). Grid lines recolored to indigo; Cmd+drag multi-cell selection with shared-value edit (task 726) #}
+{# Boundary Editor v5.17 — Geo-ref setup dialog removed (orphaned after the GPS panel ⚙ opener was removed); courseGeoRef data still loads/saves untouched. v5.16 — GPS controls removed from the UI (JS state/load/save kept so any EGM gpsBackend block still round-trips). v5.15 — Mouse wheel steps the open grid value box (0.1 mm, Shift = 1.0; no clamp; commit still Enter/Tab). v5.14 — Grid cells colored by value (matplotlib 'terrain', auto-scaled; view-only toggle in localStorage). v5.13 — Only cells FULLY inside a bunker can control it (partial cells ignored). v5.12 — Ring now in delta AND absolute (not off); delta = default + highest cell (was mean). v5.11 — Absolute mode: red ring around the grid cell(s) that control each trap's height (server-computed, mirrors generator). v5.10 — Grid value 0 = empty cell (deleted on commit, dropped on load). Grid lines recolored to indigo; Cmd+drag multi-cell selection with shared-value edit (task 726) #}
 {% block title %}Boundary Editor — AI Team Workspace{% endblock %}
 {% block content_width %}max-w-6xl{% endblock %}
 {% block content %}
@@ -181,205 +181,6 @@
         </div>
       </div>
 
-    </div>
-  </div>
-
-  {# ── GPS Backend panel ─────────────────────────────────── #}
-  <div x-show="imgLoaded && hasGreenPolygon()" x-cloak
-       class="bg-white border border-notion-border rounded-lg px-5 py-4 space-y-4">
-
-    <div class="flex items-center justify-between">
-      <h3 class="text-sm font-semibold text-notion-text">GPS Backend</h3>
-      <div class="flex items-center gap-2">
-        <label class="inline-flex items-center gap-1.5 text-xs text-notion-muted cursor-pointer select-none"
-               title="When on, the Generate pipeline uses real GPS elevation data instead of image arrows. Easy to A/B test.">
-          <input type="checkbox" x-model="gpsEnabled" @change="onGpsParamChange()"
-                 class="h-3.5 w-3.5 rounded border-notion-border text-notion-accent focus:ring-2 focus:ring-notion-accent/30">
-          <span class="font-medium" :class="gpsEnabled ? 'text-teal-700' : 'text-notion-muted'">Use GPS backend</span>
-        </label>
-        <button @click="openGeoRefDialog()"
-                title="Set up course geo-reference: enter the SW and NE corner lat/lngs so pixel coordinates map to real-world lat/lng."
-                class="text-notion-muted hover:text-notion-text transition-default text-sm" style="line-height:1;">⚙</button>
-      </div>
-    </div>
-
-    {# ── GPS backend body — v4.60: hidden when checkbox is off ─ #}
-    <div id="gps-backend-body"
-         x-show="gpsEnabled"
-         x-transition:enter="transition-all ease-out duration-150"
-         x-transition:enter-start="opacity-0 -translate-y-1"
-         x-transition:enter-end="opacity-100 translate-y-0"
-         x-transition:leave="transition-all ease-in duration-150"
-         x-transition:leave-start="opacity-100 translate-y-0"
-         x-transition:leave-end="opacity-0 -translate-y-1"
-         class="space-y-4">
-
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-
-      {# GPS file picker #}
-      <div class="flex flex-col gap-1 sm:col-span-2">
-        <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">GPS File</label>
-        <div class="flex gap-2 items-center">
-          <select x-model="gpsFile" @change="onGpsParamChange()"
-                  class="flex-1 text-sm border border-notion-border rounded-md px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent">
-            <option value="">-- select GPS file --</option>
-            <template x-for="f in gpsFileList" :key="f.path">
-              <option :value="f.path" x-text="f.name"></option>
-            </template>
-          </select>
-          <button @click="refreshGpsFiles()"
-                  title="Refresh GPS file list"
-                  class="text-sm px-2 py-1.5 rounded-md border border-notion-border bg-white hover:bg-notion-hover text-notion-muted transition-default">↺</button>
-        </div>
-        <p x-show="gpsFile" class="text-xs text-notion-muted truncate" x-text="gpsFile"></p>
-      </div>
-
-      {# vertExag slider #}
-      <div class="flex flex-col gap-1"
-           title="Vertical exaggeration — multiplies GPS altitude differences. 1.0 = real scale; 3-10 typical for printing.">
-        <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Vert exag <span class="font-mono" x-text="gpsVertExag.toFixed(1)"></span></label>
-        <input type="range" x-model.number="gpsVertExag" @input="onGpsParamChange()"
-               min="1.0" max="10.0" step="0.1"
-               class="w-full h-1.5 rounded-full appearance-none bg-gray-200 accent-notion-accent">
-        <div class="flex justify-between text-xs text-notion-muted">
-          <span>1.0</span><span>10.0</span>
-        </div>
-      </div>
-
-      {# approachM #}
-      <div class="flex flex-col gap-1"
-           title="Metres outside the green boundary to include in the GPS heightmap mask.">
-        <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Approach (m)</label>
-        <input type="number" x-model.number="gpsApproachM" @change="onGpsParamChange()"
-               min="0" max="20" step="0.5"
-               class="text-sm border border-notion-border rounded-md px-2.5 py-1.5 bg-white w-full focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent">
-      </div>
-
-      {# gridSize dropdown #}
-      <div class="flex flex-col gap-1"
-           title="Grid resolution for the GPS heightmap. Higher = more detail, slower generation.">
-        <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Grid size</label>
-        <select x-model.number="gpsGridSize" @change="onGpsParamChange()"
-                class="text-sm border border-notion-border rounded-md px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent">
-          <option value="100">100 × 100</option>
-          <option value="150">150 × 150</option>
-          <option value="200">200 × 200</option>
-          <option value="300">300 × 300</option>
-        </select>
-      </div>
-
-      {# Bbox display + Snap button #}
-      <div class="flex flex-col gap-1 sm:col-span-2">
-        <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Bounding box</label>
-        <div class="flex gap-2 items-start">
-          <div class="flex-1 text-xs font-mono bg-gray-50 border border-notion-border rounded px-2 py-1.5 text-notion-muted leading-relaxed min-h-[3rem]">
-            <template x-if="gpsBbox">
-              <span x-text="'SW (' + gpsBbox.lat_min.toFixed(5) + ', ' + gpsBbox.lng_min.toFixed(5) + ') · NE (' + gpsBbox.lat_max.toFixed(5) + ', ' + gpsBbox.lng_max.toFixed(5) + ')'"></span>
-            </template>
-            <template x-if="!gpsBbox">
-              <span class="text-notion-muted">Not set — click &quot;Snap to green&quot; or drag on map</span>
-            </template>
-          </div>
-          <button @click="snapBboxToGreen()"
-                  :disabled="!hasGreenPolygon() || !courseGeoRef"
-                  :title="courseGeoRef ? 'Auto-compute bbox from green polygon + approach padding' : 'Set up geo-reference first (⚙)'"
-                  :class="(hasGreenPolygon() && courseGeoRef) ? 'bg-teal-600 hover:bg-teal-700 text-white' : 'bg-gray-100 text-gray-400 cursor-not-allowed'"
-                  class="text-xs px-3 py-1.5 rounded-md transition-default whitespace-nowrap">
-            Snap to green
-          </button>
-        </div>
-      </div>
-
-    </div>
-
-    {# Map view (course image + GPS dots + bbox overlay) #}
-    <div x-show="courseGeoRef" class="space-y-2">
-      <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Map view</label>
-      <div class="relative inline-block border border-notion-border rounded overflow-hidden" style="width:300px;height:300px;">
-        <canvas x-ref="gpsMapCanvas"
-                width="300" height="300"
-                @mousedown="gpsMapMouseDown($event)"
-                @mousemove="gpsMapMouseMove($event)"
-                @mouseup="gpsMapMouseUp($event)"
-                style="cursor:crosshair; display:block;"
-                title="Drag to select a bounding box. The course image is shown dimmed; GPS points are colored by altitude.">
-        </canvas>
-        <div x-show="gpsMapLoading" class="absolute inset-0 flex items-center justify-center bg-white/70 text-xs text-notion-muted">
-          Loading GPS points…
-        </div>
-        <div x-show="!courseGeoRef" class="absolute inset-0 flex items-center justify-center bg-white/80 text-xs text-notion-muted text-center px-4">
-          Set geo-reference first (⚙)
-        </div>
-      </div>
-      <p class="text-xs text-notion-muted">Drag to select bbox · Dots = GPS altitude (blue=low, red=high)</p>
-    </div>
-
-    {# Live preview PNG #}
-    <div x-show="gpsEnabled && gpsBbox && gpsFile" class="space-y-2">
-      <div class="flex items-center gap-2">
-        <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Heightmap preview</label>
-        <span x-show="gpsPreviewLoading" class="text-xs text-notion-muted">generating…</span>
-        <span x-show="gpsPreviewError" class="text-xs text-red-500" x-text="gpsPreviewError"></span>
-      </div>
-      <div class="border border-notion-border rounded overflow-hidden bg-gray-50" style="width:300px;min-height:60px;">
-        <img x-show="gpsPreviewDataUrl" :src="gpsPreviewDataUrl"
-             alt="GPS heightmap preview" style="width:300px;height:auto;display:block;">
-        <div x-show="!gpsPreviewDataUrl && !gpsPreviewLoading" class="text-xs text-notion-muted px-3 py-4 text-center">
-          Preview will appear here once params are set.
-        </div>
-      </div>
-      <p x-show="gpsPreviewNotes && gpsPreviewNotes.length > 0"
-         class="text-xs text-amber-600"
-         x-text="'Notes: ' + gpsPreviewNotes.join('; ')"></p>
-    </div>
-
-    </div>{# /gps-backend-body #}
-
-  </div>
-
-  {# ── Geo-ref setup dialog ──────────────────────────────── #}
-  <div x-show="showGeoRefDialog" x-cloak
-       class="fixed inset-0 flex items-center justify-center" style="z-index:9999" @keydown.escape.window="showGeoRefDialog = false">
-    <div class="absolute inset-0 bg-black/30" @click="showGeoRefDialog = false"></div>
-    <div class="relative bg-white rounded-xl shadow-xl border border-notion-border p-6 w-full max-w-sm space-y-5">
-      <h2 class="text-lg font-semibold text-notion-text">Course Geo-Reference Setup</h2>
-      <p class="text-sm text-notion-muted">
-        Enter the SW (bottom-left) and NE (top-right) corner lat/lng of the course source image.
-        Used to convert editor pixel coords ↔ real-world lat/lng.
-      </p>
-      <div class="space-y-3">
-        <div>
-          <label class="block text-xs font-medium text-notion-muted uppercase tracking-wide mb-1">SW Corner (bottom-left)</label>
-          <div class="flex gap-2">
-            <input type="number" x-model.number="georefForm.swLat" placeholder="Lat e.g. 36.990" step="0.0001"
-                   class="flex-1 text-sm border border-notion-border rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-notion-accent/30">
-            <input type="number" x-model.number="georefForm.swLng" placeholder="Lng e.g. -122.010" step="0.0001"
-                   class="flex-1 text-sm border border-notion-border rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-notion-accent/30">
-          </div>
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-notion-muted uppercase tracking-wide mb-1">NE Corner (top-right)</label>
-          <div class="flex gap-2">
-            <input type="number" x-model.number="georefForm.neLat" placeholder="Lat e.g. 37.010" step="0.0001"
-                   class="flex-1 text-sm border border-notion-border rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-notion-accent/30">
-            <input type="number" x-model.number="georefForm.neLng" placeholder="Lng e.g. -121.990" step="0.0001"
-                   class="flex-1 text-sm border border-notion-border rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-notion-accent/30">
-          </div>
-        </div>
-      </div>
-      <p class="text-xs text-notion-muted">Image size: <span x-text="imgW + ' × ' + imgH + ' px'"></span></p>
-      <div class="flex justify-end gap-2 pt-2">
-        <button @click="showGeoRefDialog = false"
-                class="text-sm px-4 py-2 rounded-md border border-notion-border bg-white hover:bg-notion-hover text-notion-text transition-default">
-          Cancel
-        </button>
-        <button @click="saveGeoRef()"
-                :disabled="!georefForm.swLat || !georefForm.swLng || !georefForm.neLat || !georefForm.neLng"
-                :class="(!georefForm.swLat || !georefForm.swLng || !georefForm.neLat || !georefForm.neLng) ? 'opacity-40 cursor-not-allowed' : 'hover:bg-blue-600'"
-                class="text-sm px-4 py-2 rounded-md bg-notion-accent text-white transition-default">
-          Save Geo-Reference
-        </button>
-      </div>
     </div>
   </div>
 
@@ -594,8 +395,9 @@
             style="min-width:80px;"
             :min="gridMode === 'absolute' ? 0 : -20"
             :max="gridMode === 'absolute' ? 30 : 20"
-            step="0.5"
+            step="any"
             x-model="_gridInputValue"
+            @wheel.prevent="gridWheel($event)"
             @keydown.enter.prevent="commitGridCell()"
             @keydown.escape.prevent="cancelGridCell()"
             @keydown.delete.stop
@@ -604,8 +406,8 @@
             autofocus
             class="w-full text-xs font-mono text-center rounded bg-white shadow-md px-2 py-0.5 focus:outline-none focus:ring-1"
             :class="gridMode === 'absolute' ? 'border border-orange-400 focus:ring-orange-500' : 'border border-indigo-400 focus:ring-indigo-500'"
-            placeholder="mm"
-            :title="gridMode === 'absolute' ? 'Enter absolute fringe height in mm (0 to 30). Enter to commit, Esc to cancel, Delete to clear.' : 'Enter offset from algorithm in mm (±20). Enter to commit, Esc to cancel, Delete to clear.'"
+            placeholder="mm (wheel: 0.1, Shift: 1)"
+            :title="gridMode === 'absolute' ? 'Enter absolute fringe height in mm (0 to 30). Mouse wheel: +/-0.1 mm per notch (Shift: 1.0). Enter to commit, Esc to cancel, Delete to clear.' : 'Enter offset from algorithm in mm (±20). Mouse wheel: +/-0.1 mm per notch (Shift: 1.0). Enter to commit, Esc to cancel, Delete to clear.'"
           />
         </div>
       </div>
@@ -734,6 +536,18 @@
               title="Off: hide cell overlays and ignore all values. Stored values are preserved.">Off</button>
     </div>
 
+    {# ── Cell-color toggle + legend (v5.14) — view preference only (localStorage), never saved to the EGM ── #}
+    <label class="inline-flex items-center gap-1.5 text-[11px] text-notion-text cursor-pointer select-none whitespace-nowrap"
+           title="Tint each grid cell by its value (terrain colormap, auto-scaled to the lowest and highest set cell). View only — not saved in the EGM.">
+      <input type="checkbox" x-model="colorCellsByHeight" @change="setColorCells()" data-testid="color-cells-toggle">
+      Color cells by height
+    </label>
+    <span x-show="colorCellsByHeight && gridMode !== 'off' && gridRange()" class="inline-flex items-center gap-1 text-[10px] text-notion-muted whitespace-nowrap" data-testid="cell-color-legend">
+      <span x-text="gridRange() ? gridRange().min : ''"></span>
+      <span class="inline-block w-10 h-2 rounded border border-notion-border" :style="'background:' + terrainLegendGradient()"></span>
+      <span x-text="gridRange() ? gridRange().max : ''"></span>
+    </span>
+
     <div class="ml-auto flex items-center gap-1.5">
       <span x-show="statusMsg" x-text="statusMsg" x-transition
             :class="statusOk ? 'text-green-600' : 'text-red-500'"
@@ -825,7 +639,13 @@ function polygonEditor() {
     //   'absolute' — values REPLACE the Poisson default (0 to 30 mm). Orange UI.
     //   'off'      — overlays hidden, no overrides applied; stored values are preserved for A/B toggling.
     gridMode: 'delta',
+    colorCellsByHeight: true,  // v5.14 view pref (localStorage 'editorColorCells'); not part of the EGM
+    _trapCtlCells: [],       // cell indices circled red = controlling cell(s) per trap (v5.11)
+    _trapCtlSig: '',
+    _trapCtlTimer: null,
+    _trapCtlSeq: 0,
     _gridActiveCell: null,   // {col, row, idx, canvasPx:{x,y}} or null
+    _wheelAcc: 0,            // accumulated wheel px for gridWheel (v5.15)
     _gridInputValue: '',     // staging area while input is open
     _gridHoveredCell: null,  // {idx, canvasPx:{x,y,w,h}} or null — drives dot tooltip (v5.04)
     _gridMouseDownAt: null,  // {x, y, col, row, idx, time} — pending click until drag threshold resolved (v5.05)
@@ -902,10 +722,6 @@ function polygonEditor() {
     gpsPreviewNotes: [],
     _gpsPreviewTimer: null,      // debounce timer handle
 
-    // Geo-ref dialog state
-    showGeoRefDialog: false,
-    georefForm: { swLat: null, swLng: null, neLat: null, neLng: null },
-
     selectedContour: -1,   // index into contours[]
     // contour vertex drag state
     draggingContour: false,
@@ -938,6 +754,7 @@ function polygonEditor() {
     },
 
     init() {
+      try { const c = localStorage.getItem('editorColorCells'); if (c === '0') this.colorCellsByHeight = false; } catch (e) {}
       if (this.selectedImage) {
         this.loadImage();
       }
@@ -1403,6 +1220,7 @@ function polygonEditor() {
       // ── Grid cell elevation overlay (v5.00) ──────────────────────────────
       // Draw 20×20 cell boundaries over the print area only when an image is
       // loaded (grid origin = lower-left of print frame, axis-aligned).
+      this._scheduleTrapCtl();
       if (this.imgLoaded) {
         const GRID_COLS = 20;
         const GRID_ROWS = 20;
@@ -1445,6 +1263,10 @@ function polygonEditor() {
           ctx.stroke();
         }
 
+        // ── Cell fill by value (v5.14) — under numbers and rings (see _drawCellColors) ──
+        const _colorOn = this.colorCellsByHeight && this.gridMode !== 'off';
+        if (_colorOn) this._drawCellColors(ctx, tl, cellWpx, cellHpx);
+
         // Numeric value text for set cells (task 720: replaced blue dot)
         // Task 774 (v5.34): color/visibility depends on gridMode.
         //   delta    → indigo text, '+N.N' / '-N.N' label
@@ -1470,8 +1292,30 @@ function polygonEditor() {
             const mmLabel = (this.gridMode === 'absolute')
               ? mmVal.toFixed(1)
               : (mmVal > 0 ? '+' + mmVal.toFixed(1) : mmVal.toFixed(1));
+            if (_colorOn) { ctx.lineJoin = 'round'; ctx.lineWidth = 3 * dpr; ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.strokeText(mmLabel, cp.x, cp.y); }  // v5.14 halo
             ctx.fillText(mmLabel, cp.x, cp.y);
           }
+        }
+
+        // ── Trap-controlling cell ring (v5.11) ───────────────────────────────
+        // Red ring around the cell whose value sets each trap's height
+        // (delta and absolute; none in off; list computed server-side by the generator's own test).
+        if (this.gridMode !== 'off' && this._trapCtlCells.length) {
+          ctx.save();
+          ctx.strokeStyle = '#dc2626';
+          ctx.lineWidth = 2.5 * dpr;
+          ctx.setLineDash([]);
+          for (const idx of this._trapCtlCells) {
+            if (this.gridCellHeights[idx] === undefined || Number(this.gridCellHeights[idx]) === 0) continue;
+            const col = idx % GRID_COLS, row = Math.floor(idx / GRID_COLS);
+            const cp = this.imgToCanvas(tl.x + (col + 0.5) * cellWpx, tl.y + (GRID_ROWS - 1 - row + 0.5) * cellHpx);
+            const edge = this.imgToCanvas(tl.x + (col + 0.5) * cellWpx + cellWpx * 0.42, tl.y + (GRID_ROWS - 1 - row + 0.5) * cellHpx);
+            const rr = Math.abs(edge.x - cp.x);
+            ctx.beginPath();
+            ctx.arc(cp.x, cp.y, rr, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+          ctx.restore();
         }
 
         // Highlight the active cell (if any)
@@ -2447,6 +2291,7 @@ function polygonEditor() {
       const existing = this.gridCellHeights[idx];
       this._gridInputValue = (existing !== undefined) ? String(existing) : '';
       const pos = this._gridCellCanvasPx(col, row);
+      this._wheelAcc = 0;
       this._gridActiveCell = { col, row, idx, canvasPx: pos };
       this._gridHoveredCell = null;  // hide tooltip while input is open (v5.04)
       this.draw();
@@ -2454,6 +2299,32 @@ function polygonEditor() {
         const inp = this.$refs.gridCellInput;
         if (inp) { inp.select(); inp.focus(); }
       });
+    },
+
+    // v5.15 — mouse wheel over the open value box steps the staged number.
+    // Wheel forward (deltaY < 0) = up.  0.1 mm per notch, Shift = 1.0 mm.  No clamp
+    // (commitGridCell still clamps on commit as before).  Only edits the box: no draw
+    // preview, no autosave -- commit stays on Enter/blur.  preventDefault is called
+    // for every wheel event over the box so the page/canvas never scrolls or zooms.
+    gridWheel(e) {
+      e.preventDefault();
+      let d = e.deltaY;
+      if (e.shiftKey && !d) d = e.deltaX;              // macOS turns Shift+wheel into deltaX
+      if (!d) return;
+      const px = d * (e.deltaMode === 1 ? 100 / 3 : e.deltaMode === 2 ? 1000 : 1);   // normalise to px (100 px = 1 notch)
+      if (this._wheelAcc && Math.sign(this._wheelAcc) !== Math.sign(px)) this._wheelAcc = 0;
+      this._wheelAcc += px;
+      const notches = Math.trunc(Math.abs(this._wheelAcc) / 100) * -Math.sign(this._wheelAcc);   // forward = +
+      if (!notches) return;
+      this._wheelAcc -= Math.trunc(this._wheelAcc / 100) * 100;
+      let v = parseFloat(this._gridInputValue);
+      if (isNaN(v)) {                                   // blank box: shared value of the selected cell(s), else 0
+        const t = (this._gridMultiSelect && this._gridMultiSelect.size > 0) ? [...this._gridMultiSelect] : [this._gridActiveCell.idx];
+        const vals = t.map(i => Number(this.gridCellHeights[i]) || 0);
+        v = vals.every(x => x === vals[0]) ? vals[0] : 0;
+      }
+      v = v + notches * (e.shiftKey ? 1.0 : 0.1);
+      this._gridInputValue = String(Math.round(v * 10) / 10);
     },
 
     // Commit the current input value to gridCellHeights.
@@ -2514,6 +2385,93 @@ function polygonEditor() {
       this.draw();
       this.flash('Polygon removed', true);
       this.autoSave();
+    },
+
+    // ── v5.14 cell coloring ──────────────────────────────────────────────────
+    // TERRAIN_STOPS: matplotlib cmap "terrain" sampled at 65 evenly spaced points
+    // (same colormap as gradient_surface_diagnostic.save_height_map); linear interp.
+    TERRAIN_STOPS: ["#333399", "#2e3ea4", "#2848ae", "#2353b9", "#1e5ec4", "#1868ce", "#1373d9", "#0e7ee4", "#0888ee", "#0393f9", "#009cf4", "#00a4dc", "#00acc4", "#00b4ac", "#00bc94", "#00c47d", "#01cc66", "#11cf69", "#21d36d", "#31d670", "#41d973", "#51dc76", "#61df79", "#71e37d", "#81e680", "#91e983", "#a1ec86", "#b1ef89", "#c1f38d", "#d1f690", "#e1f993", "#f1fc96", "#fefe98", "#f6f394", "#eee990", "#e6df8b", "#ded587", "#d6cb83", "#cec07f", "#c6b67a", "#beac76", "#b6a272", "#ae976d", "#a68d69", "#9e8365", "#967960", "#8e6e5c", "#866458", "#815e56", "#896861", "#91726c", "#997c76", "#a18781", "#a9918c", "#b19b96", "#b9a5a1", "#c1b0ac", "#c9bab7", "#d1c4c1", "#d9cecc", "#e1d9d7", "#e9e3e2", "#f1edec", "#f9f7f7", "#ffffff"],
+    terrainColor(t) {
+      const S = this.TERRAIN_STOPS, n = S.length - 1;
+      t = Math.max(0, Math.min(1, t));
+      const f = t * n, i = Math.min(n - 1, Math.floor(f)), u = f - i;
+      const a = S[i], b = S[i + 1], h = (x, o) => parseInt(x.substr(o, 2), 16);
+      const ch = o => Math.round(h(a, o) + (h(b, o) - h(a, o)) * u);
+      return [ch(1), ch(3), ch(5)];
+    },
+    // Colour range over ALL 400 cells with empty cells counted as 0 (v5.14 rev),
+    // so 0 is always inside the range whenever any cell is empty.  null = nothing set.
+    gridRange() {
+      let lo = Infinity, hi = -Infinity, nSet = 0;
+      for (const v of Object.values(this.gridCellHeights)) {
+        const n = Number(v); if (!n) continue;
+        nSet++; if (n < lo) lo = n; if (n > hi) hi = n;
+      }
+      if (nSet === 0) return null;
+      if (nSet < 400) { if (0 < lo) lo = 0; if (0 > hi) hi = 0; }
+      return { min: lo, max: hi };
+    },
+    // single set value => mid colour (avoid divide-by-zero)
+    cellColorRgb(v, range) {
+      const t = range.max === range.min ? 0.5 : (Number(v) - range.min) / (range.max - range.min);
+      return this.terrainColor(t);
+    },
+    terrainLegendGradient() {
+      return 'linear-gradient(to right,' + this.TERRAIN_STOPS.join(',') + ')';
+    },
+    setColorCells() {   // view preference only — never persisted to the EGM
+      try { localStorage.setItem('editorColorCells', this.colorCellsByHeight ? '1' : '0'); } catch (e) {}
+      this.draw();
+    },
+
+    // v5.14 — terrain-colored cell fill, auto-scaled between lowest and highest set
+    // cell, empties counted as 0 (all 400 cells filled).  Skipped in 'off' mode and when nothing is set.
+    _drawCellColors(ctx, tl, cellWpx, cellHpx) {
+      const GRID_COLS = 20, GRID_ROWS = 20;
+      const rng = this.gridRange();
+      if (!rng) return;
+      for (let idx = 0; idx < GRID_COLS * GRID_ROWS; idx++) {   // every cell; empty = 0
+        const mm = Number(this.gridCellHeights[idx]) || 0;
+        const col = idx % GRID_COLS, row = Math.floor(idx / GRID_COLS);
+        const rgb = this.cellColorRgb(mm, rng);
+        const p0 = this.imgToCanvas(tl.x + col * cellWpx, tl.y + (GRID_ROWS - 1 - row) * cellHpx);
+        const p1 = this.imgToCanvas(tl.x + (col + 1) * cellWpx, tl.y + (GRID_ROWS - row) * cellHpx);
+        ctx.fillStyle = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.5)`;
+        ctx.fillRect(Math.min(p0.x, p1.x), Math.min(p0.y, p1.y), Math.abs(p1.x - p0.x), Math.abs(p1.y - p0.y));
+      }
+    },
+
+    // v5.11 — keep the red controlling-cell rings in sync with the live editor
+    // state.  Debounced; skips the network entirely in off mode.
+    _scheduleTrapCtl() {
+      if (this.gridMode === 'off' || !Object.keys(this.gridCellHeights).length) {
+        this._trapCtlCells = []; this._trapCtlSig = '';
+        return;
+      }
+      const traps = this.polygons.filter(p => p.type === 'trap' || p.type === 'green')
+        .map(p => ({ type: p.type, name: p.name, closed: true, points: p.points.map(pt => ({ x: pt.x, y: pt.y })) }));
+      const payload = {
+        gridMode: this.gridMode,
+        gridCellHeights: Object.assign({}, this.gridCellHeights),
+        imageSize: { width: this.imgW, height: this.imgH },
+        greenScale: this.greenScale,
+        polygons: traps,
+      };
+      const sig = JSON.stringify(payload);
+      if (sig === this._trapCtlSig) return;
+      this._trapCtlSig = sig;
+      clearTimeout(this._trapCtlTimer);
+      const seq = ++this._trapCtlSeq;
+      this._trapCtlTimer = setTimeout(async () => {
+        try {
+          const r = await fetch('/api/trap_controlling_cells', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: sig });
+          if (!r.ok || seq !== this._trapCtlSeq) return;
+          const j = await r.json();
+          this._trapCtlCells = (j.traps || []).flatMap(t => t.cells);
+          this.draw();
+        } catch (e) { /* cosmetic overlay */ }
+      }, 250);
     },
 
     async autoSave() {
@@ -3126,35 +3084,6 @@ function polygonEditor() {
       };
       this.onGpsParamChange();
       this.drawGpsMap();
-    },
-
-    openGeoRefDialog() {
-      // Pre-populate form from existing courseGeoRef if present
-      if (this.courseGeoRef) {
-        this.georefForm.swLat = this.courseGeoRef.swCornerLatLng[0];
-        this.georefForm.swLng = this.courseGeoRef.swCornerLatLng[1];
-        this.georefForm.neLat = this.courseGeoRef.neCornerLatLng[0];
-        this.georefForm.neLng = this.courseGeoRef.neCornerLatLng[1];
-      } else {
-        this.georefForm = { swLat: null, swLng: null, neLat: null, neLng: null };
-      }
-      this.showGeoRefDialog = true;
-    },
-
-    saveGeoRef() {
-      const sw = [Number(this.georefForm.swLat), Number(this.georefForm.swLng)];
-      const ne = [Number(this.georefForm.neLat), Number(this.georefForm.neLng)];
-      if (!sw[0] || !sw[1] || !ne[0] || !ne[1]) return;
-      this.courseGeoRef = {
-        imageWidth: this.imgW,
-        imageHeight: this.imgH,
-        swCornerLatLng: sw,
-        neCornerLatLng: ne,
-      };
-      this.showGeoRefDialog = false;
-      this.autoSave();
-      this.drawGpsMap();
-      this.flash('Geo-reference saved', true);
     },
 
     // GPS map canvas: draw course image (dimmed) + GPS point cloud + bbox overlay

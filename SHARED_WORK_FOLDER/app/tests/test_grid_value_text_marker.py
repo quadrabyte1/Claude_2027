@@ -56,13 +56,13 @@ def _grid_loop_body(html: str) -> str:
     """Extract the set-cell rendering block from draw().
 
     Includes up to 300 chars before the for-loop header (to catch ctx properties
-    set just before the loop, like fillStyle/font/textAlign) and 800 chars after.
+    set just before the loop, like fillStyle/font/textAlign) and 1100 chars after (v5.14: halo line added).
     """
     marker = "for (const [idxStr, mm] of Object.entries(this.gridCellHeights))"
     pos = html.find(marker)
     assert pos != -1, f"gridCellHeights rendering loop not found: {marker!r}"
     start = max(0, pos - 300)
-    return html[start: pos + 800]
+    return html[start: pos + 1100]
 
 
 def _draw_body(html: str) -> str:

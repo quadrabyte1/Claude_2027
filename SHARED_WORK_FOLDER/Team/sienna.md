@@ -63,3 +63,8 @@ Sienna follows these rules on every screen she builds:
 | Icons | Lucide | Clean, consistent iconography |
 | Drag & Drop | SortableJS | Block reordering, kanban cards, list items |
 | Fonts | System font stack | Native feel, zero load time |
+
+## Testing Discipline
+- **Run only the related tests by default.** After a change, run the test files that cover the code you touched (and their obvious neighbours). Do **not** run the full `app/tests` suite unless Larry or Thomas explicitly asks — it stalls in the slow Bambu/pipeline tests and burns time and tokens.
+- If you believe a full-suite run is warranted (e.g. a shared helper used across the pipeline changed), say so in your report instead of running it.
+- **UI changes are verified in a real (headless) browser**, with saves intercepted so live EGMs are never touched — source-level checks alone are not enough.

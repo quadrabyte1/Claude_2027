@@ -43,136 +43,55 @@ def app_client(tmp_path, monkeypatch):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# T16: Structure — #gps-backend-body wrapper exists
+# T16–T18 (updated): GPS Backend panel is REMOVED from the editor UI.
+# The JS GPS state/load/save code stays so EGM gpsBackend blocks round-trip,
+# but no markup for the panel should be rendered any more.
 # ──────────────────────────────────────────────────────────────────────────────
 
-class TestGpsBackendBodyStructure:
+GPS_PANEL_MARKERS = [
+    'id="gps-backend-body"',
+    '>GPS Backend<',
+    'Use GPS backend',
+    'x-model="gpsEnabled"',
+    'x-ref="gpsMapCanvas"',
+    'x-model="gpsFile"',
+    'x-model.number="gpsVertExag"',
+    'x-model.number="gpsApproachM"',
+    'x-model.number="gpsGridSize"',
+    'Snap to green',
+    'GPS Backend panel',
+]
 
-    def test_wrapper_div_exists(self, editor_html_source):
-        """T16a: editor.html has a div with id="gps-backend-body"."""
-        assert 'id="gps-backend-body"' in editor_html_source, (
-            "Expected div#gps-backend-body in editor.html — "
-            "add the collapse wrapper around the GPS controls."
-        )
 
-    def test_wrapper_has_x_show_gps_enabled(self, editor_html_source):
-        """T16b: the wrapper div uses x-show="gpsEnabled" for visibility control."""
-        # Must have id + x-show on the same element (within a reasonable window)
-        pattern = r'id="gps-backend-body"[^>]*x-show="gpsEnabled"|x-show="gpsEnabled"[^>]*id="gps-backend-body"'
-        assert re.search(pattern, editor_html_source), (
-            "div#gps-backend-body must declare x-show=\"gpsEnabled\"."
-        )
+class TestGpsBackendPanelRemoved:
 
-    def test_checkbox_not_inside_body_wrapper(self, editor_html_source):
-        """T16c: the 'Use GPS backend' checkbox appears BEFORE #gps-backend-body.
-
-        This verifies the checkbox stays visible when the panel is collapsed.
-        We check that the checkbox input line comes before the body-div opening.
-        """
-        checkbox_pos = editor_html_source.find('x-model="gpsEnabled"')
-        body_pos = editor_html_source.find('id="gps-backend-body"')
-        assert checkbox_pos != -1, "Could not find gpsEnabled checkbox in editor.html"
-        assert body_pos != -1, "Could not find #gps-backend-body in editor.html"
-        assert checkbox_pos < body_pos, (
-            "The gpsEnabled checkbox must appear BEFORE (outside) the "
-            "#gps-backend-body wrapper — checkbox should always be visible."
-        )
-
-    def test_gps_controls_inside_body_wrapper(self, editor_html_source):
-        """T16d: GPS controls (file picker, sliders, map canvas, preview) are
-        inside #gps-backend-body (i.e. they appear after it in the source)."""
-        body_pos = editor_html_source.find('id="gps-backend-body"')
-        assert body_pos != -1, "div#gps-backend-body not found"
-
-        controls = [
-            'x-ref="gpsMapCanvas"',         # map canvas
-            'x-model="gpsFile"',            # GPS file picker
-            'x-model.number="gpsVertExag"', # vert exag slider
-            'x-model.number="gpsApproachM"',# approach input
-            'x-model.number="gpsGridSize"', # gridSize dropdown
-            'gpsPreviewDataUrl',            # live preview img
-        ]
-        for ctrl in controls:
-            pos = editor_html_source.find(ctrl)
-            assert pos != -1, f"Control not found in editor.html: {ctrl}"
-            assert pos > body_pos, (
-                f"Control '{ctrl}' must appear AFTER div#gps-backend-body "
-                f"(i.e. inside the wrapper)."
+    def test_source_has_no_gps_panel_markup(self, editor_html_source):
+        """T16a: editor.html renders no GPS Backend panel markup."""
+        for marker in GPS_PANEL_MARKERS:
+            assert marker not in editor_html_source, (
+                f"GPS panel marker still present in editor.html: {marker}"
             )
 
-    def test_heading_outside_body_wrapper(self, editor_html_source):
-        """T16e: The 'GPS Backend' heading h3 appears BEFORE #gps-backend-body.
-
-        The heading should remain visible even when the panel is collapsed.
-        """
-        heading_pos = editor_html_source.find('>GPS Backend<')
-        body_pos = editor_html_source.find('id="gps-backend-body"')
-        assert heading_pos != -1, "GPS Backend heading not found in editor.html"
-        assert body_pos != -1, "div#gps-backend-body not found"
-        assert heading_pos < body_pos, (
-            "The 'GPS Backend' heading must appear BEFORE #gps-backend-body "
-            "(heading stays visible when the panel is collapsed)."
-        )
+    def test_js_gps_state_retained(self, editor_html_source):
+        """T16b: JS GPS state is kept so EGM gpsBackend blocks still round-trip."""
+        assert "gpsEnabled: false," in editor_html_source
+        assert "gpsBackend = {" in editor_html_source or "data.gpsBackend = {" in editor_html_source
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# T17: JS code-shape — x-transition directives present on the wrapper
+# T18: Served page — /editor route has no GPS panel
 # ──────────────────────────────────────────────────────────────────────────────
 
-class TestGpsBackendBodyTransition:
+class TestServedEditorPageNoGps:
 
-    def test_enter_transition_declared(self, editor_html_source):
-        """T17a: x-transition:enter is declared on the body wrapper."""
-        # Extract the div opening tag for #gps-backend-body
-        match = re.search(
-            r'id="gps-backend-body"(.*?)>', editor_html_source, re.DOTALL
-        )
-        assert match, "div#gps-backend-body not found"
-        tag_content = match.group(0)
-        assert "x-transition:enter" in tag_content, (
-            "div#gps-backend-body should have x-transition:enter for a 150ms "
-            "fade-in animation."
-        )
-
-    def test_leave_transition_declared(self, editor_html_source):
-        """T17b: x-transition:leave is declared on the body wrapper."""
-        match = re.search(
-            r'id="gps-backend-body"(.*?)>', editor_html_source, re.DOTALL
-        )
-        assert match, "div#gps-backend-body not found"
-        tag_content = match.group(0)
-        assert "x-transition:leave" in tag_content, (
-            "div#gps-backend-body should have x-transition:leave for a 150ms "
-            "fade-out animation."
-        )
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# T18: Served page — /editor route includes the wrapper div
-# ──────────────────────────────────────────────────────────────────────────────
-
-class TestServedEditorPage:
-
-    def test_served_page_has_gps_backend_body(self, app_client):
-        """T18: GET /editor returns HTML containing div#gps-backend-body."""
+    def test_served_page_has_no_gps_panel(self, app_client):
+        """T18: GET /editor returns 200 and no GPS Backend panel markup."""
         resp = app_client.get("/editor")
         assert resp.status_code == 200
         html = resp.data.decode("utf-8", errors="replace")
-        assert 'id="gps-backend-body"' in html, (
-            "Served /editor page must contain div#gps-backend-body."
-        )
-
-    def test_served_page_gps_checkbox_before_body(self, app_client):
-        """T18b: In the served HTML, the gpsEnabled checkbox precedes the body wrapper."""
-        resp = app_client.get("/editor")
-        assert resp.status_code == 200
-        html = resp.data.decode("utf-8", errors="replace")
-        checkbox_pos = html.find('x-model="gpsEnabled"')
-        body_pos = html.find('id="gps-backend-body"')
-        assert checkbox_pos != -1 and body_pos != -1
-        assert checkbox_pos < body_pos, (
-            "Checkbox must precede #gps-backend-body in served HTML."
-        )
+        assert "GPS Backend" not in html
+        assert 'id="gps-backend-body"' not in html
+        assert 'x-model="gpsEnabled"' not in html
 
 
 # ──────────────────────────────────────────────────────────────────────────────

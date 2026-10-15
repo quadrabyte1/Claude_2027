@@ -8,7 +8,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/scripts/.venv/bin/python3</string>
+        <string>/Users/fourierflight/.local/lib/journal-watcher/venv/bin/python3</string>
         <string>/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/scripts/sync_journal.py</string>
     </array>
 

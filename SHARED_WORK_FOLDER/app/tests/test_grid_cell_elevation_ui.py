@@ -478,7 +478,7 @@ class TestGridCommitCallsAutoSave:
         # Find the commit function and verify it calls autoSave within 600 chars
         commit_start = html.find("    commitGridCell()")
         assert commit_start != -1, "commitGridCell() not found"
-        commit_body = html[commit_start:commit_start + 600]
+        commit_body = html[commit_start:commit_start + 1000]
         assert "autoSave" in commit_body, (
             "commitGridCell() does not call autoSave()"
         )

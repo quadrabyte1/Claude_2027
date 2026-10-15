@@ -17,7 +17,7 @@
     });
     // htmx swaps only #main-content, so update the browser tab title from
     // the swapped page's <title> so the tab reflects the current page.
-    document.body.addEventListener('htmx:afterSwap', function(evt) {
+    document.addEventListener('htmx:afterSwap', function(evt) {
       try {
         const html = evt.detail?.xhr?.responseText;
         if (!html) return;

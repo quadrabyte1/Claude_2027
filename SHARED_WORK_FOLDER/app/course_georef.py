@@ -55,8 +55,8 @@ def validate_georef(georef: dict) -> None:
     if georef is None:
         raise ValueError(
             "courseGeoRef is not set for this course. "
-            "Open the Geo-ref dialog (⚙) and enter the SW and NE corner "
-            "lat/lng of the course image."
+            "The GPS backend needs the SW and NE corner lat/lng of the course image "
+            "in the EGM's courseGeoRef block (the editor no longer has a dialog for this)."
         )
     missing = [k for k in _REQUIRED_KEYS if k not in georef]
     if missing:

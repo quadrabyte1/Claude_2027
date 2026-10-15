@@ -1,3 +1,12 @@
+# v0.25 — 2026-10-15 Topo — Bunker rake ridges follow the long axis (reverses task #610).
+#         Thomas: "Bunker rake lines should run parallel to the long axis of a bunker."
+#         SAND_RAKE_ALIGN_TO_MAJOR_AXIS flipped to True (was False since #610, when
+#           Thomas preferred fixed-Y over the #606 PCA version).
+#         Axis now from new _polygon_long_axis(): principal axis of the filled polygon's
+#           second moments of area (holes subtracted), NOT SVD on ring vertices, which
+#           was skewed by dense vertices along curved edges.  Near-isotropic shapes
+#           (Imax/Imin < SAND_RAKE_ISOTROPIC_RATIO) fall back to fixed Y.
+#         Only Z of top vertices changes; watertight guard/closure passes untouched.
 # v0.24 — 2026-10-13 Sienna — Green/fringe interface normalisation (task 780).
 #         New constant: FRINGE_BLEND_CELLS = 3 (tune the blend band width).
 #         New function: _normalize_green_fringe_interface — cosine-weighted blend
@@ -66,7 +75,7 @@
 #         Removed: _scatter_sand_chunks() helper function.
 #         Removed: chunk-scatter pass + floor guard from apply_sand_texture().
 #         Kept: TRAP_SURFACE_CURVED flag (False default, True path still reachable).
-#         Kept: rake lines (cosine wave, fixed Y-axis, SAND_RAKE_ALIGN_TO_MAJOR_AXIS=False).
+#         Kept: rake lines (cosine wave; see v0.25 for the current axis rule).
 #         Kept: base_z_map param in apply_sand_texture (API stable for curved path).
 #         APP_VERSION bumped to v5.03.
 # v0.18 — 2026-10-04 Topo — 20×20 grid-cell TPS height field (task 704).
@@ -768,65 +777,12 @@ def _chaikin_smooth_closed(polyline: np.ndarray, iterations: int) -> np.ndarray:
     return pts
 
 
-def load_egm(egm_path: str) -> tuple[dict, str, np.ndarray]:
-    """
-    Load EGM file.
+def _prepare_egm_geometry(data: dict, green_poly: dict) -> np.ndarray:
+    """Green scale + green boundary smoothing + trap/water polygon smoothing.
 
-    Returns
-    -------
-    (egm_data, image_path, green_boundary_px)
-        image_path: absolute path to the source image
-        green_boundary_px: Nx2 float array in pixel coords
-    """
-    with open(egm_path) as f:
-        data = json.load(f)
-
-    image_filename = data["image"]
-    course = data.get("course", "")
-    # imageCourse records which course folder the image file actually lives in.
-    # This may differ from ``course`` when the user selected an image from a
-    # different course's folder when creating the project.
-    image_course = data.get("imageCourse", "") or course
-
-    # Build search list: imageCourse first, then all other course folders,
-    # then legacy locations.
-    image_path = None
-    search_dirs = []
-    if image_course:
-        search_dirs.append(os.path.abspath(course_paths(image_course)["images"]))
-    # Also try the project's own course folder (in case imageCourse is stale)
-    if course and course != image_course:
-        search_dirs.append(os.path.abspath(course_paths(course)["images"]))
-    # Fallback: scan all other course Images/ dirs to handle cross-course references
-    if os.path.isdir(EGM_BASE):
-        for entry in sorted(os.listdir(EGM_BASE)):
-            if entry in (image_course, course):
-                continue  # already added above
-            candidate_dir = os.path.abspath(os.path.join(EGM_BASE, entry, "Images"))
-            if os.path.isdir(candidate_dir):
-                search_dirs.append(candidate_dir)
-    search_dirs.extend([TEAM_INBOX, OWNER_INBOX])
-
-    for folder in search_dirs:
-        candidate = os.path.join(folder, image_filename)
-        if os.path.exists(candidate):
-            image_path = os.path.abspath(candidate)
-            break
-    if image_path is None:
-        raise FileNotFoundError(
-            f"Image not found: {image_filename!r} — searched: "
-            + ", ".join(search_dirs)
-        )
-
-    # Extract green polygon (first polygon of type 'green')
-    green_poly = None
-    for poly in data["polygons"]:
-        if poly.get("type") == "green":
-            green_poly = poly
-            break
-    if green_poly is None:
-        raise ValueError("No green polygon found in EGM")
-
+    Mutates ``data`` in place (as load_egm always did) and returns the smoothed
+    green boundary in px.  Shared by load_egm and the editor trap-controlling-cell
+    endpoint so both see exactly the same trap polygons."""
     # Green scale: XY-only multiplier applied to the green polygon around its own
     # centroid, in pixel space. Fringe/traps/water/boulders are unaffected because
     # only the green polygon's control points are transformed. Default 1.0 = no-op.
@@ -955,6 +911,70 @@ def load_egm(egm_path: str) -> tuple[dict, str, np.ndarray]:
         print(f"  [{_tag}] {_n_raw} → {_n_spl} → {_n_chk} → {_n_final} pts "
               f"(s={_smooth_px} px, resample={_resample_px} px, "
               f"chaikin={_chaikin_iters}, simplify_tol=0.5 px)")
+
+    return boundary_px
+
+
+def load_egm(egm_path: str) -> tuple[dict, str, np.ndarray]:
+    """
+    Load EGM file.
+
+    Returns
+    -------
+    (egm_data, image_path, green_boundary_px)
+        image_path: absolute path to the source image
+        green_boundary_px: Nx2 float array in pixel coords
+    """
+    with open(egm_path) as f:
+        data = json.load(f)
+
+    image_filename = data["image"]
+    course = data.get("course", "")
+    # imageCourse records which course folder the image file actually lives in.
+    # This may differ from ``course`` when the user selected an image from a
+    # different course's folder when creating the project.
+    image_course = data.get("imageCourse", "") or course
+
+    # Build search list: imageCourse first, then all other course folders,
+    # then legacy locations.
+    image_path = None
+    search_dirs = []
+    if image_course:
+        search_dirs.append(os.path.abspath(course_paths(image_course)["images"]))
+    # Also try the project's own course folder (in case imageCourse is stale)
+    if course and course != image_course:
+        search_dirs.append(os.path.abspath(course_paths(course)["images"]))
+    # Fallback: scan all other course Images/ dirs to handle cross-course references
+    if os.path.isdir(EGM_BASE):
+        for entry in sorted(os.listdir(EGM_BASE)):
+            if entry in (image_course, course):
+                continue  # already added above
+            candidate_dir = os.path.abspath(os.path.join(EGM_BASE, entry, "Images"))
+            if os.path.isdir(candidate_dir):
+                search_dirs.append(candidate_dir)
+    search_dirs.extend([TEAM_INBOX, OWNER_INBOX])
+
+    for folder in search_dirs:
+        candidate = os.path.join(folder, image_filename)
+        if os.path.exists(candidate):
+            image_path = os.path.abspath(candidate)
+            break
+    if image_path is None:
+        raise FileNotFoundError(
+            f"Image not found: {image_filename!r} — searched: "
+            + ", ".join(search_dirs)
+        )
+
+    # Extract green polygon (first polygon of type 'green')
+    green_poly = None
+    for poly in data["polygons"]:
+        if poly.get("type") == "green":
+            green_poly = poly
+            break
+    if green_poly is None:
+        raise ValueError("No green polygon found in EGM")
+
+    boundary_px = _prepare_egm_geometry(data, green_poly)
 
     return data, image_path, boundary_px
 
@@ -5841,10 +5861,14 @@ TRAP_SURFACE_CURVED: bool = False  # False = flat min (default v0.19/task 708); 
 # (SAND_CHUNK_FLOOR_THICKNESS_MM), and the curved-surface path are all stripped
 # from the active trap pipeline.  Only rake lines + flat slab remain.
 # SAND_CHUNK_* constants removed; _scatter_sand_chunks() removed.
-# Task #610 (Topo, 2026-09-26): rake direction reverted to fixed Y-axis.  When
-# False (default), rake ridges run parallel to Y for every trap regardless of
-# shape.  Set True to re-enable PCA major-axis orientation from task #606.
-SAND_RAKE_ALIGN_TO_MAJOR_AXIS:  bool  = False  # False = fixed Y-axis; True = PCA major axis
+# Task #610 (Topo, 2026-09-26): rake direction was reverted to fixed Y-axis.
+# Task #8xx (Topo, 2026-10-15): REVERSED — Thomas: "Bunker rake lines should run
+# parallel to the long axis of a bunker."  Default is now True.  The long axis is
+# no longer the vertex-SVD PCA of task #606 (biased by uneven vertex spacing) but
+# the principal axis of the filled polygon's second moments of area
+# (see _polygon_long_axis).  Set False to return to fixed Y-parallel ridges.
+SAND_RAKE_ALIGN_TO_MAJOR_AXIS:  bool  = True   # True = ridges along area-moment long axis (default); False = fixed Y-axis
+SAND_RAKE_ISOTROPIC_RATIO:      float = 1.05   # if Imax/Imin below this the shape has no meaningful long axis -> fixed Y
 
 # ---------------------------------------------------------------------------
 # Water hazard ripple texture — sinusoidal "wind chop" displacement
@@ -6120,6 +6144,125 @@ def _apply_lift_and_cap(
     }
 
 
+def _normalize_grid_mode(mode) -> str:
+    """Return 'delta' | 'absolute' | 'off' (unknown/missing -> 'delta')."""
+    m = str(mode or "delta").lower()
+    return m if m in ("delta", "absolute", "off") else "delta"
+
+
+def _resolve_trap_height_from_grid(
+    trap_poly_mm, grid_cell_heights, grid_mode, default_height,
+    cell_side, half, grid_size=20,
+):
+    """Resolve a trap's flat slab height from user-set grid cells, honouring gridMode.
+
+    off      -> None (overrides disabled; default fringe-based height).
+    delta    -> default_height + the HIGHEST in-trap cell delta (v5.12; was MEAN).
+    absolute -> the HIGHEST in-trap cell value (clamped 0..30, floored at
+                BASE_THICKNESS_MM) is the trap Z.  Max, not mean: other set
+                cells that merely shape terrain often fall inside a trap and
+                must not dilute an explicit trap height (Delaveaga 5f [1484]).
+    Returns None when no override applies.
+    """
+    mode = _normalize_grid_mode(grid_mode)
+    if mode == "off" or not grid_cell_heights:
+        return None
+    if mode == "delta":
+        delta = _trap_grid_override(trap_poly_mm, grid_cell_heights, cell_side, half, grid_size)
+        if delta is None:
+            return None
+        return max(BASE_THICKNESS_MM, default_height + delta)
+    _cells = _trap_inside_cells(trap_poly_mm, grid_cell_heights, cell_side, half, grid_size)
+    if not _cells:
+        return None
+    return max(BASE_THICKNESS_MM, min(30.0, max(v for _, v in _cells)))
+
+
+def _trap_inside_cells(trap_poly_mm, grid_cell_heights, cell_side, half, grid_size=20):
+    """[(cell_index, value)] for set (non-zero) cells whose WHOLE square lies within
+    the trap footprint (Shapely ``covers``; v5.13 -- was centre-in-polygon).
+    Half-in/half-out cells are ignored.  Single source of the 'inside the trap'
+    test used by absolute AND delta trap heights and the editor's red ring."""
+    from shapely.geometry import box as _box
+    out = []
+    for k, mm in (grid_cell_heights or {}).items():
+        try:
+            ci = int(k); v = float(mm)
+        except (TypeError, ValueError):
+            continue
+        if v == 0 or ci < 0 or ci >= grid_size * grid_size:   # 0 = empty cell (editor v5.10)
+            continue
+        r, c = divmod(ci, grid_size)
+        x0 = -half + c * cell_side; y0 = -half + r * cell_side
+        if trap_poly_mm.covers(_box(x0, y0, x0 + cell_side, y0 + cell_side)):
+            out.append((ci, v))
+    return out
+
+
+def controlling_cells_for_trap(trap_poly_mm, grid_cell_heights, cell_side, half, grid_size=20):
+    """Absolute mode: indices of the in-trap cell(s) holding the max value (ties
+    all returned).  Zero/empty cells are not set cells.  [] if none."""
+    cells = _trap_inside_cells(trap_poly_mm, grid_cell_heights, cell_side, half, grid_size)
+    if not cells:
+        return []
+    m = max(v for _, v in cells)
+    return sorted(i for i, v in cells if v == m)
+
+
+def _build_trap_footprint(trap_poly, scale, centroid_px, pipe_circle, label="Trap"):
+    """Trap footprint (world mm) exactly as export_trap_stls builds it before
+    the tolerance inset: dense px -> mm, pipe subtract, fringe-rect clip, validity fix.
+    Returns None if nothing remains."""
+    pts_mm = _px_to_mm_2d(_poly_to_dense_px(trap_poly), scale, centroid_px)
+    sp = ShapelyPolygon(pts_mm)
+    if pipe_circle is not None:
+        sp = _subtract_pipe_from_polygon(sp, pipe_circle, label)
+        if sp is None:
+            return None
+    sp = _clip_polygon_to_fringe_rect(sp, label)
+    if sp is None:
+        return None
+    if not sp.is_valid:
+        sp = sp.buffer(0)
+    return sp
+
+
+def compute_trap_controlling_cells(egm_data: dict) -> dict:
+    """For the editor: {'mode', 'traps': [{'trap': n, 'cells': [idx,...]}]}.
+
+    Mirrors export_trap_stls + _resolve_trap_height_from_grid.  'off' returns none;
+    delta and absolute both have a single controlling (highest) cell per trap."""
+    import copy
+    mode = _normalize_grid_mode(egm_data.get("gridMode"))
+    out = {"mode": mode, "traps": []}
+    gch = egm_data.get("gridCellHeights") or {}
+    if mode == "off" or not gch:
+        return out
+    data = copy.deepcopy(egm_data)
+    green_poly = next((p for p in data.get("polygons", []) if p.get("type") == "green"), None)
+    if green_poly is None:
+        return out
+    green_boundary_px = _prepare_egm_geometry(data, green_poly)
+    scale, centroid_px = _compute_px_to_mm(green_boundary_px, data)
+    half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0
+    side = (2.0 * half) / 20
+    pipe_circle = None
+    if ENABLE_MOUNT_BORE:
+        pipe_circle = _build_pipe_circle(-half + MOUNT_BORE_INSET_MM, half - MOUNT_BORE_INSET_MM)
+    traps = [p for p in data.get("polygons", []) if p.get("type") == "trap"]
+    for i, tp in enumerate(traps, start=1):
+        try:
+            fp = _build_trap_footprint(tp, scale, centroid_px, pipe_circle, f"Trap {i}")
+        except Exception:
+            fp = None
+        if fp is None:
+            continue
+        cells = controlling_cells_for_trap(fp, gch, side, half)
+        if cells:
+            out["traps"].append({"trap": i, "cells": cells})
+    return out
+
+
 def _trap_grid_override(
     trap_poly_mm: "ShapelyPolygon",
     grid_cell_heights: dict,
@@ -6127,7 +6270,7 @@ def _trap_grid_override(
     half: float,
     grid_size: int = 20,
 ) -> "float | None":
-    """Return mean of user-set grid-cell values whose centre is inside the trap
+    """Return the HIGHEST (v5.12; was mean) user-set grid-cell value whose centre is inside the trap
     polygon, or ``None`` if no user-set cells fall inside the polygon.
 
     Only cells explicitly listed in ``grid_cell_heights`` (the user-set sparse
@@ -6170,25 +6313,10 @@ def _trap_grid_override(
         mechanism), ``gridCellHeights`` values are **signed delta offsets** (mm)
         relative to the fringe-based default trap height — not absolute Z values.
     """
-    if not grid_cell_heights:
+    cells = _trap_inside_cells(trap_poly_mm, grid_cell_heights, cell_side, half, grid_size)
+    if not cells:
         return None
-    from shapely.geometry import Point as _ShapelyPoint
-    hits: list[float] = []
-    for cell_idx_str, mm in grid_cell_heights.items():
-        try:
-            cell_idx = int(cell_idx_str)
-            val = float(mm)
-        except (TypeError, ValueError):
-            continue
-        row = cell_idx // grid_size
-        col = cell_idx % grid_size
-        cx = -half + (col + 0.5) * cell_side
-        cy = -half + (row + 0.5) * cell_side
-        if trap_poly_mm.contains(_ShapelyPoint(cx, cy)):
-            hits.append(val)
-    if hits:
-        return float(np.mean(hits))
-    return None
+    return float(max(v for _, v in cells))   # v5.12: highest delta controls (was mean)
 
 
 def _compute_trap_height_from_fringe(
@@ -6543,32 +6671,14 @@ def export_trap_stls(
             # (task 705) are consumed as-is; falls back to Catmull-Rom for any
             # legacy code path that skipped smoothing (defensive — should not
             # happen in the run_pipeline flow).
-            pts_px = _poly_to_dense_px(trap_poly)
-
-            # Convert pixel coords → mm, Y-flipped
-            pts_mm = _px_to_mm_2d(pts_px, scale, centroid_px)
-
-            shapely_trap = ShapelyPolygon(pts_mm)
-
-            # #347: subtract the mount-pipe footprint BEFORE the fringe-rect
-            # clip so the rectangle clip sees the post-subtraction shape and
-            # the trap mesh doesn't overlap the pipe column.
-            if pipe_circle is not None:
-                shapely_trap = _subtract_pipe_from_polygon(
-                    shapely_trap, pipe_circle, f"Trap {i}"
-                )
-                if shapely_trap is None:
-                    continue
-
-            # Clip to fringe rectangle so the trap never extends past the
-            # printable frame edges (Thomas's rule, see #343).
-            shapely_trap = _clip_polygon_to_fringe_rect(shapely_trap, f"Trap {i}")
+            shapely_trap = _build_trap_footprint(
+                trap_poly, scale, centroid_px, pipe_circle, f"Trap {i}"
+            )
             if shapely_trap is None:
                 continue
 
-            # Apply tolerance inset using Shapely
-            if not shapely_trap.is_valid:
-                shapely_trap = shapely_trap.buffer(0)
+            # Apply tolerance inset using Shapely (validity already fixed in
+            # _build_trap_footprint)
             shapely_inset = shapely_trap.buffer(-PRINT_TOLERANCE_MM)
 
             if shapely_inset.is_empty:
@@ -6633,18 +6743,14 @@ def export_trap_stls(
                 _gch = egm_data.get("gridCellHeights") or {}
                 _grid_half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0
                 _grid_cell_side = (2.0 * _grid_half) / 20
-                _grid_override_delta = _trap_grid_override(
-                    shapely_trap, _gch, _grid_cell_side, _grid_half
+                _trap_grid_mode = _normalize_grid_mode(egm_data.get("gridMode"))
+                _new_height = _resolve_trap_height_from_grid(
+                    shapely_trap, _gch, _trap_grid_mode, trap_height,
+                    _grid_cell_side, _grid_half,
                 )
-                if _grid_override_delta is not None:
-                    _new_height = trap_height + _grid_override_delta
-                    # Floor at BASE_THICKNESS_MM so a strong negative delta can't push
-                    # the trap below the base plate (unprintable geometry).
-                    _new_height = max(BASE_THICKNESS_MM, _new_height)
-                    print(f"  Trap {i}: grid-cell delta override active — "
-                          f"height {trap_height:.2f} mm + mean delta "
-                          f"{_grid_override_delta:+.2f} mm → {_new_height:.2f} mm "
-                          f"(mean of user-set delta cells inside trap polygon)")
+                if _new_height is not None:
+                    print(f"  Trap {i}: grid-cell override active (mode={_trap_grid_mode}) — "
+                          f"height {trap_height:.2f} mm -> {_new_height:.2f} mm")
                     trap_height = _new_height
                     _trap_base_z_map = None  # override is flat scalar; discard curved map
 
@@ -7913,6 +8019,45 @@ def _earcut_simple_polygon(pts_xy: "np.ndarray", vert_ids: "list[int]") -> "list
     return tris
 
 
+def _polygon_long_axis(poly) -> "tuple[np.ndarray, float]":
+    """Long axis of a shapely polygon from its area second moments (inertia tensor).
+
+    Uses the exact polygon moment formulas (Green's theorem) on the exterior and
+    interiors, so the result depends only on the filled shape, never on vertex
+    spacing.  Returns (unit vector along the long axis, Imax/Imin ratio).
+    The long axis is the eigenvector of the covariance matrix with the SMALLEST
+    inertia about it, i.e. the largest spread of area.
+    """
+    import numpy as np
+    def _ring_moments(coords, sign):
+        c = np.asarray(coords, dtype=float)
+        x, y = c[:, 0], c[:, 1]
+        x1, y1 = np.roll(x, -1), np.roll(y, -1)
+        cr = x * y1 - x1 * y
+        A  = cr.sum() / 2.0
+        cx = ((x + x1) * cr).sum() / 6.0
+        cy = ((y + y1) * cr).sum() / 6.0
+        ixx = ((x * x + x * x1 + x1 * x1) * cr).sum() / 12.0   # integral x^2 dA
+        iyy = ((y * y + y * y1 + y1 * y1) * cr).sum() / 12.0   # integral y^2 dA
+        ixy = ((x * y1 + 2 * x * y + 2 * x1 * y1 + x1 * y) * cr).sum() / 24.0
+        sg = sign * (1.0 if A >= 0 else -1.0)   # orientation-independent
+        return sg * A, sg * cx, sg * cy, sg * ixx, sg * iyy, sg * ixy
+    rings = [(poly.exterior.coords, 1.0)] + [(r.coords, -1.0) for r in poly.interiors]
+    A = cx = cy = ixx = iyy = ixy = 0.0
+    for coords, sign in rings:
+        a, mx, my, xx, yy, xy = _ring_moments(coords, sign)
+        A += a; cx += mx; cy += my; ixx += xx; iyy += yy; ixy += xy
+    if abs(A) < 1e-12:
+        return np.array([0.0, 1.0]), 1.0
+    mx, my = cx / A, cy / A
+    cov = np.array([[ixx / A - mx * mx, ixy / A - mx * my],
+                    [ixy / A - mx * my, iyy / A - my * my]])
+    w, v = np.linalg.eigh(cov)            # ascending
+    long_ax = v[:, 1]
+    ratio = float(w[1] / max(w[0], 1e-12))
+    return long_ax / np.linalg.norm(long_ax), ratio
+
+
 def apply_sand_texture(
     mesh: "trimesh.Trimesh",
     amplitude: float = 1.0,
@@ -7946,7 +8091,9 @@ def apply_sand_texture(
 
     Task #610 changes
     -----------------
-    * **Rake direction reverted to fixed Y-axis** (SAND_RAKE_ALIGN_TO_MAJOR_AXIS
+    * **v0.25 (2026-10-15): reversed again** — SAND_RAKE_ALIGN_TO_MAJOR_AXIS is
+      True by default; axis = area-moment long axis (_polygon_long_axis).
+    * (historical) Rake direction was reverted to fixed Y-axis (flag
       = False).  Ridges run parallel to Y for every trap regardless of shape.
       The PCA path is preserved behind the flag for future re-enablement.
 
@@ -8108,23 +8255,23 @@ def apply_sand_texture(
     #   minor_axis = (1, 0)  — X direction (cosine wave varies with X)
     #   _ring_c    = origin  (centroid offset not needed for global X key)
     #
-    # PCA path (SAND_RAKE_ALIGN_TO_MAJOR_AXIS = True, task #606 behaviour):
-    #   SVD on centered outer-ring vertices; major_axis = first right singular
-    #   vector; minor_axis perpendicular.  Ridges run along major axis.
+    # Long-axis path (SAND_RAKE_ALIGN_TO_MAJOR_AXIS = True, DEFAULT since v0.25):
+    #   _polygon_long_axis() = principal axis of area second moments (not vertex
+    #   SVD).  Ridges run along it; cosine wave varies across the short axis.
     # ------------------------------------------------------------------
     _ring_pts = ring_xy[:-1] if len(ring_xy) > 1 else ring_xy  # drop closing dup
     _ring_c   = _ring_pts.mean(axis=0)
 
-    if SAND_RAKE_ALIGN_TO_MAJOR_AXIS:
-        # PCA path — preserved from task #606 for future use.
-        _, _S_vals, _Vt = np.linalg.svd(_ring_pts - _ring_c, full_matrices=False)
-        major_axis = _Vt[0]  # unit vector along trap long axis
-        minor_axis = _Vt[1]  # unit vector perpendicular (drives cosine wave)
-        # cosine wave s = (xy - centroid) · minor_axis
-        _proj_offset = _ring_c   # subtract centroid before projecting
+    _long_ax, _inertia_ratio = (_polygon_long_axis(shapely_poly)
+                                if SAND_RAKE_ALIGN_TO_MAJOR_AXIS else (None, 1.0))
+    if SAND_RAKE_ALIGN_TO_MAJOR_AXIS and _inertia_ratio >= SAND_RAKE_ISOTROPIC_RATIO:
+        # Area-moment long axis (v0.25): independent of vertex spacing.
+        major_axis = _long_ax                                   # ridges run along this
+        minor_axis = np.array([-major_axis[1], major_axis[0]])  # cosine varies across
+        _proj_offset = _ring_c
         _rake_angle_deg = float(np.degrees(np.arctan2(major_axis[1], major_axis[0])) % 180.0)
     else:
-        # Fixed-Y path (task #610 default): ridges parallel to Y, wave on X.
+        # Fixed-Y path (flag False, or near-isotropic shape with no long axis): ridges parallel to Y, wave on X.
         major_axis = np.array([0.0, 1.0])  # ridge direction = Y
         minor_axis = np.array([1.0, 0.0])  # wave direction  = X
         # cosine wave s = xy[:, 0]  (global X, no centroid subtraction needed)

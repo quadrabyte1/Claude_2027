@@ -10,7 +10,7 @@ Tests
 -----
 TG1  No override cells → default fringe-min rule applies.
 TG2  Single override cell inside trap → trap_Z = that cell's value (7 mm).
-TG3  Multiple override cells inside trap → trap_Z = mean (6+8)/2 = 7 mm.
+TG3  Multiple override cells inside trap → highest wins (6,8 → 8). [changed from mean to max, v5.12]
 TG4  Set cells OUTSIDE the trap polygon are ignored for that trap's override.
 TG5  Only SET cells count — unset cells (Poisson defaults) never trigger override.
 TG6  Multi-trap: two traps, each with its own override, each uses its own mean.
@@ -208,7 +208,7 @@ class TestSingleOverrideCell:
         # Build trap centred on cell (10, 10).
         row, col = 10, 10
         cx, cy = _cell_center_mm(row, col, half, cell_side)
-        trap_poly = _shapely_circle_mm(cx, cy, cell_side * 0.4)
+        trap_poly = _shapely_circle_mm(cx, cy, cell_side * 0.75)
         # Verify cell centre is inside
         from shapely.geometry import Point as _P
         assert trap_poly.contains(_P(cx, cy)), "Setup error: cell (10,10) should be inside the trap"
@@ -222,13 +222,13 @@ class TestSingleOverrideCell:
 
 
 # ===========================================================================
-# TG3  Multiple override cells → mean
+# TG3  Multiple override cells → max
 # ===========================================================================
 
 class TestMultipleOverrideCells:
-    """TG3: Two set cells inside trap → trap_Z = mean = (6+8)/2 = 7.0."""
+    """TG3: Two set cells inside trap → highest (8.0) controls (was mean until v5.12)."""
 
-    def test_two_inside_cells_returns_mean(self):
+    def test_two_inside_cells_returns_max(self):
         """TG3: Two cells with values 6 and 8 inside same trap → mean = 7.0."""
         gsd = _load_gsd()
         half, cell_side, GRID_SIZE = _get_grid_geometry(gsd)
@@ -239,7 +239,7 @@ class TestMultipleOverrideCells:
         # Centre the trap between the two cells.
         tc_x = (cx0 + cx1) / 2.0
         tc_y = (cy0 + cy1) / 2.0
-        trap_poly = _shapely_circle_mm(tc_x, tc_y, cell_side * 0.75)
+        trap_poly = _shapely_circle_mm(tc_x, tc_y, cell_side * 1.3)
         from shapely.geometry import Point as _P
         assert trap_poly.contains(_P(cx0, cy0)), "Setup error: cell (10,10) should be inside trap"
         assert trap_poly.contains(_P(cx1, cy1)), "Setup error: cell (10,11) should be inside trap"
@@ -248,8 +248,8 @@ class TestMultipleOverrideCells:
         grid_cell_heights = {idx0: 6.0, idx1: 8.0}
         result = gsd._trap_grid_override(trap_poly, grid_cell_heights, cell_side, half)
         assert result is not None, "_trap_grid_override returned None for two cells inside the trap"
-        assert abs(result - 7.0) < 1e-6, (
-            f"Expected mean = 7.0 mm but got {result:.4f} mm"
+        assert abs(result - 8.0) < 1e-6, (
+            f"Expected max = 8.0 mm but got {result:.4f} mm"
         )
 
 
@@ -267,7 +267,7 @@ class TestOutsideCellsIgnored:
         # Trap centred on cell (10, 10).
         row_in, col_in = 10, 10
         cx_in, cy_in = _cell_center_mm(row_in, col_in, half, cell_side)
-        trap_poly = _shapely_circle_mm(cx_in, cy_in, cell_side * 0.4)
+        trap_poly = _shapely_circle_mm(cx_in, cy_in, cell_side * 0.75)
         # Set cell (15, 15) far outside.
         row_out, col_out = 15, 15
         cx_out, cy_out = _cell_center_mm(row_out, col_out, half, cell_side)
@@ -331,11 +331,11 @@ class TestMultiTrap:
         # Trap A centred on cell (5, 5).
         row_a, col_a = 5, 5
         cx_a, cy_a = _cell_center_mm(row_a, col_a, half, cell_side)
-        trap_a = _shapely_circle_mm(cx_a, cy_a, cell_side * 0.4)
+        trap_a = _shapely_circle_mm(cx_a, cy_a, cell_side * 0.75)
         # Trap B centred on cell (15, 15).
         row_b, col_b = 15, 15
         cx_b, cy_b = _cell_center_mm(row_b, col_b, half, cell_side)
-        trap_b = _shapely_circle_mm(cx_b, cy_b, cell_side * 0.4)
+        trap_b = _shapely_circle_mm(cx_b, cy_b, cell_side * 0.75)
         from shapely.geometry import Point as _P
         assert trap_a.contains(_P(cx_a, cy_a))
         assert trap_b.contains(_P(cx_b, cy_b))
@@ -408,7 +408,7 @@ class TestRakeRegressionAfterOverride:
         # The trap polygon is in pixel space; after _compute_px_to_mm it lands in mm.
         # Strategy: pick a trap position far enough from green centre to survive inset.
         trap_cx_offset_px = 130.0
-        trap_r_px = 35.0
+        trap_r_px = 60.0
         egm["polygons"].append({
             "name": "Trap1", "type": "trap",
             "points": _make_circle_pts(cx_px + trap_cx_offset_px, cy_px, trap_r_px, n=24),
@@ -500,7 +500,7 @@ class TestIntegrationOverrideApplied:
 
         # Place trap at (cx+130, cy) in px, radius 35 px.
         trap_cx_offset_px = 130.0
-        trap_r_px = 35.0
+        trap_r_px = 60.0
         egm = _base_egm(cx_px, cy_px, gr_px)
         egm["polygons"].append({
             "name": "TrapA", "type": "trap",

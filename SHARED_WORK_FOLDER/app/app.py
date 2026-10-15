@@ -23,7 +23,7 @@ app = Flask(__name__)
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "db", "workspace.db")
 
-APP_VERSION = "v5.44"  # unified version for all main-app pages, shown in every sticky footer
+APP_VERSION = "v5.55"  # unified version for all main-app pages, shown in every sticky footer
 
 # ── detect_boundaries: classifier knobs ────────────────────────────────────
 # When True the green polygon interior is excluded from trap/water detection.
@@ -545,83 +545,13 @@ def dashboard():
                 "created_at": _row["created_at"],
             }
 
-    homunculus = _homunculus_stats()
-
     return render("dashboard.html", team=team,
                    task_counts=task_counts,
                    journal_count=journal_count, updated_at=updated_at,
                    busy_tasks=busy_tasks, recently_done=recently_done,
                    member_active_counts=member_active_counts,
                    member_current_tasks=member_current_tasks,
-                   member_last_activity=member_last_activity,
-                   homunculus=homunculus)
-
-
-_HOMUNCULUS_ACTIVITY_PATH = os.path.normpath(os.path.join(
-    os.path.dirname(__file__), "..", "Homunculus", "vault", "_activity.jsonl"
-))
-
-
-def _homunculus_stats():
-    """Lightweight Homunculus snapshot for the dashboard. Fast enough to run on every 750ms poll."""
-    import json as _json
-    import urllib.request, urllib.error
-
-    brain_status = "down"
-    brain_version = None
-    try:
-        with urllib.request.urlopen("http://localhost:8765/health", timeout=0.3) as r:
-            h = _json.loads(r.read())
-            brain_status = "up"
-            brain_version = h.get("package_version")
-    except (urllib.error.URLError, OSError, ValueError):
-        pass
-
-    total = 0
-    today_count = 0
-    today_kinds = {}
-    last_capture = None
-    today_iso = date.today().isoformat()
-
-    if os.path.exists(_HOMUNCULUS_ACTIVITY_PATH):
-        try:
-            with open(_HOMUNCULUS_ACTIVITY_PATH, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        row = _json.loads(line)
-                    except _json.JSONDecodeError:
-                        continue
-                    if row.get("kind") != "parse":
-                        continue
-                    total += 1
-                    if (row.get("at") or "")[:10] == today_iso:
-                        today_count += 1
-                        kind = (row.get("details") or {}).get("kind", "unknown")
-                        today_kinds[kind] = today_kinds.get(kind, 0) + 1
-                    last_capture = row
-        except OSError:
-            pass
-
-    last_summary = None
-    if last_capture:
-        last_summary = {
-            "raw_text": last_capture.get("raw_text", ""),
-            "at": last_capture.get("at", ""),
-            "kind": (last_capture.get("details") or {}).get("kind", "unknown"),
-        }
-
-    # Sort kinds so the display is stable across polls.
-    return {
-        "brain_status": brain_status,
-        "brain_version": brain_version,
-        "total": total,
-        "today_count": today_count,
-        "today_kinds": dict(sorted(today_kinds.items())),
-        "last_capture": last_summary,
-    }
+                   member_last_activity=member_last_activity)
 
 
 # ── Research documents helpers ─────────────────────────────────────────────
@@ -941,8 +871,8 @@ def _validate_gps_prereqs(egm_data: dict) -> tuple[bool, str]:
     if not georef:
         return False, (
             "courseGeoRef is not set for this course. "
-            "Open the Geo-ref setup dialog (⚙ gear icon in the GPS backend panel) "
-            "and enter the SW and NE corner lat/lngs of the course image."
+            "The GPS backend needs the SW and NE corner lat/lng of the course image "
+            "in the EGM's courseGeoRef block (the editor no longer has a dialog for this)."
         )
 
     return True, ""
@@ -1220,6 +1150,22 @@ def load_boundaries():
     # off-frame points are preserved here.
 
     return jsonify(data)
+
+
+@app.route("/api/trap_controlling_cells", methods=["POST"])
+def trap_controlling_cells():
+    """Editor red-circle overlay: which grid cell(s) control each trap's height.
+
+    Body is the live (possibly unsaved) EGM JSON.  Delegates to
+    gradient_surface_diagnostic.compute_trap_controlling_cells, which reuses the
+    generator's own in-trap test, so the editor can never drift from the print.
+    """
+    data = request.get_json(silent=True) or {}
+    try:
+        from gradient_surface_diagnostic import compute_trap_controlling_cells
+        return jsonify({"status": "ok", **compute_trap_controlling_cells(data)})
+    except Exception as exc:  # overlay is cosmetic; never break the editor
+        return jsonify({"status": "error", "msg": str(exc), "mode": None, "traps": []}), 200
 
 
 @app.route("/api/print_constants")
