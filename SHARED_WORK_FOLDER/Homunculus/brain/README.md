@@ -1,7 +1,7 @@
 # Homunculus brain
 
 The Mac-side engine for Homunculus — a voice-first capture and reminder
-assistant. v1.0 design (see `~/.claude/projects/-Volumes-GIT-CLAUDE/memory/project_homunculus.md`).
+assistant. v1.0 design (see `~/.claude/projects/-Volumes-GIT-Claude-2027/memory/project_homunculus.md`).
 
 The brain holds the calendar truth (as plain markdown), parses voice
 utterances via a local LLM, routes captures to the right markdown file,
@@ -113,7 +113,7 @@ ollama pull qwen2.5:7b     # ~5 GB; fits comfortably on a 16 GB Mac mini M4
 
 ```bash
 # Set vault path explicitly (avoids the miniconda default-path bug — see docs/RUNBOOK.md)
-export HOMUNCULUS_VAULT=/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/vault
+export HOMUNCULUS_VAULT=/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/vault
 homunculus-brain          # binds 0.0.0.0:8765 by default
 ```
 

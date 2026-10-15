@@ -11,7 +11,7 @@ Hey Thomas — here's how to get GoButton in front of you, two ways. Start with 
 **Step 1.** Open the project in Xcode. Run this in Terminal:
 
 ```bash
-open /Users/fourierflight/GIT/CLAUDE-GitHub/SHARED_WORK_FOLDER/owner_inbox/GoButton/GoButton.xcodeproj
+open /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/owner_inbox/GoButton/GoButton.xcodeproj
 ```
 
 Xcode will launch and load the project.
@@ -31,7 +31,7 @@ Xcode will launch and load the project.
 This is how I confirmed the build works. It's useful to understand because `xcodebuild` is how CI/CD pipelines build apps without a human clicking buttons.
 
 ```bash
-cd /Users/fourierflight/GIT/CLAUDE-GitHub/SHARED_WORK_FOLDER/owner_inbox/GoButton
+cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/owner_inbox/GoButton
 
 # Build the app
 xcodebuild -project GoButton.xcodeproj -scheme GoButton \
@@ -70,7 +70,7 @@ The `xcrun simctl` commands are Apple's command-line tools for controlling simul
 **Step 3 — Open the project in Xcode.** Same as Path A, Step 1:
 
 ```bash
-open /Users/fourierflight/GIT/CLAUDE-GitHub/SHARED_WORK_FOLDER/owner_inbox/GoButton/GoButton.xcodeproj
+open /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/owner_inbox/GoButton/GoButton.xcodeproj
 ```
 
 **Step 4 — Set your Team (code signing).** Every app that runs on a real iPhone must be signed by a developer certificate. For personal testing, a free Apple ID is enough.

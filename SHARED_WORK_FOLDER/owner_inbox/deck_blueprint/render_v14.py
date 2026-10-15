@@ -1256,7 +1256,7 @@ label(PX + 0.78, y_leg + 0.26, "Deck does NOT reach patio far edge; 3\" of bare 
 # ══════════════════════════════════════════════════════════════════════════════
 # SAVE
 # ══════════════════════════════════════════════════════════════════════════════
-out_path = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/owner_inbox/deck_blueprint/deck_plan.png"
+out_path = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/owner_inbox/deck_blueprint/deck_plan.png"
 fig.savefig(out_path, dpi=DPI, bbox_inches="tight", facecolor="white")
 print(f"Saved: {out_path}")
 print(f"FRAME_D (framing depth):      {FRAME_D:.4f} ft = {FRAME_D*12:.2f}\" = {int(FRAME_D)}'-{(FRAME_D*12)%12:.2f}\"")

@@ -33,7 +33,7 @@ def _expand(path: str) -> Path:
 HERMAN_VAULT_PATH: Path = _expand(
     os.environ.get(
         "HERMAN_VAULT_PATH",
-        "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/vault",
+        "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/vault",
     )
 )
 
@@ -83,7 +83,7 @@ class Config:
         vault = _expand(
             os.environ.get(
                 "HERMAN_VAULT_PATH",
-                "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/vault",
+                "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/vault",
             )
         )
         return cls(

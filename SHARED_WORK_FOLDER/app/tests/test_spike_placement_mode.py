@@ -31,7 +31,7 @@ Tests:
   T12 APP_VERSION is v4.95 in app.py.
 
 Run:
-    cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER
+    cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER
     python -m pytest app/tests/test_spike_placement_mode.py -v
 """
 from __future__ import annotations

@@ -82,6 +82,6 @@ All checks done by re-loading the FINAL 3MF with `trimesh.load(..., force='scene
 
 ### New 3MF for Thomas
 
-`/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/Delaveaga/3MFs/Delaveaga (Hole 5f) [1456].3mf`
+`/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/Delaveaga/3MFs/Delaveaga (Hole 5f) [1456].3mf`
 
 Re-slice this one in Bambu Studio. The "floating regions" + "empty layer between 8.9 and 9.5" warnings on geometry_2 should both be gone.

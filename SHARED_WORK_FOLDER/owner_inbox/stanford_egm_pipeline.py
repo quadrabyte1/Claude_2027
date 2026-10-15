@@ -35,7 +35,7 @@ from scipy.ndimage import gaussian_filter
 from scipy.spatial import ConvexHull
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
-BASE = Path("/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER")
+BASE = Path("/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER")
 GPS_FILE  = BASE / "ItWentIn/GolfCourses/Stanford/GolfIntelligence/Stanford (8).gps"
 COURSE_DIR = BASE / "ItWentIn/GolfCourses/Stanford"
 EGM_OUT   = COURSE_DIR / "EGMs/Stanford (Hole 8).egm"

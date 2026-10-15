@@ -60,7 +60,7 @@ RestartSec=10
 
 # CRITICAL: The pip-installed brain resolves its default vault to a path
 # inside the Python prefix (wrong, silent). Always set this explicitly.
-Environment=HOMUNCULUS_VAULT=/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/vault
+Environment=HOMUNCULUS_VAULT=/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/vault
 
 Environment=OLLAMA_BASE_URL=http://localhost:11434
 Environment=OLLAMA_MODEL=qwen2.5:7b

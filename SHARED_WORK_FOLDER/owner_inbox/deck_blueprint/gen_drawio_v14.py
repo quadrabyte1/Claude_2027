@@ -248,7 +248,7 @@ def make_v14_cells_page2():
 
 
 # ─── Read current v13 drawio ──────────────────────────────────────────────────
-source_path = '/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/owner_inbox/deck_blueprint/deck_plan.drawio'
+source_path = '/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/owner_inbox/deck_blueprint/deck_plan.drawio'
 with open(source_path, 'r') as f:
     content = f.read()
 
@@ -538,7 +538,7 @@ content = content.replace(
 )
 
 # ─── Write output ─────────────────────────────────────────────────────────────
-out_path = '/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/owner_inbox/deck_blueprint/deck_plan.drawio'
+out_path = '/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/owner_inbox/deck_blueprint/deck_plan.drawio'
 with open(out_path, 'w') as f:
     f.write(content)
 

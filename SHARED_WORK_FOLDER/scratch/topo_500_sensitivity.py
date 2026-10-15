@@ -3,7 +3,7 @@ Regenerate Firefly Hole 14 3 times with grassSpacing=1.0 and grassAmplitude
 in {0.5, 1.0, 2.0}. Report fringe top-band Z stddev for each.
 """
 import os, sys, json, time, numpy as np, trimesh, copy
-REPO = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER"
+REPO = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER"
 sys.path.insert(0, os.path.join(REPO, "app"))
 os.chdir(os.path.join(REPO, "app"))
 

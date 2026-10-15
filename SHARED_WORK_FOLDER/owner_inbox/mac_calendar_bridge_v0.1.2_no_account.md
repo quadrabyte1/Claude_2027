@@ -122,7 +122,7 @@ guards that skip on macOS by design — unchanged from v0.1.1).
 
 5. Re-install (picks up new plist without `BRIDGE_CALENDAR_ACCOUNT`):
    ```bash
-   bash /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/mac_calendar_bridge/deploy/install.sh
+   bash /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/mac_calendar_bridge/deploy/install.sh
    ```
 
 6. Load the agent:

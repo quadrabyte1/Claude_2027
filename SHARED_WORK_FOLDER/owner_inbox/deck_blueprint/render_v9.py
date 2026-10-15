@@ -591,7 +591,7 @@ for i, note in enumerate(order_notes):
 # ══════════════════════════════════════════════════════════════════════════════
 # SAVE
 # ══════════════════════════════════════════════════════════════════════════════
-out_path = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/owner_inbox/deck_blueprint/deck_plan.png"
+out_path = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/owner_inbox/deck_blueprint/deck_plan.png"
 fig.savefig(out_path, dpi=DPI, bbox_inches="tight", facecolor="white")
 print(f"Saved: {out_path}")
 print(f"Field plank count: {NUM_PLANKS}")

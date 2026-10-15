@@ -6,7 +6,7 @@ import trimesh
 from shapely.geometry import Polygon as ShapelyPolygon
 from shapely.ops import unary_union
 
-APP_DIR = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app"
+APP_DIR = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app"
 sys.path.insert(0, APP_DIR)
 from gradient_surface_diagnostic import (
     load_egm,
@@ -30,8 +30,8 @@ def scene_nodes(scene):
     return nodes
 
 
-three_mf = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/Firefly/3MFs/Firefly (Hole 14) [104].3mf"
-egm_path = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/Firefly/EGMs/Firefly (Hole 14).egm"
+three_mf = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/Firefly/3MFs/Firefly (Hole 14) [104].3mf"
+egm_path = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/Firefly/EGMs/Firefly (Hole 14).egm"
 
 egm, _img, gpx = load_egm(egm_path)
 scale, centroid_px = _compute_px_to_mm(gpx, egm)

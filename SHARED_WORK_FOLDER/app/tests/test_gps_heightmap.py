@@ -2,7 +2,7 @@
 test_gps_heightmap.py -- Tests for gps_heightmap.py (Phase 1 GPS heightmap backend)
 
 Run:
-    cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER
+    cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER
     python -m pytest app/tests/test_gps_heightmap.py -v
 
 Written TDD: tests were specified against the interface contract BEFORE
@@ -601,7 +601,7 @@ class TestApiContract:
 # ===========================================================================
 
 DE_LAVEAGA_GPS = Path(
-    "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/De Laveaga GPS from Stracka.txt"
+    "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/De Laveaga GPS from Stracka.txt"
 )
 
 # Tight bbox around the green area for Hole 18 at DeLaveaga.

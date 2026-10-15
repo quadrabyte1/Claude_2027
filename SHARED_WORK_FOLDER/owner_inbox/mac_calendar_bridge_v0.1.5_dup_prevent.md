@@ -120,7 +120,7 @@ launchctl unload ~/Library/LaunchAgents/com.homunculus.mac_calendar_bridge.plist
 # 2. Leave pushed.jsonl alone — the self-heal will reconcile it from Calendar.app
 
 # 3. Install v0.1.5
-bash /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/mac_calendar_bridge/deploy/install.sh
+bash /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/mac_calendar_bridge/deploy/install.sh
 
 # 4. Load the bridge
 launchctl load ~/Library/LaunchAgents/com.homunculus.mac_calendar_bridge.plist

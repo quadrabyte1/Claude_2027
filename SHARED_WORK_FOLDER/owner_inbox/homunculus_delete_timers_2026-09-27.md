@@ -53,7 +53,7 @@ These are the full original JSON blobs including all session history.
 
 ### New method: `TimerManager.delete_timer(project: str) -> bool`
 
-Added to `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/brain/homunculus_brain/timers.py`.
+Added to `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/brain/homunculus_brain/timers.py`.
 
 Behavior:
 - Resolves slug via the same article-strip + slugify pipeline as all other methods (case-insensitive).

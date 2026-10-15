@@ -29,7 +29,7 @@ T19 Grid input autofocused when opened
 T20 Autosave wired: commitGridCell() or equivalent calls autoSave()
 
 Run:
-    cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER
+    cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER
     python -m pytest app/tests/test_grid_cell_elevation_ui.py -v
 """
 from __future__ import annotations

@@ -37,7 +37,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-ROOT       = Path("/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER")
+ROOT       = Path("/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER")
 COURSE_DIR = ROOT / "ItWentIn" / "GolfCourses"
 DB_PATH    = ROOT / "db" / "iwi_enterprise_v1.2.db"
 

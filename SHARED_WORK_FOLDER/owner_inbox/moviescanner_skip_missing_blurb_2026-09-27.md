@@ -112,9 +112,9 @@ Full suite: **46 tests, 46 passed** (30 existing V3.23 tests + 16 new V3.24 test
 
 ## Files changed
 
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/movie_scanner/scanner.py` — added `_apply_plot_filter()` method; added call site in `scan()` after parental-guide filter (phase `plot_filter`).
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/MovieScanner/app.py` — `APP_VERSION` bumped V3.23 → V3.24.
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/MovieScanner/tests/test_plot_filter.py` — new test file (16 tests).
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/MovieScanner/tests/test_config_backup.py` — updated `test_app_version_is_v3_23` → `test_app_version_is_v3_24` (version assertion kept current).
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/movie_scanner/scanner.py` — added `_apply_plot_filter()` method; added call site in `scan()` after parental-guide filter (phase `plot_filter`).
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/MovieScanner/app.py` — `APP_VERSION` bumped V3.23 → V3.24.
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/MovieScanner/tests/test_plot_filter.py` — new test file (16 tests).
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/MovieScanner/tests/test_config_backup.py` — updated `test_app_version_is_v3_23` → `test_app_version_is_v3_24` (version assertion kept current).
 
 No schema changes. No template changes. No new dependencies.

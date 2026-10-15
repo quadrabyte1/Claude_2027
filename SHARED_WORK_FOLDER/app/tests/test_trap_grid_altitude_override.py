@@ -21,7 +21,7 @@ TG9  Regression: trap frame-cap and water-hole lift flags unchanged.
 TG10 _trap_grid_override helper exists and is callable from the module.
 
 Run:
-    cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER
+    cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER
     python -m pytest app/tests/test_trap_grid_altitude_override.py -v
 """
 from __future__ import annotations

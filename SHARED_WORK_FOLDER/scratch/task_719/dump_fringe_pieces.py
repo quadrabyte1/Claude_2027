@@ -16,7 +16,7 @@ def scene_nodes(scene):
     return nodes
 
 def main():
-    p3mf = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/DeLaveaga/3MFs/DeLaveaga (Hole 11) [212].3mf"
+    p3mf = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/DeLaveaga/3MFs/DeLaveaga (Hole 11) [212].3mf"
     scene = trimesh.load(p3mf, force="scene")
     nodes = scene_nodes(scene)
     fringe = nodes["fringe"]

@@ -3,7 +3,7 @@ import sys
 import numpy as np
 from shapely.geometry import Polygon as ShapelyPolygon, Point as SP
 
-APP_DIR = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app"
+APP_DIR = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app"
 sys.path.insert(0, APP_DIR)
 from gradient_surface_diagnostic import (
     load_egm, _compute_px_to_mm, _px_to_mm_2d, _poly_to_dense_px, _poly_to_raw_catmull_px,
@@ -12,7 +12,7 @@ from gradient_surface_diagnostic import (
     WATER_FRINGE_GAP_MM, TRAP_FRINGE_GAP_MM,
 )
 
-egm_path = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/Firefly/EGMs/Firefly (Hole 14).egm"
+egm_path = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/Firefly/EGMs/Firefly (Hole 14).egm"
 egm, _img, gpx = load_egm(egm_path)
 scale, centroid_px = _compute_px_to_mm(gpx, egm)
 

@@ -108,7 +108,7 @@ When this session began (HEAD `cb4c7a4`), the partial T5 work from the rate-limi
 ## Note: Grid-Cell Replacement Mechanism
 
 The future replacement for OCR-driven fringe altitude is specced in:
-`~/.claude/projects/-Volumes-GIT-CLAUDE/memory/project_grid_cell_elevation_mechanism.md`
+`~/.claude/projects/-Volumes-GIT-Claude-2027/memory/project_grid_cell_elevation_mechanism.md`
 
 This will be a grid-cell editor feeding TPS directly (Topo's harness). It is a separate future dispatch — not part of T5.
 

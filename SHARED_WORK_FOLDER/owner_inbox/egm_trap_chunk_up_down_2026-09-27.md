@@ -100,6 +100,6 @@ opposite-sign chunks partially cancel — realistic sand texture.
 ---
 
 **Files changed:**
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/gradient_surface_diagnostic.py` — v0.07 → v0.08
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/app.py` — APP_VERSION v4.67 → v4.68
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/tests/test_gradient_surface_diagnostic.py` — 9 tests added, 3 tests updated
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/gradient_surface_diagnostic.py` — v0.07 → v0.08
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/app.py` — APP_VERSION v4.67 → v4.68
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/tests/test_gradient_surface_diagnostic.py` — 9 tests added, 3 tests updated

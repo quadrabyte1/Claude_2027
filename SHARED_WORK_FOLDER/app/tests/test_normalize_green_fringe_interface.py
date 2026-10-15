@@ -8,7 +8,7 @@ Tests for _normalize_green_fringe_interface:
   N4  Function is a no-op when the entire grid is outside the band.
 
 Run:
-    cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER
+    cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER
     python -m pytest app/tests/test_normalize_green_fringe_interface.py \
                      app/tests/test_default_fringe_inherits_green_boundary.py -v
 """

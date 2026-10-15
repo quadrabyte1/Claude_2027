@@ -14,7 +14,7 @@ The fix was not in `is_only_in_theaters()` (which was correct for movies). The f
 
 ### Code Change
 
-**`/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/movie_scanner/scanner.py`**
+**`/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/movie_scanner/scanner.py`**
 
 Added class-level constant:
 ```python
@@ -44,9 +44,9 @@ if title_type != "movie":
 
 ### File Paths
 
-- **Core fix:** `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/movie_scanner/scanner.py` (method `_apply_theaters_filter`, new class var `_NON_THEATRICAL_TYPES`)
-- **Version bump:** `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/MovieScanner/app.py` (`APP_VERSION = "V3.26"`)
-- **New tests:** `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/MovieScanner/tests/test_theaters_filter.py`
+- **Core fix:** `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/movie_scanner/scanner.py` (method `_apply_theaters_filter`, new class var `_NON_THEATRICAL_TYPES`)
+- **Version bump:** `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/MovieScanner/app.py` (`APP_VERSION = "V3.26"`)
+- **New tests:** `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/MovieScanner/tests/test_theaters_filter.py`
 
 ### RED → GREEN Table
 
@@ -68,9 +68,9 @@ if title_type != "movie":
 
 ### Script Location
 
-`/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/MovieScanner/scripts/backfill_omdb_type_dvd.py`
+`/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/MovieScanner/scripts/backfill_omdb_type_dvd.py`
 
-Tests: `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/MovieScanner/tests/test_backfill_omdb_type_dvd.py` (9/9 GREEN, temp DB only — never touched live DB)
+Tests: `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/MovieScanner/tests/test_backfill_omdb_type_dvd.py` (9/9 GREEN, temp DB only — never touched live DB)
 
 ### Live Backfill Run Stats
 

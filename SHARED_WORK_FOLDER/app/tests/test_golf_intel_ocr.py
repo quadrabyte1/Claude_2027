@@ -2,7 +2,7 @@
 test_golf_intel_ocr.py — TDD test suite for golf_intel_ocr.py
 
 Run:
-    cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER
+    cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER
     python -m pytest app/tests/test_golf_intel_ocr.py -v
 
 Golf Intelligence heat map markers are decimal numbers ("1.2", "2.8", "4.0")

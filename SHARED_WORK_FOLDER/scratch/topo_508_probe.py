@@ -4,7 +4,7 @@ actually a void in the final mesh. Monkey-patch _replace_fringe_with_watertight_
 to dump the incoming bottom_poly to a pickle for post-inspection.
 """
 import sys, os, pickle
-sys.path.insert(0, '/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app')
+sys.path.insert(0, '/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app')
 
 # Force water-hole scenario
 os.environ['FRINGE_WATERTIGHT_REWRITE'] = '1'
@@ -19,7 +19,7 @@ def _patched_wr(old_mesh, bottom_poly, fringe_max_z, label="fringe"):
         'fringe_max_z': fringe_max_z,
         'label': label,
     }
-    with open('/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/scratch/task_topo_tee_gap/task_508_bottom_poly.pkl', 'wb') as f:
+    with open('/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/scratch/task_topo_tee_gap/task_508_bottom_poly.pkl', 'wb') as f:
         pickle.dump(dump, f)
     print(f"  [508 probe] intercepted bottom_poly: area={bottom_poly.area:.1f} mm² interiors={len(list(bottom_poly.interiors))}")
     return _orig_wr(old_mesh, bottom_poly, fringe_max_z, label)
@@ -33,5 +33,5 @@ def _patched_drill(mesh, x_mm_from_topleft, y_mm_from_topleft, **kw):
 gsd.drill_tee_hole = _patched_drill
 
 # Run pipeline on Firefly H14
-egm_path = '/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/Firefly/EGMs/Firefly (Hole 14).egm'
+egm_path = '/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/Firefly/EGMs/Firefly (Hole 14).egm'
 gsd.run_pipeline(egm_path)

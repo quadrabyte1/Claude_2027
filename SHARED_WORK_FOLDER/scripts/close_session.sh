@@ -8,7 +8,7 @@
 # volume is mounted nosuid). The plist therefore points to a copy of this script
 # at ~/.local/bin/close_session.sh (on the boot volume).
 # After editing THIS file, re-sync with:
-#   cp /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/scripts/close_session.sh \
+#   cp /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/scripts/close_session.sh \
 #      ~/.local/bin/close_session.sh && chmod +x ~/.local/bin/close_session.sh
 
 # -- Environment --------------------------------------------------------------
@@ -23,7 +23,7 @@ SQLITE3="/usr/bin/sqlite3"
 FIND="/usr/bin/find"
 
 # -- Repo root ----------------------------------------------------------------
-REPO="/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER"
+REPO="/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER"
 cd "$REPO" || { echo "ERROR: cannot cd to $REPO"; exit 1; }
 
 # -- Log directory ------------------------------------------------------------
@@ -44,7 +44,7 @@ project. Strict scope: read-only DB queries + ONE INSERT into journal_entries
 + write ONE markdown report file. No code changes, no test runs, no
 sub-agent dispatches, no other DB mutations. Target <=5 min.
 
-CWD is /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER. DB is db/workspace.db. Use
+CWD is /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER. DB is db/workspace.db. Use
 sqlite3 via Bash. Set TODAY=$(date +%Y-%m-%d).
 
 STEP 1 -- Stale in_progress tasks (>24h since started_at):

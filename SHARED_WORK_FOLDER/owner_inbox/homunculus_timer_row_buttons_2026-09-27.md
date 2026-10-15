@@ -99,10 +99,10 @@ State is derived from `is_running` in the `/dashboard/timers` API response at re
 
 ## Files Changed
 
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/brain/homunculus_brain/__init__.py`
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/brain/homunculus_brain/schemas.py`
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/brain/homunculus_brain/server.py`
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/brain/homunculus_brain/dashboard.py`
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/brain/tests/test_timer_row_buttons.py` (new)
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/brain/tests/test_dashboard.py` (version badge assertions updated)
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/brain/tests/test_timers_routes.py` (version badge assertion updated)
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/brain/homunculus_brain/__init__.py`
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/brain/homunculus_brain/schemas.py`
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/brain/homunculus_brain/server.py`
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/brain/homunculus_brain/dashboard.py`
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/brain/tests/test_timer_row_buttons.py` (new)
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/brain/tests/test_dashboard.py` (version badge assertions updated)
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/brain/tests/test_timers_routes.py` (version badge assertion updated)

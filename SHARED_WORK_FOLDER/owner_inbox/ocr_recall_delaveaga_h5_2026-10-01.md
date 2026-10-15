@@ -116,7 +116,7 @@ Note: two 20.0 values appear — one at the left exterior (42,581) and one at in
 
 ## Files changed
 
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/golf_intel_ocr.py` — `_PATCH_SCALE_MIN_H` 40 → 120; pipeline docstring updated to v4.85
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/app.py` — `APP_VERSION` v4.84 → v4.85
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/tests/test_golf_intel_ocr.py` — added T10 (`TestDeLaveagaH5InteriorRecall`, 5 tests) + T11 (`TestStanfordH8RegressionV485`, 2 tests)
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/owner_inbox/ocr_diagnostic_delaveaga_h5_2026-10-01.png` — diagnostic overlay v3
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/golf_intel_ocr.py` — `_PATCH_SCALE_MIN_H` 40 → 120; pipeline docstring updated to v4.85
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/app.py` — `APP_VERSION` v4.84 → v4.85
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/tests/test_golf_intel_ocr.py` — added T10 (`TestDeLaveagaH5InteriorRecall`, 5 tests) + T11 (`TestStanfordH8RegressionV485`, 2 tests)
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/owner_inbox/ocr_diagnostic_delaveaga_h5_2026-10-01.png` — diagnostic overlay v3

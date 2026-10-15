@@ -27,7 +27,7 @@ Tests (RED-first; will fail until _build_tps_base is patched):
     StripT6  Deprecation notice: passing non-empty fbh logs a warning but does NOT raise.
 
 Run:
-    cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER
+    cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER
     python -m pytest app/tests/test_tps_strip_fringe_anchors.py -v
 """
 from __future__ import annotations

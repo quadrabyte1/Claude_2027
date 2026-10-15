@@ -82,6 +82,6 @@ Straight vertical (Y-axis) rakes confirmed. Chunk bumps present (max dz 1.7 mm r
 
 ## Files Changed
 
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/gradient_surface_diagnostic.py` — v0.06 → **v0.07**
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/app.py` — `APP_VERSION` v4.65 → **v4.66**
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/tests/test_gradient_surface_diagnostic.py` — 9 new/updated tests; total 43
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/gradient_surface_diagnostic.py` — v0.06 → **v0.07**
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/app.py` — `APP_VERSION` v4.65 → **v4.66**
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/tests/test_gradient_surface_diagnostic.py` — 9 new/updated tests; total 43

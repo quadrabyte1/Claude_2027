@@ -31,7 +31,7 @@ _NOW = datetime(2026, 9, 13, 14, 0, 0, tzinfo=timezone.utc)
 # Herman cross-repo import (for wire tests)
 # ---------------------------------------------------------------------------
 
-_HERMAN_BRAIN_SRC = Path("/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/brain")
+_HERMAN_BRAIN_SRC = Path("/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/brain")
 if str(_HERMAN_BRAIN_SRC) not in sys.path:
     sys.path.insert(0, str(_HERMAN_BRAIN_SRC))
 

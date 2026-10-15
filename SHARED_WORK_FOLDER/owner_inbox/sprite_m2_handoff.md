@@ -48,7 +48,7 @@ After granting FDA (see docs/FDA_SETUP.md):
 
 ```bash
 # 1. Run install
-bash /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Sprite/deploy/install.sh
+bash /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Sprite/deploy/install.sh
 
 # 2. Download whisper model (one-time)
 brew install whisper-cpp

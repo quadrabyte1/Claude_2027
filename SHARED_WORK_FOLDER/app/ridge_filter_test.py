@@ -5,7 +5,7 @@ Diagnostic script that applies Frangi and Meijering ridge-detection filters
 to the Moffett Field Hole 7 golf green image.
 
 Usage:
-    cd /Users/fourierflight/GIT/CLAUDE-GitHub/SHARED_WORK_FOLDER
+    cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER
     python app/ridge_filter_test.py
 """
 

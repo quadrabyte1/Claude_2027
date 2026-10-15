@@ -19,7 +19,7 @@ T8  APP_VERSION is v5.02 in app.py
 T9  editor.html on-page version comment is v5.02
 
 Run:
-    cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER
+    cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER
     python -m pytest app/tests/test_legend_contour_grid_yellow.py -v
 """
 from __future__ import annotations

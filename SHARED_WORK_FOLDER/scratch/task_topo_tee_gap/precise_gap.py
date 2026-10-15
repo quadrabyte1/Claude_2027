@@ -6,7 +6,7 @@ import trimesh
 from shapely.geometry import Polygon as ShapelyPolygon, Point as SP
 from shapely.ops import unary_union
 
-APP_DIR = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app"
+APP_DIR = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app"
 sys.path.insert(0, APP_DIR)
 from gradient_surface_diagnostic import (
     load_egm, PRINT_SIZE_MM, FRINGE_XY_EXPANSION_MM,

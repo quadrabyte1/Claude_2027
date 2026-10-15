@@ -25,7 +25,7 @@ T13 APP_VERSION bumped beyond v5.03 (Topo already set v5.03; we go to v5.04)
 T14 editor.html on-page version bumped beyond v5.02
 
 Run:
-    cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER
+    cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER
     python -m pytest app/tests/test_grid_input_width_hover_tooltip.py -v
 """
 from __future__ import annotations

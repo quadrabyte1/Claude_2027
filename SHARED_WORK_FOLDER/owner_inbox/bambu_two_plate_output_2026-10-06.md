@@ -151,7 +151,7 @@ Not blocked — flag when Thomas reviews plate 2 in Bambu and decides whether th
 
 ## Files changed
 
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/gradient_surface_diagnostic.py` — v0.21: two-plate injection + plate-2 fringe sample build in step 7a-ii.
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/app.py` — `APP_VERSION` v5.07 → **v5.08**.
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/tests/test_bambu_two_plate_output.py` — 31 new RED→GREEN tests (new file).
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/tests/test_enable_fringe_grass.py` — T10 updated to `== 1 call` (plate-2 always fires grass).
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/gradient_surface_diagnostic.py` — v0.21: two-plate injection + plate-2 fringe sample build in step 7a-ii.
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/app.py` — `APP_VERSION` v5.07 → **v5.08**.
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/tests/test_bambu_two_plate_output.py` — 31 new RED→GREEN tests (new file).
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/tests/test_enable_fringe_grass.py` — T10 updated to `== 1 call` (plate-2 always fires grass).

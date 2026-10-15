@@ -117,10 +117,10 @@ Current behavior (`dismissed_by_user` marker) is a solid foundation — Thomas c
 
 ## Files Changed
 
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/movie_scanner/schema.py` — `scan_eliminations` table + index in DDL + V3.27 migration block in `apply_schema()`
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/movie_scanner/scanner.py` — `_record_elimination()` method; instrumented genre/year/rating/votes/country filters in `scan()`; instrumented `_apply_plot_filter()`; instrumented `_apply_theaters_filter()`
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/MovieScanner/app.py` — `APP_VERSION` → V3.27; `/run` clears `scan_eliminations`; `index()` loads `elimination_reasons` when `show_dismissed`; attaches `dismissal_reason` to each match dict
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/MovieScanner/templates/index.html` — Reason column header (show_dismissed only); Reason cell with color-coded pills
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/MovieScanner/tests/test_dismissal_reason.py` — 9 new tests (T1–T9)
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/MovieScanner/tests/test_theaters_filter.py` — V3.26 version pin loosened to `>= V3.26`
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/MovieScanner/db/scanner.db.pre_v3.27` — backup
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/movie_scanner/schema.py` — `scan_eliminations` table + index in DDL + V3.27 migration block in `apply_schema()`
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/movie_scanner/scanner.py` — `_record_elimination()` method; instrumented genre/year/rating/votes/country filters in `scan()`; instrumented `_apply_plot_filter()`; instrumented `_apply_theaters_filter()`
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/MovieScanner/app.py` — `APP_VERSION` → V3.27; `/run` clears `scan_eliminations`; `index()` loads `elimination_reasons` when `show_dismissed`; attaches `dismissal_reason` to each match dict
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/MovieScanner/templates/index.html` — Reason column header (show_dismissed only); Reason cell with color-coded pills
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/MovieScanner/tests/test_dismissal_reason.py` — 9 new tests (T1–T9)
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/MovieScanner/tests/test_theaters_filter.py` — V3.26 version pin loosened to `>= V3.26`
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/MovieScanner/db/scanner.db.pre_v3.27` — backup

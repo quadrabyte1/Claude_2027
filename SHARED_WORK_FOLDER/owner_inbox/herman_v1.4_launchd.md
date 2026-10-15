@@ -36,7 +36,7 @@ pkill -f homunculus-brain
 curl http://localhost:11434/api/tags | grep qwen2.5
 
 # 3. Run the installer (does not load yet — just installs + copies plist)
-bash /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/brain/deploy/install.sh
+bash /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/brain/deploy/install.sh
 
 # 4. Load the LaunchAgent (launchd owns Herman from this point forward)
 launchctl load ~/Library/LaunchAgents/com.homunculus.brain.plist
@@ -49,7 +49,7 @@ curl http://localhost:8765/health
 Step 3 will print the plist destination and confirm `plutil -lint` passes before giving you the load command. You can also run step 3 with `--dry-run` first to see what it would do without changing anything:
 
 ```bash
-bash /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/brain/deploy/install.sh --dry-run
+bash /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/brain/deploy/install.sh --dry-run
 ```
 
 ---
@@ -66,7 +66,7 @@ Should return:
   "status": "ok",
   "design_version": "1.4",
   "package_version": "1.4.0",
-  "vault_path": "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/vault"
+  "vault_path": "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/vault"
 }
 ```
 

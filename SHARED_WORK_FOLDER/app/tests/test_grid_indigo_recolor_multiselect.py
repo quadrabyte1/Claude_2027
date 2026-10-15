@@ -26,7 +26,7 @@ T15 APP_VERSION is v5.14
 T16 editor.html on-page version is at least v5.09
 
 Run:
-    cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER
+    cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER
     python -m pytest app/tests/test_grid_indigo_recolor_multiselect.py -v
 """
 from __future__ import annotations

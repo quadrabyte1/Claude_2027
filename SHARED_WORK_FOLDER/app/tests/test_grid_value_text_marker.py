@@ -23,7 +23,7 @@ T13 APP_VERSION bumped to v5.10
 T14 editor.html on-page version bumped to at least v5.07
 
 Run:
-    cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER
+    cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER
     python -m pytest app/tests/test_grid_value_text_marker.py -v
 """
 from __future__ import annotations

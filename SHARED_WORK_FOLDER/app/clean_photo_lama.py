@@ -44,7 +44,7 @@ def process(src_path, out_path, *passes):
     print(f"  -> {out_path}")
 
 
-BASE = "/Users/fourierflight/GIT/CLAUDE-GitHub/SHARED_WORK_FOLDER"
+BASE = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER"
 
 
 # ═══════════════════════════════════════════════════════════════════

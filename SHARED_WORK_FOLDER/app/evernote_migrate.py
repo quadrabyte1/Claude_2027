@@ -29,7 +29,7 @@ import yaml
 from bs4 import BeautifulSoup, NavigableString
 
 # ─────────────────────────────── PATHS ───────────────────────────────
-SHARED = Path("/Users/fourierflight/GIT/CLAUDE-GitHub/SHARED_WORK_FOLDER")
+SHARED = Path("/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER")
 EVERNOTES = SHARED / "Evernotes"
 VAULT = SHARED / "owner_inbox" / "Notes" / "Evernote-Migration"
 REPORT_DIR = VAULT / "_meta" / "_migration_reports"

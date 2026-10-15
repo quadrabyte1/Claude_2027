@@ -1,0 +1,8 @@
+*.pyc
+*.gz
+*.log
+*.part
+x.py
+*blob
+.DS_Store
+__pycache__/

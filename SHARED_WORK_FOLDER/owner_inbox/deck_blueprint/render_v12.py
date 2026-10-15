@@ -953,7 +953,7 @@ label(PX + 0.78, y_leg + 0.26, "MoistureShield Vision 1.0\" actual; fascia 0.67\
 # ══════════════════════════════════════════════════════════════════════════════
 # SAVE
 # ══════════════════════════════════════════════════════════════════════════════
-out_path = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/owner_inbox/deck_blueprint/deck_plan.png"
+out_path = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/owner_inbox/deck_blueprint/deck_plan.png"
 fig.savefig(out_path, dpi=DPI, bbox_inches="tight", facecolor="white")
 print(f"Saved: {out_path}")
 print(f"Field plank count: {NUM_PLANKS}")

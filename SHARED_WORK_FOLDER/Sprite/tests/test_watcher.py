@@ -472,7 +472,7 @@ def test_clarifying_question_cross_repo_wire_shape(tmp_path):
     import sys
     from pathlib import Path as _Path
 
-    _HERMAN_BRAIN_SRC = _Path("/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/brain")
+    _HERMAN_BRAIN_SRC = _Path("/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/brain")
     if str(_HERMAN_BRAIN_SRC) not in sys.path:
         sys.path.insert(0, str(_HERMAN_BRAIN_SRC))
 

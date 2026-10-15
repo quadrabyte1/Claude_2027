@@ -18,7 +18,7 @@ import trimesh
 from shapely.geometry import Polygon as ShapelyPolygon, LineString
 from shapely.ops import unary_union
 
-APP_DIR = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app"
+APP_DIR = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app"
 sys.path.insert(0, APP_DIR)
 
 from gradient_surface_diagnostic import (
@@ -225,7 +225,7 @@ def main(path_3mf: str, egm_path: str):
 
 
 if __name__ == "__main__":
-    egm_path = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/DeLaveaga/EGMs/DeLaveaga (Hole 11).egm"
-    default_3mf = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/DeLaveaga/3MFs/DeLaveaga (Hole 11) [212].3mf"
+    egm_path = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/DeLaveaga/EGMs/DeLaveaga (Hole 11).egm"
+    default_3mf = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/DeLaveaga/3MFs/DeLaveaga (Hole 11) [212].3mf"
     p = sys.argv[1] if len(sys.argv) > 1 else default_3mf
     main(p, egm_path)

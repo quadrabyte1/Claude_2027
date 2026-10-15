@@ -31,7 +31,7 @@ Tests:
     T6  Regression: trap + rake + water surfaces unchanged by this task.
 
 Run:
-    cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER
+    cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER
     python -m pytest app/tests/test_default_fringe_inherits_green_boundary.py -v
 """
 from __future__ import annotations

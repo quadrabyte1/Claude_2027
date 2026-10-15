@@ -5,7 +5,7 @@ Diagnostic: run detect_boundaries() logic on Stanford H8 5396 (StrackaLine image
 and produce an annotated overlay PNG + printed polygon inventory.
 
 Usage:
-    cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app
+    cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app
     python scripts/diagnose_stanford_h8_5396.py
 
 Outputs:

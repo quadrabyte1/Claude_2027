@@ -15,7 +15,7 @@
 ## Install
 
 ```bash
-cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/mac_notifier
+cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/mac_notifier
 bash deploy/install.sh
 ```
 

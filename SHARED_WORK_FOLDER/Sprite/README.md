@@ -63,7 +63,7 @@ launchctl load ~/Library/LaunchAgents/com.sprite.watcher.plist
 ## Run tests
 
 ```bash
-cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Sprite
+cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Sprite
 pip install -e ".[dev]"
 pytest -v
 ```

@@ -16,8 +16,8 @@ from stl import mesh as stl_mesh
 import os
 
 # -- Paths -----------------------------------------------------------------
-INPUT = "/Users/fourierflight/GIT/CLAUDE-GitHub/SHARED_WORK_FOLDER/team_inbox/Moffett Field 7 (no iso).png"
-OUTPUT_DIR = "/Users/fourierflight/GIT/CLAUDE-GitHub/SHARED_WORK_FOLDER/owner_inbox"
+INPUT = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/team_inbox/Moffett Field 7 (no iso).png"
+OUTPUT_DIR = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/owner_inbox"
 
 OUTPUT_GREEN = os.path.join(OUTPUT_DIR, "moffett_7_green.stl")
 OUTPUT_FRINGE = os.path.join(OUTPUT_DIR, "moffett_7_fringe.stl")

@@ -143,11 +143,11 @@ Rake axes vary per trap (50.7°, 35.8°, 114.8°, 119.3°) — all PCA-derived.
 
 ## Files changed
 
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/gradient_surface_diagnostic.py` — v0.06
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/gradient_surface_diagnostic.py` — v0.06
   - Header comment block updated
   - Removed: `SAND_JITTER_AMPLITUDE_MM` constant, `_jitter_dz`, seed/phase vars
   - Added: 5 `SAND_CHUNK_*` constants, `_scatter_sand_chunks` helper, chunk-pass step 7 in `apply_sand_texture`
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/app.py` — `APP_VERSION` v4.64 → v4.65
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/tests/test_gradient_surface_diagnostic.py`
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/app.py` — `APP_VERSION` v4.64 → v4.65
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/tests/test_gradient_surface_diagnostic.py`
   - `TestRakeJitter` class updated (5 tests replaced/updated)
   - `TestSandChunkScatter` class added (7 new tests)

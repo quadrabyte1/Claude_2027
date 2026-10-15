@@ -12,7 +12,7 @@ All tests in this file are now SKIPPED.  Their replacement is
 test_strip_exterior_ocr.py which asserts the *absence* of the removed API.
 
 Run:
-    cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER
+    cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER
     python -m pytest app/tests/test_fringe_anchor_ui.py -v
 """
 from __future__ import annotations

@@ -288,7 +288,7 @@ import os
 v11_source = '/tmp/deck_plan_v11.drawio'
 if not os.path.exists(v11_source):
     # Fallback: extract from current file if /tmp version missing
-    v11_source = '/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/owner_inbox/deck_blueprint/deck_plan.drawio'
+    v11_source = '/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/owner_inbox/deck_blueprint/deck_plan.drawio'
 with open(v11_source, 'r') as f:
     content = f.read()
 
@@ -380,7 +380,7 @@ content = content.replace(
 )
 
 # Write updated file
-out_path = '/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/owner_inbox/deck_blueprint/deck_plan.drawio'
+out_path = '/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/owner_inbox/deck_blueprint/deck_plan.drawio'
 with open(out_path, 'w') as f:
     f.write(content)
 

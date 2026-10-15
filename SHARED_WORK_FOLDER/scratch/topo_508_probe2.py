@@ -2,7 +2,7 @@
 Task 508 probe 2: intercept EVERY stage of tee-bore polygon construction
 """
 import sys, os, pickle
-sys.path.insert(0, '/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app')
+sys.path.insert(0, '/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app')
 
 os.environ['FRINGE_WATERTIGHT_REWRITE'] = '1'
 
@@ -24,7 +24,7 @@ from shapely.geometry import Polygon, Point
 
 # Easier: dump bottom_poly at several points using file writes triggered by a global counter.
 _stage_counter = [0]
-_stage_dump_path = '/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/scratch/task_topo_tee_gap/task_508_stages.pkl'
+_stage_dump_path = '/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/scratch/task_topo_tee_gap/task_508_stages.pkl'
 
 # Patch _replace_fringe_with_watertight_extrusion to STOP the pipeline early with a full dump
 _orig_wr = gsd._replace_fringe_with_watertight_extrusion
@@ -82,7 +82,7 @@ def _union_traced(self, other):
 shapely.geometry.Polygon.union = _union_traced
 
 # Run Firefly H14
-egm_path = '/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/Firefly/EGMs/Firefly (Hole 14).egm'
+egm_path = '/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/Firefly/EGMs/Firefly (Hole 14).egm'
 try:
     gsd.run_pipeline(egm_path)
 except SystemExit:

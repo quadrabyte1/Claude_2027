@@ -3,7 +3,7 @@
 A voice-first capture and reminder assistant for the boss.
 
 **Design version:** 1.0 (relocked 2026-06-07; see
-`~/.claude/projects/-Volumes-GIT-CLAUDE/memory/project_homunculus.md` for the
+`~/.claude/projects/-Volumes-GIT-Claude-2027/memory/project_homunculus.md` for the
 locked decisions).
 
 The current architecture is **Mac-as-brain, phone-as-thin-client**:
@@ -40,7 +40,7 @@ Homunculus/
 
 - Brain install + run: `brain/README.md`.
 - Design source of truth: the memory entry at
-  `~/.claude/projects/-Volumes-GIT-CLAUDE/memory/project_homunculus.md`.
+  `~/.claude/projects/-Volumes-GIT-Claude-2027/memory/project_homunculus.md`.
 - Versioning: `x.y` — `y` increments on small modifications, `x` on
   significant architectural changes. Bump in the memory entry whenever
   the design moves.

@@ -10,7 +10,7 @@ status: complete
 
 **Date:** 2026-05-07
 **Performed by:** Cairn (PKM Specialist)
-**Vault:** `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/`
+**Vault:** `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/`
 **Obsidian version installed:** 1.12.7
 
 ---
@@ -88,7 +88,7 @@ Each folder was verified by `ls` before exclusion:
 - DB-facing sections are clearly marked as Phase 2 stubs with comment blocks explaining what Reed will wire up
 
 ### 6. Obsidian launched and verified
-- Launched via `open -a Obsidian /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER`
+- Launched via `open -a Obsidian /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER`
 - Obsidian 1.12.7 process confirmed running (`pgrep` positive)
 - `workspace.json` pre-created (Obsidian did not auto-create it because first-launch vault-selection is a GUI interaction; pre-created minimal file serves the same purpose)
 - Obsidian quit cleanly via `osascript -e 'quit app "Obsidian"'`

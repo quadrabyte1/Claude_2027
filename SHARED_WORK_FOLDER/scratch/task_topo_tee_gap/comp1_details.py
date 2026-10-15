@@ -3,7 +3,7 @@ import sys
 import numpy as np
 import trimesh
 
-APP_DIR = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app"
+APP_DIR = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app"
 sys.path.insert(0, APP_DIR)
 
 
@@ -19,7 +19,7 @@ def scene_nodes(scene):
     return nodes
 
 
-three_mf = sys.argv[1] if len(sys.argv) > 1 else "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/Firefly/3MFs/Firefly (Hole 14) [108].3mf"
+three_mf = sys.argv[1] if len(sys.argv) > 1 else "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/Firefly/3MFs/Firefly (Hole 14) [108].3mf"
 
 sc = trimesh.load(three_mf, force="scene")
 nodes = scene_nodes(sc)

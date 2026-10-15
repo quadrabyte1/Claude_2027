@@ -29,7 +29,7 @@ Tests retired (F-badge removed 2026-10-02):
   T13 Status strip G+F labels — strip now shows G only
 
 Run:
-    cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER
+    cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER
     python -m pytest app/tests/test_unified_gf_badges.py -v
 """
 from __future__ import annotations

@@ -33,7 +33,7 @@ Tests:
   T10 Filter zero-value markers — value 0.0 yields no spike (below _OCR_MIN_VALUE).
 
 Run:
-    cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER
+    cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER
     python -m pytest app/tests/test_ocr_elevation_wiring.py -v
 """
 

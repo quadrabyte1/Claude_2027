@@ -150,7 +150,7 @@ Unit tests (including T14) verify the archive structure matches `blank.3mf` exac
 
 ## Files changed
 
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/gradient_surface_diagnostic.py` — added `_BAMBU_TEMPLATE_DIR`, `_METADATA_TEMPLATE_FILES`, extended `_inject_bambu_extruder_metadata` (steps 3c + updated step 4/7)
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/app.py` — `APP_VERSION` v4.86 → v4.87
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/templates/bambu/` — added 6 new template files (filament_sequence.json, pick_1.png, plate_1.png, plate_1_small.png, plate_no_light_1.png, top_1.png); slice_info.config was already present
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/tests/test_bambu_config_injection.py` — added T8–T14 (7 new tests)
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/gradient_surface_diagnostic.py` — added `_BAMBU_TEMPLATE_DIR`, `_METADATA_TEMPLATE_FILES`, extended `_inject_bambu_extruder_metadata` (steps 3c + updated step 4/7)
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/app.py` — `APP_VERSION` v4.86 → v4.87
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/templates/bambu/` — added 6 new template files (filament_sequence.json, pick_1.png, plate_1.png, plate_1_small.png, plate_no_light_1.png, top_1.png); slice_info.config was already present
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/tests/test_bambu_config_injection.py` — added T8–T14 (7 new tests)

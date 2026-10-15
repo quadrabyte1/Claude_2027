@@ -69,7 +69,7 @@ Transcript: `"Sprite test one. Schedule a meeting with myself on September 15th 
 
 1. Reinstall the venv to pick up the new module:
    ```bash
-   cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Sprite
+   cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Sprite
    pip install -e .
    ```
 

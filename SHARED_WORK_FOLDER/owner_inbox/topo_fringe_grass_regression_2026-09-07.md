@@ -89,8 +89,8 @@ Consider clamping in `apply_grass_texture` so `jitter_scale = min(bump_spacing *
 
 ## Files referenced
 
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/DeLaveaga/EGMs/DeLaveaga (Hole 11a).egm` — the two values to revert.
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/gradient_surface_diagnostic.py:6520–6619, 7315–7328, 7467–7473` — grass texture function + call sites.
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/templates/editor.html:60–69, 635–636, 2191–2192, 2255–2256` — UI defaults (still `0.5 / 2.4`).
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/DeLaveaga/3MFs/DeLaveaga (Hole 11a) [246].3mf` — last known-good build (Sep 6 19:10).
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/DeLaveaga/3MFs/DeLaveaga (Hole 11a) [247].3mf`, `[248].3mf` — regressed builds.
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/DeLaveaga/EGMs/DeLaveaga (Hole 11a).egm` — the two values to revert.
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/gradient_surface_diagnostic.py:6520–6619, 7315–7328, 7467–7473` — grass texture function + call sites.
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/templates/editor.html:60–69, 635–636, 2191–2192, 2255–2256` — UI defaults (still `0.5 / 2.4`).
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/DeLaveaga/3MFs/DeLaveaga (Hole 11a) [246].3mf` — last known-good build (Sep 6 19:10).
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/DeLaveaga/3MFs/DeLaveaga (Hole 11a) [247].3mf`, `[248].3mf` — regressed builds.

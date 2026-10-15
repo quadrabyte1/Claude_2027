@@ -29,7 +29,7 @@ Tests (all RED before implementation):
   TG10 _build_tps_grid_height_field function exists and is callable.
 
 Run:
-    cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER
+    cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER
     python -m pytest app/tests/test_tps_global_height_field_task704.py -v
 """
 from __future__ import annotations

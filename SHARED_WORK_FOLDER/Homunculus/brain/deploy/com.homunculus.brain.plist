@@ -65,7 +65,7 @@
              default vault to a path inside miniconda's site-packages — which
              is wrong and silent. Always set this explicitly. -->
         <key>HOMUNCULUS_VAULT</key>
-        <string>/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/vault</string>
+        <string>/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/vault</string>
 
         <key>OLLAMA_BASE_URL</key>
         <string>http://localhost:11434</string>

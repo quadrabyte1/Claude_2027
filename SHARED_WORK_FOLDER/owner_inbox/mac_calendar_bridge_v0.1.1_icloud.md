@@ -72,7 +72,7 @@ rm ~/.local/share/mac_calendar_bridge/pushed.jsonl
 launchctl unload ~/Library/LaunchAgents/com.homunculus.mac_calendar_bridge.plist
 
 # Reinstall from the repo (re-installs the updated code into the boot-volume venv)
-bash /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/mac_calendar_bridge/deploy/install.sh
+bash /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/mac_calendar_bridge/deploy/install.sh
 
 # Load the updated agent
 launchctl load ~/Library/LaunchAgents/com.homunculus.mac_calendar_bridge.plist

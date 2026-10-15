@@ -1474,7 +1474,7 @@ def build_drawio():
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    out_path = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/owner_inbox/deck_blueprint/deck_plan_v18.drawio"
+    out_path = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/owner_inbox/deck_blueprint/deck_plan_v18.drawio"
     xml = build_drawio()
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(xml)

@@ -19,7 +19,7 @@ Groups:
       still has polygons; APP_VERSION bumped to v4.98
 
 Run:
-    cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER
+    cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER
     python -m pytest app/tests/test_strip_ocr_elevation_spikes.py -v
 """
 from __future__ import annotations

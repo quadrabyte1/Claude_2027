@@ -1,6 +1,6 @@
 """Test extrude_polygon a= values on the REAL Firefly bottom_poly."""
 import os, sys, time, numpy as np, trimesh
-REPO = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER"
+REPO = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER"
 sys.path.insert(0, os.path.join(REPO, "app"))
 os.chdir(os.path.join(REPO, "app"))
 

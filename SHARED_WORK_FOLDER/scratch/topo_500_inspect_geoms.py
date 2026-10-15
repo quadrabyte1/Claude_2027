@@ -1,6 +1,6 @@
 """Inspect each geometry in the latest Firefly 3MF."""
 import os, trimesh, numpy as np
-REPO = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER"
+REPO = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER"
 FIREFLY = os.path.join(REPO, "ItWentIn/GolfCourses/Firefly/3MFs")
 latest = sorted(
     [f for f in os.listdir(FIREFLY) if f.endswith(".3mf")],

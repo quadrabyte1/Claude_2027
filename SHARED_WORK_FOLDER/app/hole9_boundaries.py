@@ -221,7 +221,7 @@ if __name__ == "__main__":
         from PIL import Image, ImageDraw
 
         img = Image.open(
-            "/Users/fourierflight/GIT/CLAUDE-GitHub/SHARED_WORK_FOLDER/"
+            "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/"
             "team_inbox/Moffett Field 9 (GolfLogix).png"
         )
         draw = ImageDraw.Draw(img)
@@ -232,7 +232,7 @@ if __name__ == "__main__":
         draw.polygon(TRAP_RIGHT, outline="red", width=2)
 
         out_path = (
-            "/Users/fourierflight/GIT/CLAUDE-GitHub/SHARED_WORK_FOLDER/"
+            "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/"
             "owner_inbox/debug_hole9_boundaries.png"
         )
         img.save(out_path)

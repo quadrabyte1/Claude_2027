@@ -80,7 +80,7 @@ You have at least one event sitting in iCloud with the ugly `[handle]` title. Tw
    ```
 3. Reinstall the bridge at v0.1.4:
    ```
-   pip install -e /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/mac_calendar_bridge
+   pip install -e /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/mac_calendar_bridge
    ```
 4. Bounce the bridge (launchctl unload / load, or just restart the process). The cold-boot sweep will re-push all events with clean titles.
 

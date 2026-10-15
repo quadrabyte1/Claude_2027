@@ -4,7 +4,7 @@ import numpy as np
 import trimesh
 from shapely.geometry import Polygon as ShapelyPolygon, Point, LineString
 
-APP_DIR = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app"
+APP_DIR = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app"
 sys.path.insert(0, APP_DIR)
 from gradient_surface_diagnostic import load_egm, _compute_px_to_mm, _px_to_mm_2d, _poly_to_dense_px, _clip_polygon_to_fringe_rect
 
@@ -22,8 +22,8 @@ def scene_nodes(scene):
     return node_to_mesh
 
 def main():
-    p3mf = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/DeLaveaga/3MFs/DeLaveaga (Hole 11) [212].3mf"
-    egm_path = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/DeLaveaga/EGMs/DeLaveaga (Hole 11).egm"
+    p3mf = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/DeLaveaga/3MFs/DeLaveaga (Hole 11) [212].3mf"
+    egm_path = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/DeLaveaga/EGMs/DeLaveaga (Hole 11).egm"
 
     scene = trimesh.load(p3mf, force="scene")
     nodes = scene_nodes(scene)

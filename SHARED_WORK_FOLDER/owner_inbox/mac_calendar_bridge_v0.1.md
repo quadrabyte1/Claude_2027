@@ -40,7 +40,7 @@ Key design choices:
 
 1. Run the installer:
    ```bash
-   cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/mac_calendar_bridge
+   cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/mac_calendar_bridge
    bash deploy/install.sh
    ```
    This installs to `~/.local/lib/mac_calendar_bridge/` and `~/.local/bin/` (boot volume, not the nosuid external drive), and copies the launchd plist to `~/Library/LaunchAgents/`.
@@ -68,7 +68,7 @@ See `docs/FIRST_RUN.md` for full troubleshooting.
 
 ```
 INFO  mac_calendar_bridge v0.1.0 starting
-INFO  Vault: /Volumes/GIT/CLAUDE/.../Homunculus/vault
+INFO  Vault: /Volumes/GIT/Claude_2027/.../Homunculus/vault
 INFO  Calendar: Homunculus
 INFO  Ensuring Calendar 'Homunculus' exists
 INFO  Calendar 'Homunculus' ready

@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 import trimesh
 
-APP_DIR = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app"
+APP_DIR = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app"
 sys.path.insert(0, APP_DIR)
 from gradient_surface_diagnostic import (
     load_egm, PRINT_SIZE_MM, FRINGE_XY_EXPANSION_MM,
@@ -29,10 +29,10 @@ def scene_nodes(scene):
     return nodes
 
 
-BEFORE = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/Firefly/3MFs/Firefly (Hole 14) [104].3mf"
-AFTER = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/Firefly/3MFs/Firefly (Hole 14) [110].3mf"
+BEFORE = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/Firefly/3MFs/Firefly (Hole 14) [104].3mf"
+AFTER = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/Firefly/3MFs/Firefly (Hole 14) [110].3mf"
 
-egm_path = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/Firefly/EGMs/Firefly (Hole 14).egm"
+egm_path = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/Firefly/EGMs/Firefly (Hole 14).egm"
 egm, _img, _gpx = load_egm(egm_path)
 tee = egm["tee_hole"]
 half = PRINT_SIZE_MM/2 + FRINGE_XY_EXPANSION_MM/2
@@ -73,6 +73,6 @@ for ax, three_mf, title in zip(axes, [BEFORE, AFTER], ["BEFORE v4.46 (Firefly [1
     ax.legend(loc='upper right', fontsize=7)
 
 fig.suptitle(f"Firefly Hole 14 tee-cylinder fringe gap  |  tee mesh XY=({cx:.2f},{cy:.2f})", fontsize=12)
-out = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/scratch/task_topo_tee_gap/before_after.png"
+out = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/scratch/task_topo_tee_gap/before_after.png"
 plt.savefig(out, dpi=140, bbox_inches='tight')
 print(f"saved {out}")

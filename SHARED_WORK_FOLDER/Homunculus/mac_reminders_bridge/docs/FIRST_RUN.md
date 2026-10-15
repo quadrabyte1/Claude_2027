@@ -11,7 +11,7 @@ Herman `handle` and `remind` captures appear in Reminders.app.
 
 - macOS (the bridge is Mac-only; Reminders.app / AppleScript required)
 - Python 3.11 or later (check with `python3 --version`)
-- The repo checked out at `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/`
+- The repo checked out at `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/`
 - Herman brain running and writing to `vault/reminders/`
 
 ---
@@ -39,7 +39,7 @@ Verify: in the Reminders sidebar you should see "Homunculus" listed under the
 ## Step 2: Run the installer
 
 ```bash
-cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/mac_reminders_bridge
+cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/mac_reminders_bridge
 bash deploy/install.sh
 ```
 

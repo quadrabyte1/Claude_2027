@@ -97,7 +97,7 @@ All config via environment variables (set in the plist or your shell):
 
 | Variable | Default | Description |
 |---|---|---|
-| `HERMAN_VAULT_PATH` | `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/vault` | Root of the Herman vault |
+| `HERMAN_VAULT_PATH` | `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/vault` | Root of the Herman vault |
 | `BRIDGE_CALENDAR_NAME` | `Homunculus` | Name of the Calendar.app calendar to push events into |
 | `BRIDGE_STATE_FILE` | `~/.local/share/mac_calendar_bridge/pushed.jsonl` | Idempotency state file |
 | `BRIDGE_LOG_LEVEL` | `INFO` | Logging level (DEBUG / INFO / WARNING / ERROR) |

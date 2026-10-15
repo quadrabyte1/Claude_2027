@@ -20,5 +20,7 @@ tests/test_herman_client.py
 tests/test_inbox.py
 tests/test_parse.py
 tests/test_state.py
+tests/test_timers.py
 tests/test_transcribe.py
+tests/test_v070_remind_verb.py
 tests/test_watcher.py

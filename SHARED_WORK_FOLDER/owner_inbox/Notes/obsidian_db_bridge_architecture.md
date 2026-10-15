@@ -8,7 +8,7 @@ tags: [obsidian, sqlite, architecture, phase2]
 
 # Obsidian ↔ SQLite Bridge — Phase 2 Architecture
 
-**Document purpose:** Architecture proposal for Reed to implement the two-way sync between the Obsidian vault at `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/` and the workspace database at `db/workspace.db`.
+**Document purpose:** Architecture proposal for Reed to implement the two-way sync between the Obsidian vault at `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/` and the workspace database at `db/workspace.db`.
 
 ---
 

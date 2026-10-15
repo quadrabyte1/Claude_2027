@@ -83,6 +83,6 @@ All 57 pre-existing tests maintained. Total: **66 passed, 0 failed**.
 
 ## Files Changed
 
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/gradient_surface_diagnostic.py` — v0.10 → v0.11 header, `TRAP_FRINGE_OFFSET_MM` -4.0 → -2.0, `TRAP_SURFACE_CURVED = False` added, `_compute_trap_surface_from_fringe` dispatches on flag, `_compute_trap_height_from_fringe` uses min/max by flag.
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/app.py` — `APP_VERSION` v4.81 → v4.82.
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/tests/test_gradient_surface_diagnostic.py` — 9 new tests (class M), 4 stale tests updated for -2.0 and min-based rule.
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/gradient_surface_diagnostic.py` — v0.10 → v0.11 header, `TRAP_FRINGE_OFFSET_MM` -4.0 → -2.0, `TRAP_SURFACE_CURVED = False` added, `_compute_trap_surface_from_fringe` dispatches on flag, `_compute_trap_height_from_fringe` uses min/max by flag.
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/app.py` — `APP_VERSION` v4.81 → v4.82.
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/tests/test_gradient_surface_diagnostic.py` — 9 new tests (class M), 4 stale tests updated for -2.0 and min-based rule.

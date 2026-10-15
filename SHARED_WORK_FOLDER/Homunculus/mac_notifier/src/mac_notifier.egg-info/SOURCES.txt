@@ -2,6 +2,7 @@ README.md
 pyproject.toml
 src/mac_notifier/__init__.py
 src/mac_notifier/applescript.py
+src/mac_notifier/bundle.py
 src/mac_notifier/config.py
 src/mac_notifier/herman_client.py
 src/mac_notifier/poller.py
@@ -13,6 +14,8 @@ src/mac_notifier.egg-info/entry_points.txt
 src/mac_notifier.egg-info/requires.txt
 src/mac_notifier.egg-info/top_level.txt
 tests/test_applescript.py
+tests/test_applescript_v03.py
+tests/test_bundle.py
 tests/test_config.py
 tests/test_herman_client.py
 tests/test_poller.py

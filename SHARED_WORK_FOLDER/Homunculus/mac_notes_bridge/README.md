@@ -76,7 +76,7 @@ launchctl load ~/Library/LaunchAgents/com.homunculus.mac_notes_bridge.plist
 
 | Env var | Default | Description |
 |---------|---------|-------------|
-| `HERMAN_VAULT_PATH` | `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/vault` | Path to Herman vault root |
+| `HERMAN_VAULT_PATH` | `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/vault` | Path to Herman vault root |
 | `BRIDGE_FOLDER_NAME` | `Homunculus` | Notes.app folder name |
 | `BRIDGE_NOTES_ACCOUNT` | `iCloud` | Notes.app account name |
 | `BRIDGE_STATE_FILE` | `~/.local/share/mac_notes_bridge/pushed.jsonl` | Idempotency state |

@@ -41,7 +41,7 @@
 The PNG files themselves are present in Metadata/ (verified: `plate_1.png`, `plate_1_small.png`, `plate_no_light_1.png`, `pick_1.png`, `top_1.png`), but the package relationships that declare them are missing. Bambu Studio's 3MF validation checks for consistency between declared relationships and actual files; missing relationship entries cause the parser to flag the config as "invalid."
 
 ## File Path
-- **Generator:** `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/gradient_surface_diagnostic.py`, function `_inject_bambu_extruder_metadata()`, lines 8710–9039
+- **Generator:** `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/gradient_surface_diagnostic.py`, function `_inject_bambu_extruder_metadata()`, lines 8710–9039
 - **Problematic code section:** Lines 9015–9019 (file copy loop) and lines 9007–9013 ([Content_Types].xml patching). The `.rels` file is not regenerated.
 
 ## Secondary Finding

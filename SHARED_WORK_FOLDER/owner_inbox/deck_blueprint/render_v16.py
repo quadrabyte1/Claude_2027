@@ -1282,11 +1282,11 @@ label(PX + 0.78, y_leg + 0.26, "Required: 16-ft + 8-ft segments (no longer stock
 # ══════════════════════════════════════════════════════════════════════════════
 # SAVE
 # ══════════════════════════════════════════════════════════════════════════════
-out_path = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/owner_inbox/deck_blueprint/deck_plan_v16.png"
+out_path = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/owner_inbox/deck_blueprint/deck_plan_v16.png"
 fig.savefig(out_path, dpi=DPI, bbox_inches="tight", facecolor="white")
 print(f"Saved: {out_path}")
 
-out_pdf = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/owner_inbox/deck_blueprint/deck_plan_v16.pdf"
+out_pdf = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/owner_inbox/deck_blueprint/deck_plan_v16.pdf"
 fig.savefig(out_pdf, bbox_inches="tight", facecolor="white")
 print(f"Saved: {out_pdf}")
 

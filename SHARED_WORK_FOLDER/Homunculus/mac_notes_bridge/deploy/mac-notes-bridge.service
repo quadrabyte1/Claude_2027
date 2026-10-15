@@ -8,7 +8,7 @@ After=network.target
 [Service]
 Type=simple
 ExecStart=%h/.local/lib/mac_notes_bridge/venv/bin/python -m mac_notes_bridge.watcher
-Environment=HERMAN_VAULT_PATH=/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/vault
+Environment=HERMAN_VAULT_PATH=/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/vault
 Environment=BRIDGE_FOLDER_NAME=Homunculus
 Environment=BRIDGE_NOTES_ACCOUNT=iCloud
 Environment=BRIDGE_STATE_FILE=%h/.local/share/mac_notes_bridge/pushed.jsonl

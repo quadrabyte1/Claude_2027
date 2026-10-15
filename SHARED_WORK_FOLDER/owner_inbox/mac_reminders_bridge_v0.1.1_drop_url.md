@@ -84,7 +84,7 @@ Two existing tests updated to reflect the removed `homunculus_url` property:
 ## Migration Steps
 
 1. `launchctl unload ~/Library/LaunchAgents/com.homunculus.mac_reminders_bridge.plist`
-2. `bash /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/mac_reminders_bridge/deploy/install.sh`
+2. `bash /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/mac_reminders_bridge/deploy/install.sh`
 3. `launchctl load ~/Library/LaunchAgents/com.homunculus.mac_reminders_bridge.plist`
 4. `tail -f /tmp/mac_reminders_bridge.log` — expect cold-boot sweep to push all 9 successfully; verify count in Reminders.app is 9.
 

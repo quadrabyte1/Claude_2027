@@ -59,7 +59,7 @@
         Override if your vault lives elsewhere.
         -->
         <key>HERMAN_VAULT_PATH</key>
-        <string>/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/vault</string>
+        <string>/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/vault</string>
 
         <!-- Calendar name in Calendar.app. Must match the manually-created calendar. -->
         <key>BRIDGE_CALENDAR_NAME</key>

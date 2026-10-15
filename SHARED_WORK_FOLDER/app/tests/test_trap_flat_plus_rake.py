@@ -24,7 +24,7 @@ TR9  Regression: build_fringe_mesh still produces a valid fringe mesh.
 TR10 Regression: TRAP_SURFACE_CURVED=False is the module default (not just settable).
 
 Run:
-    cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER
+    cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER
     python -m pytest app/tests/test_trap_flat_plus_rake.py -v
 """
 from __future__ import annotations

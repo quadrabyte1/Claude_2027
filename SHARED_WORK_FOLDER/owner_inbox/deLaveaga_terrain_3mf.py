@@ -29,11 +29,11 @@ from shapely.geometry import MultiPoint
 import trimesh
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
-GPS_FILE   = Path("/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/De Laveaga GPS from Stracka.txt")
-SERIAL_JSON = Path("/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/DeLaveaga/serial.json")
-OUT_DIR_3MF = Path("/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/DeLaveaga/3MFs")
-OUT_DIR_IMG = Path("/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/DeLaveaga/Images")
-INBOX       = Path("/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/owner_inbox")
+GPS_FILE   = Path("/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/De Laveaga GPS from Stracka.txt")
+SERIAL_JSON = Path("/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/DeLaveaga/serial.json")
+OUT_DIR_3MF = Path("/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/DeLaveaga/3MFs")
+OUT_DIR_IMG = Path("/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/DeLaveaga/Images")
+INBOX       = Path("/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/owner_inbox")
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 LAT_M_PER_DEG = 111_320.0

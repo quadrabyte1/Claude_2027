@@ -29,7 +29,7 @@ Tests (RED first, then GREEN after implementation):
       interior markers still produce Gaussian bumps on the fringe; no change.
 
 Run:
-    cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER
+    cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER
     python -m pytest app/tests/test_fringe_boundary_anchors.py -v
 """
 from __future__ import annotations

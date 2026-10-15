@@ -11,7 +11,7 @@ Herman vault events appear in Calendar.app.
 
 - macOS (the bridge is Mac-only; Calendar.app is required)
 - Python 3.11 or later (check with `python3 --version`)
-- The repo checked out at `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/`
+- The repo checked out at `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/`
 
 ---
 
@@ -39,7 +39,7 @@ Verify: in the Calendar sidebar you should see "Homunculus" listed under the
 ## Step 2: Run the installer
 
 ```bash
-cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/mac_calendar_bridge
+cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/mac_calendar_bridge
 bash deploy/install.sh
 ```
 
@@ -112,7 +112,7 @@ tail -f /tmp/mac_calendar_bridge.log
 Expected first-run output:
 ```
 2026-09-14T... INFO     [mac_calendar_bridge] mac_calendar_bridge v0.1.2 starting
-2026-09-14T... INFO     [mac_calendar_bridge] Vault: /Volumes/GIT/CLAUDE/.../vault/calendar
+2026-09-14T... INFO     [mac_calendar_bridge] Vault: /Volumes/GIT/Claude_2027/.../vault/calendar
 2026-09-14T... INFO     [mac_calendar_bridge] Calendar: Homunculus
 2026-09-14T... INFO     [mac_calendar_bridge] Cold-boot sweep of .../vault/calendar
 2026-09-14T... INFO     [mac_calendar_bridge] Sweep found 2 event(s) in vault

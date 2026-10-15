@@ -18,7 +18,7 @@ or mac_notes_bridge. Purely additive.
 ## Install steps (run when you wake up)
 
 ```bash
-cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/mac_notifier
+cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/mac_notifier
 bash deploy/install.sh
 launchctl load ~/Library/LaunchAgents/com.homunculus.mac_notifier.plist
 ```

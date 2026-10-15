@@ -4,19 +4,19 @@ import numpy as np
 import trimesh
 from shapely.geometry import Polygon, Point
 
-sys.path.insert(0, "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app")
+sys.path.insert(0, "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app")
 from gradient_surface_diagnostic import (
     load_egm, _compute_px_to_mm, _px_to_mm_2d, _poly_to_dense_px, _clip_polygon_to_fringe_rect
 )
 
 def main():
     scene = trimesh.load(
-        "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/DeLaveaga/3MFs/DeLaveaga (Hole 11) [212].3mf",
+        "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/DeLaveaga/3MFs/DeLaveaga (Hole 11) [212].3mf",
         force="scene",
     )
     fringe = scene.geometry["geometry_1"]
     egm, _, gpx = load_egm(
-        "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/DeLaveaga/EGMs/DeLaveaga (Hole 11).egm"
+        "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/DeLaveaga/EGMs/DeLaveaga (Hole 11).egm"
     )
     scale, cpx = _compute_px_to_mm(gpx, egm)
     for tidx, tp_raw in enumerate([p for p in egm["polygons"] if p.get("type") == "trap"], start=1):

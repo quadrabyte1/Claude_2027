@@ -111,6 +111,6 @@ Bumped `v4.70 → v4.71` in `app/app.py`. The footer on every page (including th
 
 ## Files changed
 
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/app.py` — `APP_VERSION` bump; `_clamp_point_to_image()` and `_clamp_polygon_points()` helpers; clamp loop in `detect_boundaries()`; `off_frame_count` in `load_boundaries()`.
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/templates/editor.html` — `loadProject()` extended with `off_frame_count` handling, JS belt-and-suspenders clamp, dirty-flag set, conditional toast.
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/tests/test_clamp_points_to_frame.py` — 21 new tests (RED→GREEN).
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/app.py` — `APP_VERSION` bump; `_clamp_point_to_image()` and `_clamp_polygon_points()` helpers; clamp loop in `detect_boundaries()`; `off_frame_count` in `load_boundaries()`.
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/templates/editor.html` — `loadProject()` extended with `off_frame_count` handling, JS belt-and-suspenders clamp, dirty-flag set, conditional toast.
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/tests/test_clamp_points_to_frame.py` — 21 new tests (RED→GREEN).

@@ -289,5 +289,5 @@ The engineer runs this on every release candidate, in addition to the existing 4
 - [Enforce Structured JSON Output with Qwen Models — Alibaba Cloud](https://www.alibabacloud.com/help/en/model-studio/qwen-structured-output)
 - [Local AI Runtime Update: May 2026 — Codersera](https://codersera.com/blog/local-ai-runtimes-may-2026-update/)
 - [Local LLM Deployment 2026: Ollama vs vLLM Tuning — QubitTool](https://qubittool.com/blog/local-llm-deployment-2026-ollama-vllm-optimization)
-- Internal: `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/brain/` (the existing skeleton, especially `llm.py`, `schemas.py`, `reminders.py`, `date_resolver.py`)
+- Internal: `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/brain/` (the existing skeleton, especially `llm.py`, `schemas.py`, `reminders.py`, `date_resolver.py`)
 - Internal: `Team/kit.md`, `Team/mori.md` (for ownership-split and product-sensibility lift)

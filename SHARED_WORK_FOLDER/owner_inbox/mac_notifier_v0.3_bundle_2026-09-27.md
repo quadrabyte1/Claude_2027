@@ -14,7 +14,7 @@ Notifications now appear as **"Homunculus Notifier"** in the macOS Notification 
 
 ```bash
 # 1. Build and install the .app bundle (Swift compiler required — already present)
-cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/mac_notifier
+cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/mac_notifier
 bash deploy/install_bundle.sh
 
 # 2. Re-install the launchd agent to pick up the updated plist comment

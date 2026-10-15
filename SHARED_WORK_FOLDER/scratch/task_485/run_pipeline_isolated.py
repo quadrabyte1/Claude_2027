@@ -12,7 +12,7 @@ import shutil
 import sys
 from pathlib import Path
 
-REPO = Path("/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER").resolve()
+REPO = Path("/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER").resolve()
 APP = REPO / "app"
 sys.path.insert(0, str(APP))
 

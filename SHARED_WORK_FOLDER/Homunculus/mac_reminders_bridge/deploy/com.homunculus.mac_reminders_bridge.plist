@@ -59,7 +59,7 @@
         Override if your vault lives elsewhere.
         -->
         <key>HERMAN_VAULT_PATH</key>
-        <string>/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/vault</string>
+        <string>/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/vault</string>
 
         <!-- Reminders.app list name. Must match the manually-created list. -->
         <key>BRIDGE_LIST_NAME</key>

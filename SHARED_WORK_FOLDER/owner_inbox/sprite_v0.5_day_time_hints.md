@@ -68,7 +68,7 @@ Final suite: **115 passed** (up from 55 before this milestone).
 The editable install picks up Python changes automatically, but the Ollama prompt is loaded at process start. A bounce is required to get the new `_SYSTEM_PROMPT` and `_INTENT_JSON_SCHEMA` into the running process.
 
 ```bash
-cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Sprite
+cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Sprite
 ~/.local/lib/sprite/venv/bin/pip install -e . --quiet
 ```
 

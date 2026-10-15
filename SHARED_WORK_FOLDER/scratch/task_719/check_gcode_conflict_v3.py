@@ -85,5 +85,5 @@ def main(path_3mf: str, layer_h: float = 0.2):
 
 if __name__ == "__main__":
     p = sys.argv[1] if len(sys.argv) > 1 else \
-        "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/DeLaveaga/3MFs/DeLaveaga (Hole 11) [212].3mf"
+        "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/DeLaveaga/3MFs/DeLaveaga (Hole 11) [212].3mf"
     main(p)

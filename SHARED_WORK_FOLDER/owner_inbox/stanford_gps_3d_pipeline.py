@@ -23,8 +23,8 @@ import plotly.graph_objects as go
 import plotly.io as pio
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-GPS_FILE = Path("/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/Stanford/GolfIntelligence/Stanford (8).gps")
-INBOX = Path("/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/owner_inbox")
+GPS_FILE = Path("/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/Stanford/GolfIntelligence/Stanford (8).gps")
+INBOX = Path("/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/owner_inbox")
 OUT_PNG = INBOX / "stanford_gps_3d.png"
 OUT_HTML = INBOX / "stanford_gps_3d.html"
 OUT_STL = INBOX / "stanford_gps_3d.stl"

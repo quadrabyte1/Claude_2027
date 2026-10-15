@@ -128,7 +128,7 @@ Cell values are stored in the EGM and round-trip correctly. The generated 3MF do
 
 ## Files Changed
 
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/app.py` — APP_VERSION bumped to `v5.00`
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/templates/editor.html` — version comment, Alpine state, draw() overlay, grid helpers, onMouseDown intercept, handleKey Delete guard, autoSave payload, loadProject restore, clearEditorState reset, startNewProject reset, HTML input overlay, status strip
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/tests/test_grid_cell_elevation_ui.py` — 28 new Bug→TDD tests (all GREEN)
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app/tests/test_strip_ocr_elevation_spikes.py` — version assertions updated to range guards (pinned v4.99 / "4.98" assertions updated to accept v5.00)
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/app.py` — APP_VERSION bumped to `v5.00`
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/templates/editor.html` — version comment, Alpine state, draw() overlay, grid helpers, onMouseDown intercept, handleKey Delete guard, autoSave payload, loadProject restore, clearEditorState reset, startNewProject reset, HTML input overlay, status strip
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/tests/test_grid_cell_elevation_ui.py` — 28 new Bug→TDD tests (all GREEN)
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app/tests/test_strip_ocr_elevation_spikes.py` — version assertions updated to range guards (pinned v4.99 / "4.98" assertions updated to accept v5.00)

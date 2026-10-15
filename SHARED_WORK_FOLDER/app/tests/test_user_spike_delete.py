@@ -37,7 +37,7 @@ Tests:
   T9  Editor on-page version string bumped (contains 4.96).
 
 Run:
-    cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER
+    cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER
     python -m pytest app/tests/test_user_spike_delete.py -v
 """
 from __future__ import annotations

@@ -63,7 +63,7 @@ All configuration is via environment variables declared in the plist (macOS) or 
 The one env var you must always set explicitly:
 
 ```
-HOMUNCULUS_VAULT=/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/vault
+HOMUNCULUS_VAULT=/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/vault
 ```
 
 Without it, the pip-installed Herman defaults to a path inside the Python prefix (miniconda site-packages) — which is wrong and silent. This is the vault-path bug that bit us on 2026-09-13; the plist and service unit both set it explicitly to prevent recurrence.

@@ -83,7 +83,7 @@ Legacy fields (`msg`, `recipient`, `stable_path`, `slicer_opened`, `slicer_error
 2. If the process needs bouncing:
    ```sh
    pkill -f 'python.*app.py'
-   cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app && python app.py &
+   cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app && python app.py &
    ```
 3. Open the **Custom Text Plaque** page. Enter any text and click **Generate** — without SMTP configured it will now succeed, showing "Saved to ~/Downloads/…" in the result card.
 4. Check `~/Downloads/` for the `.3mf` file.

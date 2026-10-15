@@ -8,7 +8,7 @@ anchor pipeline is semantically wrong and is being torn out.
 
 These tests are RED first.  They describe the *reduced* API contract.
 Run:
-    cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER
+    cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER
     python -m pytest app/tests/test_strip_exterior_ocr.py -v
 """
 from __future__ import annotations

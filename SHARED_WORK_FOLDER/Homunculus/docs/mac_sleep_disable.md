@@ -80,7 +80,7 @@ Create `~/Library/LaunchAgents/com.homunculus.brain.plist`:
   <key>StandardOutPath</key>      <string>/tmp/homunculus-brain.log</string>
   <key>StandardErrorPath</key>    <string>/tmp/homunculus-brain.err</string>
   <key>EnvironmentVariables</key> <dict>
-    <key>HOMUNCULUS_VAULT</key>   <string>/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/vault</string>
+    <key>HOMUNCULUS_VAULT</key>   <string>/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/vault</string>
     <key>OLLAMA_MODEL</key>       <string>qwen2.5:7b</string>
   </dict>
 </dict>

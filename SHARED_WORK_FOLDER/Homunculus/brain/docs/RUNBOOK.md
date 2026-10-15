@@ -106,7 +106,7 @@ Expected response (v1.5.0):
   "status": "ok",
   "design_version": "1.5",
   "package_version": "1.5.0",
-  "vault_path": "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/vault"
+  "vault_path": "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/vault"
 }
 ```
 
@@ -157,7 +157,7 @@ The deploy plist and service unit both set it. If you ever launch Herman manuall
 (e.g., for testing), set it in your shell first:
 
 ```bash
-export HOMUNCULUS_VAULT=/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/vault
+export HOMUNCULUS_VAULT=/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/vault
 homunculus-brain
 ```
 

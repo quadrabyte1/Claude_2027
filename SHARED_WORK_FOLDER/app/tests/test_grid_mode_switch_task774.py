@@ -16,7 +16,7 @@ Also verifies backward compatibility: an EGM with gridCellHeights but no
 gridMode key behaves exactly like the pre-v5.34 "delta" code path.
 
 Run:
-    cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER
+    cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER
     python -m pytest app/tests/test_grid_mode_switch_task774.py -v
 """
 from __future__ import annotations

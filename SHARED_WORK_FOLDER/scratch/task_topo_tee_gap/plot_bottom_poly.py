@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 from shapely.geometry import Polygon as ShapelyPolygon, box as shbox
 
-APP_DIR = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app"
+APP_DIR = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app"
 sys.path.insert(0, APP_DIR)
 os.chdir(APP_DIR)
 
@@ -17,7 +17,7 @@ from gradient_surface_diagnostic import (
     TEE_HOLE_COLLAR_OD_MM, TEE_HOLE_DIAMETER_MM,
 )
 
-egm_path = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/Firefly/EGMs/Firefly (Hole 14).egm"
+egm_path = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/Firefly/EGMs/Firefly (Hole 14).egm"
 egm, _img, gpx = load_egm(egm_path)
 scale, centroid_px = _compute_px_to_mm(gpx, egm)
 
@@ -91,13 +91,13 @@ ax.plot(cx, cy, 'r+', markersize=15, label=f'tee ({cx:.2f},{cy:.2f})')
 ax.set_aspect('equal')
 ax.set_title(f"Firefly H14 bottom_poly assembly (v4.46 broken)")
 ax.legend(loc='upper right', fontsize=8)
-out = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/scratch/task_topo_tee_gap/bottom_poly_full.png"
+out = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/scratch/task_topo_tee_gap/bottom_poly_full.png"
 plt.savefig(out, dpi=120, bbox_inches='tight')
 print(f"saved {out}")
 
 # Zoom to tee region
 ax.set_xlim(cx-15, cx+15)
 ax.set_ylim(cy-15, cy+15)
-out2 = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/scratch/task_topo_tee_gap/bottom_poly_zoom.png"
+out2 = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/scratch/task_topo_tee_gap/bottom_poly_zoom.png"
 plt.savefig(out2, dpi=150, bbox_inches='tight')
 print(f"saved {out2}")

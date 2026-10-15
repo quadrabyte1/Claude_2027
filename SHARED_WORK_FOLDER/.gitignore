@@ -6,3 +6,40 @@ x.py
 *blob
 .DS_Store
 __pycache__/
+
+# Merged from pre-2027 repo .gitignore
+# Local SQLite workspace DB — each machine keeps its own
+db/workspace.db
+db/workspace.db-shm
+db/workspace.db-wal
+
+# MovieScanner — local scanner DB + downloaded IMDB dataset dumps
+# Wildcards below catch scanner.db, scanner.db-shm/-wal, and every
+# scanner.db.pre_* / .backup / other suffix variant.
+MovieScanner/db/scanner.db
+MovieScanner/db/scanner.db-*
+MovieScanner/db/scanner.db.*
+MovieScanner/db/backups/
+MovieScanner/db/data/
+MovieScanner/data/*.tsv.gz
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# Env files — may contain SMTP or other credentials
+.env
+app/.env
+
+# macOS
+.DS_Store
+
+# Editor / OS
+*.swp
+.idea/
+.vscode/

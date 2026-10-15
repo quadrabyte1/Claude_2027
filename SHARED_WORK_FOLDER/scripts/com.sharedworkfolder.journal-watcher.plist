@@ -8,12 +8,12 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/scripts/.venv/bin/python3</string>
-        <string>/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/scripts/sync_journal.py</string>
+        <string>/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/scripts/.venv/bin/python3</string>
+        <string>/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/scripts/sync_journal.py</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER</string>
+    <string>/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER</string>
 
     <key>EnvironmentVariables</key>
     <dict>

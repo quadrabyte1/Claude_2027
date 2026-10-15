@@ -13,6 +13,7 @@ src/mac_calendar_bridge.egg-info/entry_points.txt
 src/mac_calendar_bridge.egg-info/requires.txt
 src/mac_calendar_bridge.egg-info/top_level.txt
 tests/test_applescript.py
+tests/test_slug_collision_fix.py
 tests/test_state.py
 tests/test_v012_no_account.py
 tests/test_vault_reader.py

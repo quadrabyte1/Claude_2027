@@ -129,7 +129,7 @@ Verify startup log shows `Sprite watcher v0.11.0 starting`.
 
 ```bash
 launchctl unload ~/Library/LaunchAgents/com.homunculus.mac_notifier.plist
-bash /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/mac_notifier/deploy/install.sh
+bash /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/mac_notifier/deploy/install.sh
 launchctl load  ~/Library/LaunchAgents/com.homunculus.mac_notifier.plist
 ```
 

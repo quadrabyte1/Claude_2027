@@ -2,7 +2,7 @@
 from PIL import Image, ImageDraw, ImageFont
 import math
 
-ROOT = '/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/owner_inbox/picture_perfect'
+ROOT = '/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/owner_inbox/picture_perfect'
 RS = 4
 CW, CH = 1600 * RS, 880 * RS
 HELV = '/System/Library/Fonts/Helvetica.ttc'

@@ -1360,11 +1360,11 @@ label(PX + 0.78, y_leg + 0.26, "Lag-bolted to outer rim face; 11'-9\" long, righ
 # ══════════════════════════════════════════════════════════════════════════════
 # SAVE
 # ══════════════════════════════════════════════════════════════════════════════
-out_path = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/owner_inbox/deck_blueprint/deck_plan_v17.png"
+out_path = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/owner_inbox/deck_blueprint/deck_plan_v17.png"
 fig.savefig(out_path, dpi=DPI, bbox_inches="tight", facecolor="white")
 print(f"Saved: {out_path}")
 
-out_pdf = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/owner_inbox/deck_blueprint/deck_plan_v17.pdf"
+out_pdf = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/owner_inbox/deck_blueprint/deck_plan_v17.pdf"
 fig.savefig(out_pdf, bbox_inches="tight", facecolor="white")
 print(f"Saved: {out_pdf}")
 

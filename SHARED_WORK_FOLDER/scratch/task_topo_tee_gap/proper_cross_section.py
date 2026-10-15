@@ -6,7 +6,7 @@ import trimesh
 from shapely.geometry import Polygon as ShapelyPolygon, Point as SP
 from shapely.ops import unary_union
 
-APP_DIR = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/app"
+APP_DIR = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/app"
 sys.path.insert(0, APP_DIR)
 from gradient_surface_diagnostic import (
     load_egm, PRINT_SIZE_MM, FRINGE_XY_EXPANSION_MM,
@@ -26,8 +26,8 @@ def scene_nodes(scene):
     return nodes
 
 
-three_mf = sys.argv[1] if len(sys.argv) > 1 else "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/Firefly/3MFs/Firefly (Hole 14) [108].3mf"
-egm_path = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/Firefly/EGMs/Firefly (Hole 14).egm"
+three_mf = sys.argv[1] if len(sys.argv) > 1 else "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/Firefly/3MFs/Firefly (Hole 14) [108].3mf"
+egm_path = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/GolfCourses/Firefly/EGMs/Firefly (Hole 14).egm"
 
 egm, _img, _gpx = load_egm(egm_path)
 tee = egm["tee_hole"]

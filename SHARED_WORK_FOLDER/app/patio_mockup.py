@@ -30,7 +30,7 @@ import os
 
 # ─── CONFIGURATION ────────────────────────────────────────────────────
 
-WORKING_DIR = "/Users/fourierflight/GIT/CLAUDE-GitHub/SHARED_WORK_FOLDER"
+WORKING_DIR = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER"
 INPUT_DIR = os.path.join(WORKING_DIR, "owner_inbox")
 OUTPUT_DIR = os.path.join(WORKING_DIR, "owner_inbox")
 

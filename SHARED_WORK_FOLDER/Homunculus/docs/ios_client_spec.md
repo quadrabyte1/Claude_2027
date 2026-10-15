@@ -6,7 +6,7 @@ on the phone.
 
 **Scope:** the phone client for the Mac-as-brain Homunculus design (see
 the project memory at
-`~/.claude/projects/-Volumes-GIT-CLAUDE/memory/project_homunculus.md`
+`~/.claude/projects/-Volumes-GIT-Claude-2027/memory/project_homunculus.md`
 for the locked v1.0 decisions). The phone is a thin client: capture
 voice, hand off to the brain, speak the reply, register the reminder
 schedule the brain returns.
@@ -371,5 +371,5 @@ Significant changes (new transport, new audio model, ambient listening)
 bump to v2.0. Smaller iterations (extra endpoint, polish) bump to 1.1.
 
 Bump the version in the project memory entry at
-`~/.claude/projects/-Volumes-GIT-CLAUDE/memory/project_homunculus.md`
+`~/.claude/projects/-Volumes-GIT-Claude-2027/memory/project_homunculus.md`
 and add a line to its version history when this spec changes.

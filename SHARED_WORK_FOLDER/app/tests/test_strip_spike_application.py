@@ -42,7 +42,7 @@ Tests (RED first — all will FAIL until gradient_surface_diagnostic.py v0.15):
          (which the old bump loop would have produced).
 
 Run:
-    cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER
+    cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER
     python -m pytest app/tests/test_strip_spike_application.py -v
 """
 from __future__ import annotations

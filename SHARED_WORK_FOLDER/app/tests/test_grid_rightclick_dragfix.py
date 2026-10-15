@@ -28,7 +28,7 @@ T17 APP_VERSION bumped to v5.05
 T18 editor.html on-page version is v5.05
 
 Run:
-    cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER
+    cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER
     python -m pytest app/tests/test_grid_rightclick_dragfix.py -v
 """
 from __future__ import annotations

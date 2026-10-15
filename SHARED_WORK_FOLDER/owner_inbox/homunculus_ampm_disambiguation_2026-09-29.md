@@ -235,11 +235,11 @@ Say these out loud to Sprite; expect no clarifying question:
 
 ## Code Changes
 
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/brain/homunculus_brain/date_resolver.py` — Signal A/B/C implementation; `resolve()` gains optional `context_text` param; `_resolve_time()` updated; `_signal_a_meridiem()`, `_signal_b_rollforward()`, `_signal_c_meridiem()` added.
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/brain/homunculus_brain/__init__.py` — VERSION `2.4.2` → `2.5.0`, DESIGN_VERSION `2.4` → `2.5`.
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/brain/tests/test_ampm_disambiguation_v250.py` — 52 new TDD tests.
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/brain/tests/test_date_resolver.py` — 7 tests updated to reflect v2.5.0 behavior.
-- `/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/brain/tests/test_capture_parsed.py` — 2 tests updated to reflect v2.5.0 behavior.
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/brain/homunculus_brain/date_resolver.py` — Signal A/B/C implementation; `resolve()` gains optional `context_text` param; `_resolve_time()` updated; `_signal_a_meridiem()`, `_signal_b_rollforward()`, `_signal_c_meridiem()` added.
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/brain/homunculus_brain/__init__.py` — VERSION `2.4.2` → `2.5.0`, DESIGN_VERSION `2.4` → `2.5`.
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/brain/tests/test_ampm_disambiguation_v250.py` — 52 new TDD tests.
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/brain/tests/test_date_resolver.py` — 7 tests updated to reflect v2.5.0 behavior.
+- `/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/brain/tests/test_capture_parsed.py` — 2 tests updated to reflect v2.5.0 behavior.
 
 ---
 

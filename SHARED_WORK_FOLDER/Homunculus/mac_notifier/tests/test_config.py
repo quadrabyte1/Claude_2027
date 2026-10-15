@@ -210,7 +210,7 @@ class TestGraceWindowV020:
         """
         from pathlib import Path as _Path
         plist_path = _Path(
-            "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/mac_notifier/"
+            "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/mac_notifier/"
             "deploy/com.homunculus.mac_notifier.plist"
         )
         assert plist_path.exists(), f"Plist not found at {plist_path}"

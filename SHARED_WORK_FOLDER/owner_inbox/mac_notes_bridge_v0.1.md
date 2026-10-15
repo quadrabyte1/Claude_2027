@@ -6,7 +6,7 @@
 
 ## What shipped
 
-`/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/mac_notes_bridge/` — a new
+`/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/mac_notes_bridge/` — a new
 bridge package that watches `vault/notes/*.md` and pushes notes to Notes.app
 via AppleScript. Sibling to `mac_calendar_bridge`. Same family, same patterns.
 
@@ -106,7 +106,7 @@ All tests use `tmp_path` — never touch live vault. All osascript calls mocked.
 
 2. **Run the installer**
    ```bash
-   cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/mac_notes_bridge
+   cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/mac_notes_bridge
    bash deploy/install.sh
    ```
 

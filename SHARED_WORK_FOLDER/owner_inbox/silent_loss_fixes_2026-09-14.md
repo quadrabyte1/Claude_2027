@@ -95,7 +95,7 @@ The stuck record `f252391221d7037fff9cee8adec821b7` (key `21712b6781ee3791`) is 
 ### 1. Reinstall mac_calendar_bridge + bounce launchd
 
 ```bash
-cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Homunculus/mac_calendar_bridge
+cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Homunculus/mac_calendar_bridge
 pip install -e . --quiet
 launchctl unload ~/Library/LaunchAgents/com.homunculus.mac_calendar_bridge.plist 2>/dev/null || true
 launchctl load  ~/Library/LaunchAgents/com.homunculus.mac_calendar_bridge.plist
@@ -104,7 +104,7 @@ launchctl load  ~/Library/LaunchAgents/com.homunculus.mac_calendar_bridge.plist
 ### 2. Reinstall Sprite + bounce launchd
 
 ```bash
-cd /Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/Sprite
+cd /Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/Sprite
 pip install -e . --quiet
 launchctl unload ~/Library/LaunchAgents/com.sprite.watcher.plist 2>/dev/null || true
 launchctl load  ~/Library/LaunchAgents/com.sprite.watcher.plist

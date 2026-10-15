@@ -29,8 +29,8 @@ your machine stay on your machine.
 ## Install
 
 ```bash
-git clone <repo-url> CLAUDE
-cd CLAUDE/SHARED_WORK_FOLDER
+git clone https://github.com/quadrabyte1/Claude_2027.git Claude_2027
+cd Claude_2027/SHARED_WORK_FOLDER
 python3.13 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
@@ -82,7 +82,7 @@ Port **5051** must be free. Logs stream to `app/logs/server.log`.
 ## Known limitations
 
 - **Thomas-only helper scripts have hardcoded paths.** The following scripts
-  in `app/` contain hardcoded `/Users/fourierflight/GIT/CLAUDE-GitHub/...`
+  in `app/` contain hardcoded `/Volumes/GIT/Claude_2027/...`
   paths and will not run on your machine without further edits. **None of
   them are used by the Boundary Editor or Plaque Editor routes** — they are
   Thomas's one-shot utilities for unrelated projects (deck/patio mockups,
@@ -110,7 +110,7 @@ Port **5051** must be free. Logs stream to `app/logs/server.log`.
 - **`/Volumes/GIT/...` paths will not work on your machine.** Thomas's repo
   lives on an external volume. All editor code uses repo-relative paths
   (`os.path.dirname(__file__)` + `..`), so a plain `git clone` into any
-  directory works fine. Just don't paste `/Volumes/GIT/CLAUDE/...` paths
+  directory works fine. Just don't paste `/Volumes/GIT/Claude_2027/...` paths
   from Thomas's logs/screenshots into your shell.
 
 - **"Open in slicer" button is macOS-only** (uses `/usr/bin/open`). On Linux

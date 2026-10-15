@@ -11,7 +11,7 @@ import re
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 
-DRAWIO = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/ItWentIn/IWI Enterprise Database Schema.drawio"
+DRAWIO = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/ItWentIn/IWI Enterprise Database Schema.drawio"
 
 tree = ET.parse(DRAWIO)
 root = tree.getroot()

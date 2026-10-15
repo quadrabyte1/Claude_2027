@@ -361,7 +361,7 @@ ax.text(-1.9, -2.2,
 # ══════════════════════════════════════════════════════════════════════════════
 # Save
 # ══════════════════════════════════════════════════════════════════════════════
-OUT = "/Volumes/GIT/CLAUDE/SHARED_WORK_FOLDER/owner_inbox/deck_blueprint/deck_plan.png"
+OUT = "/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER/owner_inbox/deck_blueprint/deck_plan.png"
 fig.savefig(OUT, dpi=DPI, bbox_inches="tight", facecolor="white")
 print(f"Saved: {OUT}")
 

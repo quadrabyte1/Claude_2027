@@ -16,7 +16,7 @@ from PIL import Image, ImageDraw, ImageFilter
 import numpy as np
 
 # ─── Paths ───────────────────────────────────────────────────────────────────
-BASE = Path("/Users/fourierflight/GIT/CLAUDE-GitHub/SHARED_WORK_FOLDER")
+BASE = Path("/Volumes/GIT/Claude_2027/SHARED_WORK_FOLDER")
 SRC  = BASE / "owner_inbox"
 OUT  = BASE / "owner_inbox"
 
