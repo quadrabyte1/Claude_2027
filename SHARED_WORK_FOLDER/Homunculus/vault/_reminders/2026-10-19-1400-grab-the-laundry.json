@@ -1,0 +1,53 @@
+{
+  "event_id": "2026-10-19-1400-grab-the-laundry",
+  "schedule": [
+    {
+      "event_id": "2026-10-19-1400-grab-the-laundry",
+      "kind": "heads_up_30",
+      "fire_at": "2026-10-19T13:30:00-04:00",
+      "tz": "America/New_York",
+      "body": "In 30 minutes: grab the laundry at 2:00 PM.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-19-1400-grab-the-laundry",
+      "kind": "pre_5",
+      "fire_at": "2026-10-19T13:55:00-04:00",
+      "tz": "America/New_York",
+      "body": "5 minutes: grab the laundry at 2:00 PM.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-19-1400-grab-the-laundry",
+      "kind": "strike_0",
+      "fire_at": "2026-10-19T14:00:00-04:00",
+      "tz": "America/New_York",
+      "body": "grab the laundry is starting now. Tap OK when you see this.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-19-1400-grab-the-laundry",
+      "kind": "strike_5",
+      "fire_at": "2026-10-19T14:05:00-04:00",
+      "tz": "America/New_York",
+      "body": "Still on? grab the laundry started 5 minutes ago. Tap OK.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-19-1400-grab-the-laundry",
+      "kind": "strike_10",
+      "fire_at": "2026-10-19T14:10:00-04:00",
+      "tz": "America/New_York",
+      "body": "Reminder: grab the laundry \u2014 10 minutes ago. Tap OK.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-19-1400-grab-the-laundry",
+      "kind": "strike_15",
+      "fire_at": "2026-10-19T14:15:00-04:00",
+      "tz": "America/New_York",
+      "body": "Final reminder. grab the laundry. Tap OK or I'll log it as missed.",
+      "status": "pending"
+    }
+  ]
+}

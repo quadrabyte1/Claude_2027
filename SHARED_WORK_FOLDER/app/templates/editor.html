@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{# Boundary Editor v5.17 — Geo-ref setup dialog removed (orphaned after the GPS panel ⚙ opener was removed); courseGeoRef data still loads/saves untouched. v5.16 — GPS controls removed from the UI (JS state/load/save kept so any EGM gpsBackend block still round-trips). v5.15 — Mouse wheel steps the open grid value box (0.1 mm, Shift = 1.0; no clamp; commit still Enter/Tab). v5.14 — Grid cells colored by value (matplotlib 'terrain', auto-scaled; view-only toggle in localStorage). v5.13 — Only cells FULLY inside a bunker can control it (partial cells ignored). v5.12 — Ring now in delta AND absolute (not off); delta = default + highest cell (was mean). v5.11 — Absolute mode: red ring around the grid cell(s) that control each trap's height (server-computed, mirrors generator). v5.10 — Grid value 0 = empty cell (deleted on commit, dropped on load). Grid lines recolored to indigo; Cmd+drag multi-cell selection with shared-value edit (task 726) #}
+{# Boundary Editor v5.19 — Ctrl+Option(Alt)+drag selects cells along the drag path (visit order); popup has first/last boxes, Tab/Enter from the last box spreads first->last linearly (0.1 mm precision). v5.18 — Grid cell value labels/tooltip no longer show a leading '+' on positives (negatives keep '-'). v5.17 — Geo-ref setup dialog removed (orphaned after the GPS panel ⚙ opener was removed); courseGeoRef data still loads/saves untouched. v5.16 — GPS controls removed from the UI (JS state/load/save kept so any EGM gpsBackend block still round-trips). v5.15 — Mouse wheel steps the open grid value box (0.1 mm, Shift = 1.0; no clamp; commit still Enter/Tab). v5.14 — Grid cells colored by value (matplotlib 'terrain', auto-scaled; view-only toggle in localStorage). v5.13 — Only cells FULLY inside a bunker can control it (partial cells ignored). v5.12 — Ring now in delta AND absolute (not off); delta = default + highest cell (was mean). v5.11 — Absolute mode: red ring around the grid cell(s) that control each trap's height (server-computed, mirrors generator). v5.10 — Grid value 0 = empty cell (deleted on commit, dropped on load). Grid lines recolored to indigo; Cmd+drag multi-cell selection with shared-value edit (task 726) #}
 {% block title %}Boundary Editor — AI Team Workspace{% endblock %}
 {% block content_width %}max-w-6xl{% endblock %}
 {% block content %}
@@ -20,6 +20,13 @@
             title="Start a new hole project from a source image (course, hole number, image)."
             class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md bg-notion-accent hover:bg-blue-600 text-white transition-default">
       New Project
+    </button>
+
+    <button @click="gridUndo()" :disabled="!_gridUndo"
+            data-testid="grid-undo-btn"
+            :title="_gridUndo ? ('Undo ' + _gridUndo.label + ' (Cmd+Z)') : 'Nothing to undo (grid cell edits)'"
+            class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md bg-white border border-notion-border hover:bg-notion-hover text-notion-text transition-default disabled:opacity-40 disabled:cursor-not-allowed">
+      Undo
     </button>
 
     <button @click="openProjectDialog()"
@@ -380,7 +387,7 @@
        Shown over the canvas when a grid cell is active (_gridActiveCell != null).
        Positioned in CSS px from the canvas container top-left edge, matching
        the cell's canvas position computed in _gridCellCanvasPx(). #}
-    <template x-if="_gridActiveCell !== null">
+    <template x-if="_gridActiveCell !== null && !_gridRampMode">
       <div class="absolute pointer-events-none"
            :style="`left:0;top:0;width:100%;height:100%;z-index:30;`">
         <div class="absolute pointer-events-auto"
@@ -413,6 +420,32 @@
       </div>
     </template>
 
+    {# ── Ctrl+Option ramp popup (v5.19): first / last value boxes.  Tab or Enter out of
+       the second box applies the linear ramp; Esc cancels.  Cells are in drag (visit) order. #}
+    <template x-if="_gridActiveCell !== null && _gridRampMode">
+      <div class="absolute pointer-events-none" style="left:0;top:0;width:100%;height:100%;z-index:30;">
+        <div class="absolute pointer-events-auto flex items-center gap-1"
+             data-testid="grid-ramp-popup"
+             @focusout="gridRampFocusOut($event)"
+             :style="`left:${_gridActiveCell.canvasPx.x}px; top:${_gridActiveCell.canvasPx.y}px; transform: translateY(-100%); z-index:31;`">
+          <input x-ref="gridRampFirst" type="number" step="any" style="width:80px;"
+                 x-model="_gridRampFirst" placeholder="first"
+                 @keydown.escape.prevent="cancelGridRamp()"
+                 @keydown.enter.prevent="$refs.gridRampLast.focus()"
+                 title="First value (drag start cell). Tab to the last value; Ctrl+Option+drag ramp."
+                 class="text-xs font-mono text-center rounded bg-white shadow-md px-2 py-0.5 border border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+          <span class="text-xs text-gray-500">&rarr;</span>
+          <input x-ref="gridRampLast" type="number" step="any" style="width:80px;"
+                 x-model="_gridRampLast" placeholder="last"
+                 @keydown.tab.prevent="commitGridRamp()"
+                 @keydown.enter.prevent="commitGridRamp()"
+                 @keydown.escape.prevent="cancelGridRamp()"
+                 title="Last value (drag end cell). Tab or Enter applies a linear ramp first to last across the selected cells; Esc cancels."
+                 class="text-xs font-mono text-center rounded bg-white shadow-md px-2 py-0.5 border border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+        </div>
+      </div>
+    </template>
+
     {# ── Grid dot hover tooltip (v5.04) ───────────────────────────────────────
        Floats above the canvas near a set-cell dot when the mouse hovers over it.
        Hidden while the cell input is open (_gridActiveCell is set).
@@ -422,7 +455,7 @@
          class="absolute pointer-events-none z-40 px-2 py-0.5 rounded text-white text-xs font-mono shadow-lg whitespace-nowrap"
          :class="gridMode === 'absolute' ? 'bg-orange-600' : 'bg-gray-800'"
          :style="_gridHoveredCell ? `left:${_gridHoveredCell.canvasPx.x + _gridHoveredCell.canvasPx.w * 0.5}px; top:${_gridHoveredCell.canvasPx.y}px; transform:translate(-50%, -110%);` : ''"
-         x-text="_gridHoveredCell ? (gridMode === 'absolute' ? (gridCellHeights[_gridHoveredCell.idx] + ' mm absolute') : ((gridCellHeights[_gridHoveredCell.idx] > 0 ? '+' : '') + gridCellHeights[_gridHoveredCell.idx] + ' mm offset')) : ''">
+         x-text="_gridHoveredCell ? (gridMode === 'absolute' ? (gridCellHeights[_gridHoveredCell.idx] + ' mm absolute') : (gridCellHeights[_gridHoveredCell.idx] + ' mm offset')) : ''">
     </div>
   </div>
 
@@ -563,6 +596,18 @@
 </div>
 
 <script>
+// v5.19 — Ctrl+Option ramp: spread first->last linearly over cells in the given (visit) order.
+// Returns [[cellIdx, value], ...]; value rounded to 0.1 mm and clamped by grid mode.
+function gridRampAssign(order, first, last, mode) {
+  const lo = mode === 'absolute' ? 0 : -20, hi = mode === 'absolute' ? 30 : 20;
+  const n = order.length;
+  return order.map((idx, i) => {
+    const v = n > 1 ? first + (last - first) * i / (n - 1) : first;
+    const r = Math.round(v * 10) / 10;
+    return [idx, Math.max(lo, Math.min(hi, r)) + 0];
+  });
+}
+
 function polygonEditor() {
   return {
     selectedImage: '{{ image | e }}',
@@ -647,6 +692,10 @@ function polygonEditor() {
     _gridActiveCell: null,   // {col, row, idx, canvasPx:{x,y}} or null
     _wheelAcc: 0,            // accumulated wheel px for gridWheel (v5.15)
     _gridInputValue: '',     // staging area while input is open
+    _gridRampMode: false,    // v5.19: Ctrl+Option+drag ramp popup (first/last boxes)
+    _gridRampFirst: '',
+    _gridUndo: null,         // v5.19: single-level grid-cell undo {cells:{idx:prev|undefined}, mode, label}
+    _gridRampLast: '',
     _gridHoveredCell: null,  // {idx, canvasPx:{x,y,w,h}} or null — drives dot tooltip (v5.04)
     _gridMouseDownAt: null,  // {x, y, col, row, idx, time} — pending click until drag threshold resolved (v5.05)
     _gridMultiSelect: null,  // Set of cell indices selected via Cmd/Ctrl+drag (v5.09); null when inactive
@@ -1269,7 +1318,7 @@ function polygonEditor() {
 
         // Numeric value text for set cells (task 720: replaced blue dot)
         // Task 774 (v5.34): color/visibility depends on gridMode.
-        //   delta    → indigo text, '+N.N' / '-N.N' label
+        //   delta    → indigo text, 'N.N' / '-N.N' label (v5.59: no '+')
         //   absolute → orange text, 'N.N' label (no leading '+')
         //   off      → skip rendering entirely (values preserved on disk)
         if (this.gridMode !== 'off') {
@@ -1289,9 +1338,7 @@ function polygonEditor() {
             const cyImg = tl.y + (GRID_ROWS - 1 - row + 0.5) * cellHpx;
             const cp = this.imgToCanvas(cxImg, cyImg);
             const mmVal = Number(mm);
-            const mmLabel = (this.gridMode === 'absolute')
-              ? mmVal.toFixed(1)
-              : (mmVal > 0 ? '+' + mmVal.toFixed(1) : mmVal.toFixed(1));
+            const mmLabel = mmVal.toFixed(1);  // v5.59: no leading '+' on positives; negatives keep '-'
             if (_colorOn) { ctx.lineJoin = 'round'; ctx.lineWidth = 3 * dpr; ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.strokeText(mmLabel, cp.x, cp.y); }  // v5.14 halo
             ctx.fillText(mmLabel, cp.x, cp.y);
           }
@@ -1541,6 +1588,10 @@ function polygonEditor() {
           this._gridActiveCell = null;
           this._gridInputValue = '';
           // Start (or extend) a multi-select with this first cell
+          // v5.19: Ctrl+Option (altKey) → ramp variant; plain Ctrl/Cmd+drag is unchanged.
+          this._gridRampMode = !!e.altKey;
+          this._gridRampFirst = '';
+          this._gridRampLast = '';
           this._gridMultiSelect = new Set([gridCell.idx]);
           this._gridMultiSelectAnchor = { col: gridCell.col, row: gridCell.row, idx: gridCell.idx };
           this._gridHoveredCell = null;
@@ -1753,7 +1804,12 @@ function polygonEditor() {
         // Open the single shared input to commit one value to all selected cells.
         this.$refs.canvas.style.cursor = 'default';
         const anchor = this._gridMultiSelectAnchor;
-        if (anchor) {
+        if (anchor && this._gridRampMode) {
+          // v5.19: ramp popup — two boxes, focus the first.
+          if (this.gridMode === 'off') { this.cancelGridRamp(); this.flash('Grid mode is Off — switch to Delta or Absolute to edit cells', false); return; }
+          this.openGridCell(anchor.col, anchor.row, anchor.idx);
+          this.$nextTick(() => { const f = this.$refs.gridRampFirst; if (f) { f.focus(); f.select(); } });
+        } else if (anchor) {
           // Re-use openGridCell which positions the input near the anchor cell.
           // openGridCell sets _gridActiveCell; multi-select set stays in _gridMultiSelect.
           this.openGridCell(anchor.col, anchor.row, anchor.idx);
@@ -2014,6 +2070,7 @@ function polygonEditor() {
       this.undoStack.push(this.snapshotPolygons());
       if (this.undoStack.length > this.maxUndo) this.undoStack.shift();
       this.redoStack = [];
+      this._gridUndo = null;   // a newer polygon/contour edit supersedes the grid snapshot (Cmd+Z stays 'last edit')
     },
 
     restoreSnapshot(json) {
@@ -2338,6 +2395,7 @@ function polygonEditor() {
           : Math.max(-20, Math.min(20, raw));
         const targets = (this._gridMultiSelect && this._gridMultiSelect.size > 0)
           ? [...this._gridMultiSelect] : [this._gridActiveCell.idx];
+        this.gridUndoSnapshot(targets, targets.length > 1 ? 'set ' + targets.length + ' cells' : 'cell edit');
         // Zero = empty cell: delete the key instead of storing 0.
         for (const i of targets) { if (clamped === 0) delete this.gridCellHeights[i]; else this.gridCellHeights[i] = clamped; }
       }
@@ -2350,8 +2408,60 @@ function polygonEditor() {
       this.autoSave();
     },
 
+    // v5.19 — single-level grid-cell undo.  Snapshot ONLY the cells an edit is about to change
+    // (replacing any earlier snapshot); gridUndo() restores them via the normal draw + autoSave path.
+    gridUndoSnapshot(idxs, label) {
+      const cells = {};
+      for (const i of idxs) cells[i] = this.gridCellHeights[i];   // undefined = was empty
+      this._gridUndo = { cells, mode: this.gridMode, label };
+    },
+
+    gridUndo() {
+      const u = this._gridUndo;
+      if (!u) return false;
+      this._gridUndo = null;                       // one level: cleared after use
+      if (u.mode !== this.gridMode) { this.flash('Grid mode changed — nothing to undo', false); return true; }
+      for (const [i, v] of Object.entries(u.cells)) {
+        if (v === undefined) delete this.gridCellHeights[i]; else this.gridCellHeights[i] = v;
+      }
+      this.draw();
+      this.flash('Undo ' + u.label, true);
+      this.autoSave();
+      return true;
+    },
+
+    // v5.19 — apply the first->last ramp over the selected cells in drag (Set insertion) order.
+    commitGridRamp() {
+      if (!this._gridActiveCell || !this._gridRampMode) return;
+      const a = parseFloat(this._gridRampFirst), b = parseFloat(this._gridRampLast);
+      if (!isNaN(a) && !isNaN(b) && this._gridMultiSelect) {
+        this.gridUndoSnapshot([...this._gridMultiSelect], 'ramp fill (' + this._gridMultiSelect.size + ' cells)');
+        for (const [i, v] of gridRampAssign([...this._gridMultiSelect], a, b, this.gridMode)) {
+          if (v === 0) delete this.gridCellHeights[i]; else this.gridCellHeights[i] = v;
+        }
+        this.cancelGridRamp();
+        this.autoSave();
+      } else {
+        this.cancelGridRamp();
+      }
+    },
+
+    cancelGridRamp() {
+      this._gridRampFirst = '';
+      this._gridRampLast = '';
+      this.cancelGridCell();   // also clears _gridRampMode / selection
+    },
+
+    // Focus left both ramp boxes (clicked elsewhere): apply if both filled, else cancel.
+    gridRampFocusOut(e) {
+      if (e.relatedTarget && e.currentTarget.contains(e.relatedTarget)) return;
+      if (!this._gridActiveCell || !this._gridRampMode) return;
+      this.commitGridRamp();
+    },
+
     // Cancel the current input without updating state.
     cancelGridCell() {
+      this._gridRampMode         = false;
       this._gridActiveCell       = null;
       this._gridInputValue       = '';
       this._gridMultiSelect      = null;
@@ -2691,6 +2801,7 @@ function polygonEditor() {
       // Undo / redo
       this.undoStack          = [];
       this.redoStack          = [];
+      this._gridUndo          = null;
       // Per-hole settings — reset to defaults
       this.contourStep        = 0.5;
       this.grassAmplitude     = 0.5;
@@ -2724,6 +2835,7 @@ function polygonEditor() {
       this.gridCellHeights    = {};
       this.gridMode           = 'delta';
       this._gridMultiSelect   = null;
+      this._gridRampMode      = false;
       this._gridMultiSelectAnchor = null;
       this._gridActiveCell    = null;
       this._gridInputValue    = '';
@@ -2807,6 +2919,7 @@ function polygonEditor() {
         this.courseGeoRef = data.courseGeoRef || null;
         this.undoStack = [];
         this.redoStack = [];
+        this._gridUndo = null;
         this.selectedVerts = [];
         this.polygons = [];
         this.contours = [];
@@ -2902,6 +3015,7 @@ function polygonEditor() {
       } catch (_) { /* use defaults */ }
       this.undoStack = [];
       this.redoStack = [];
+      this._gridUndo = null;
       this.selectedVerts = [];
       this.polygons = [];
       // Grid cell elevation — reset on new project
@@ -3381,7 +3495,11 @@ function polygonEditor() {
       }
       // Undo: Cmd+Z / Ctrl+Z
       if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
+        // v5.19: leave native text undo alone inside inputs / popup boxes
+        const t = e.target;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
         e.preventDefault();
+        if (this.gridUndo()) return;      // last edit was a grid-cell edit
         this.undo();
         return;
       }

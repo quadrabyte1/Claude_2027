@@ -1,0 +1,53 @@
+{
+  "event_id": "2026-10-19-0800-read-the-v-s-e-d-p-d-f-that-came-as-an-email",
+  "schedule": [
+    {
+      "event_id": "2026-10-19-0800-read-the-v-s-e-d-p-d-f-that-came-as-an-email",
+      "kind": "heads_up_30",
+      "fire_at": "2026-10-19T07:30:00-04:00",
+      "tz": "America/New_York",
+      "body": "In 30 minutes: read the V-S-E-D-P-D-F that came as an email at 8:00 AM.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-19-0800-read-the-v-s-e-d-p-d-f-that-came-as-an-email",
+      "kind": "pre_5",
+      "fire_at": "2026-10-19T07:55:00-04:00",
+      "tz": "America/New_York",
+      "body": "5 minutes: read the V-S-E-D-P-D-F that came as an email at 8:00 AM.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-19-0800-read-the-v-s-e-d-p-d-f-that-came-as-an-email",
+      "kind": "strike_0",
+      "fire_at": "2026-10-19T08:00:00-04:00",
+      "tz": "America/New_York",
+      "body": "read the V-S-E-D-P-D-F that came as an email is starting now. Tap OK when you see this.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-19-0800-read-the-v-s-e-d-p-d-f-that-came-as-an-email",
+      "kind": "strike_5",
+      "fire_at": "2026-10-19T08:05:00-04:00",
+      "tz": "America/New_York",
+      "body": "Still on? read the V-S-E-D-P-D-F that came as an email started 5 minutes ago. Tap OK.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-19-0800-read-the-v-s-e-d-p-d-f-that-came-as-an-email",
+      "kind": "strike_10",
+      "fire_at": "2026-10-19T08:10:00-04:00",
+      "tz": "America/New_York",
+      "body": "Reminder: read the V-S-E-D-P-D-F that came as an email \u2014 10 minutes ago. Tap OK.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-19-0800-read-the-v-s-e-d-p-d-f-that-came-as-an-email",
+      "kind": "strike_15",
+      "fire_at": "2026-10-19T08:15:00-04:00",
+      "tz": "America/New_York",
+      "body": "Final reminder. read the V-S-E-D-P-D-F that came as an email. Tap OK or I'll log it as missed.",
+      "status": "pending"
+    }
+  ]
+}

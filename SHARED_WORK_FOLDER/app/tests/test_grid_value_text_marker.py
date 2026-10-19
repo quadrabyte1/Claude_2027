@@ -333,3 +333,21 @@ class TestEditorHtmlVersion:
         assert (major, minor) >= (5, 7), (
             f"editor.html version is v{major}.{minor:02d} — expected at least v5.07"
         )
+
+
+# ---------------------------------------------------------------------------
+# No leading '+' on positive grid-cell values (v5.59)
+# ---------------------------------------------------------------------------
+
+class TestNoPlusSignOnGridValues:
+    def test_canvas_label_has_no_plus_prefix(self):
+        html = _html()
+        m = re.search(r'const mmLabel\s*=[^;]*;', html)
+        assert m is not None, "mmLabel assignment not found"
+        assert "'+'" not in m.group(0) and '"+"' not in m.group(0)
+
+    def test_hover_tooltip_has_no_plus_prefix(self):
+        html = _html()
+        m = re.search(r'x-text="_gridHoveredCell \?.*?mm offset.*?"', html)
+        assert m is not None, "hover tooltip x-text not found"
+        assert "'+'" not in m.group(0)

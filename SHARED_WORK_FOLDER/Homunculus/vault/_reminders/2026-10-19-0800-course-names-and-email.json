@@ -1,0 +1,53 @@
+{
+  "event_id": "2026-10-19-0800-course-names-and-email",
+  "schedule": [
+    {
+      "event_id": "2026-10-19-0800-course-names-and-email",
+      "kind": "heads_up_30",
+      "fire_at": "2026-10-19T07:30:00-04:00",
+      "tz": "America/New_York",
+      "body": "In 30 minutes: course names and email at 8:00 AM.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-19-0800-course-names-and-email",
+      "kind": "pre_5",
+      "fire_at": "2026-10-19T07:55:00-04:00",
+      "tz": "America/New_York",
+      "body": "5 minutes: course names and email at 8:00 AM.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-19-0800-course-names-and-email",
+      "kind": "strike_0",
+      "fire_at": "2026-10-19T08:00:00-04:00",
+      "tz": "America/New_York",
+      "body": "course names and email is starting now. Tap OK when you see this.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-19-0800-course-names-and-email",
+      "kind": "strike_5",
+      "fire_at": "2026-10-19T08:05:00-04:00",
+      "tz": "America/New_York",
+      "body": "Still on? course names and email started 5 minutes ago. Tap OK.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-19-0800-course-names-and-email",
+      "kind": "strike_10",
+      "fire_at": "2026-10-19T08:10:00-04:00",
+      "tz": "America/New_York",
+      "body": "Reminder: course names and email \u2014 10 minutes ago. Tap OK.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-19-0800-course-names-and-email",
+      "kind": "strike_15",
+      "fire_at": "2026-10-19T08:15:00-04:00",
+      "tz": "America/New_York",
+      "body": "Final reminder. course names and email. Tap OK or I'll log it as missed.",
+      "status": "pending"
+    }
+  ]
+}

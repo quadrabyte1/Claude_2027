@@ -1,0 +1,53 @@
+{
+  "event_id": "2026-10-19-0900-refrigerator-beep",
+  "schedule": [
+    {
+      "event_id": "2026-10-19-0900-refrigerator-beep",
+      "kind": "heads_up_30",
+      "fire_at": "2026-10-19T08:30:00-04:00",
+      "tz": "America/New_York",
+      "body": "In 30 minutes: refrigerator beep at 9:00 AM.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-19-0900-refrigerator-beep",
+      "kind": "pre_5",
+      "fire_at": "2026-10-19T08:55:00-04:00",
+      "tz": "America/New_York",
+      "body": "5 minutes: refrigerator beep at 9:00 AM.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-19-0900-refrigerator-beep",
+      "kind": "strike_0",
+      "fire_at": "2026-10-19T09:00:00-04:00",
+      "tz": "America/New_York",
+      "body": "refrigerator beep is starting now. Tap OK when you see this.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-19-0900-refrigerator-beep",
+      "kind": "strike_5",
+      "fire_at": "2026-10-19T09:05:00-04:00",
+      "tz": "America/New_York",
+      "body": "Still on? refrigerator beep started 5 minutes ago. Tap OK.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-19-0900-refrigerator-beep",
+      "kind": "strike_10",
+      "fire_at": "2026-10-19T09:10:00-04:00",
+      "tz": "America/New_York",
+      "body": "Reminder: refrigerator beep \u2014 10 minutes ago. Tap OK.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-19-0900-refrigerator-beep",
+      "kind": "strike_15",
+      "fire_at": "2026-10-19T09:15:00-04:00",
+      "tz": "America/New_York",
+      "body": "Final reminder. refrigerator beep. Tap OK or I'll log it as missed.",
+      "status": "pending"
+    }
+  ]
+}
