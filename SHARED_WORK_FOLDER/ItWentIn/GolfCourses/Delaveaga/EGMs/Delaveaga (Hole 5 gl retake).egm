@@ -1,0 +1,141 @@
+{
+  "course": "Delaveaga",
+  "hole": "5 gl retake",
+  "image": "Delaveaga Hole 5 (retake Oct 26).png",
+  "imageCourse": "Delaveaga",
+  "imageSize": {
+    "width": 1179,
+    "height": 1333
+  },
+  "contourStep": 0.5,
+  "grassAmplitude": 0.5,
+  "grassSpacing": 0.05,
+  "greenStyle": "terraced",
+  "elevationRange": 14.5,
+  "zScale": 1,
+  "greenScale": 1.0065,
+  "fringeEdgeHeight": 10,
+  "baseThicknessMm": 1.5,
+  "includeBoundaryRegion": false,
+  "applyFringeFrameCap": true,
+  "includeFringeWithoutGrass": false,
+  "flagOffsetXMm": 0,
+  "flagOffsetYMm": 0,
+  "polygons": [
+    {
+      "name": "Green",
+      "type": "green",
+      "closed": true,
+      "points": [
+        {
+          "x": 263,
+          "y": 101
+        },
+        {
+          "x": 106,
+          "y": 353
+        },
+        {
+          "x": 159,
+          "y": 709
+        },
+        {
+          "x": 341,
+          "y": 1103
+        },
+        {
+          "x": 616,
+          "y": 1300
+        },
+        {
+          "x": 954,
+          "y": 1189
+        },
+        {
+          "x": 1135,
+          "y": 760
+        },
+        {
+          "x": 657,
+          "y": 93
+        }
+      ]
+    },
+    {
+      "name": "Trap 1",
+      "type": "trap",
+      "closed": true,
+      "points": [
+        {
+          "x": 1177,
+          "y": 1252
+        },
+        {
+          "x": 1167,
+          "y": 1261
+        },
+        {
+          "x": 1159,
+          "y": 1273
+        },
+        {
+          "x": 1152,
+          "y": 1285
+        },
+        {
+          "x": 1144,
+          "y": 1297
+        },
+        {
+          "x": 1137,
+          "y": 1309
+        },
+        {
+          "x": 1129,
+          "y": 1320
+        },
+        {
+          "x": 1124,
+          "y": 1332
+        },
+        {
+          "x": 1139,
+          "y": 1332
+        },
+        {
+          "x": 1154,
+          "y": 1332
+        },
+        {
+          "x": 1169,
+          "y": 1332
+        },
+        {
+          "x": 1178,
+          "y": 1325
+        },
+        {
+          "x": 1178,
+          "y": 1310
+        },
+        {
+          "x": 1178,
+          "y": 1295
+        },
+        {
+          "x": 1178,
+          "y": 1280
+        },
+        {
+          "x": 1178,
+          "y": 1265
+        }
+      ]
+    }
+  ],
+  "tee_hole": {
+    "x_mm": 30,
+    "y_mm": 30
+  },
+  "gridMode": "off"
+}

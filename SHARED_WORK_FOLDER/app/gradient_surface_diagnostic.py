@@ -3022,6 +3022,25 @@ def drill_tee_hole(
     return combined
 
 
+def apply_z_scale(Z_mm: np.ndarray, inside_mask: np.ndarray, egm_data: dict) -> "tuple[np.ndarray, float]":
+    """Apply the user zScale (vertical amplitude multiplier) to a mm height grid.
+
+    Scales relief above BASE_THICKNESS_MM (base plate unaffected) inside
+    ``inside_mask``.  zScale is clamped to [0.5, 5.0]; missing/invalid = 1.0.
+    Shared by the green and the fringe so both surfaces (and the traps/water
+    that sample the fringe) scale identically.  Returns (Z_mm_scaled, zscale).
+    """
+    raw = (egm_data or {}).get("zScale")
+    try:
+        zs = 1.0 if raw is None else max(0.5, min(5.0, float(raw)))
+    except (TypeError, ValueError):
+        zs = 1.0
+    if abs(zs - 1.0) > 1e-6:
+        Z_mm = np.where(inside_mask,
+                        BASE_THICKNESS_MM + (Z_mm - BASE_THICKNESS_MM) * zs, Z_mm)
+    return Z_mm, zs
+
+
 def save_stl_meshes(
     Z_grid: np.ndarray,
     xs_grid: np.ndarray,
@@ -3078,21 +3097,9 @@ def save_stl_meshes(
     # Clamped to [0.5, 5.0]: below 0.5 the plaque is too shallow to read as 3D;
     # above 5.0 the geometry pushes toward unprintable overhangs on the Bambu A1.
     # 2026-10-09, replaces the rescale-after-limiter (reverted this same turn).
-    _z_scale_raw = egm_data.get("zScale")
-    if _z_scale_raw is None:
-        _z_scale = 1.0
-    else:
-        try:
-            _z_scale = max(0.5, min(5.0, float(_z_scale_raw)))
-        except (TypeError, ValueError):
-            _z_scale = 1.0
+    Z_mm, _z_scale = apply_z_scale(Z_mm, inside_mask, egm_data)
+    valid_mm = Z_mm[inside_mask]
     if abs(_z_scale - 1.0) > 1e-6:
-        Z_mm = np.where(
-            inside_mask,
-            BASE_THICKNESS_MM + (Z_mm - BASE_THICKNESS_MM) * _z_scale,
-            Z_mm,
-        )
-        valid_mm = Z_mm[inside_mask]
         print(
             f"  Z_mm range post-zScale: {valid_mm.min():.3f} .. {valid_mm.max():.3f} mm "
             f"(zScale={_z_scale:.2f}×, applied over BASE_THICKNESS_MM={BASE_THICKNESS_MM:.2f})"
@@ -5584,6 +5591,96 @@ def build_fringe_mesh(
                   f"keeping legacy assembly")
 
     return mesh
+
+
+# Final green<->fringe seam polish (Topo 2026-10-19, Thomas request).
+# Runs after ALL z processing (zScale, lift, caps, grass, tee hole).  The green
+# is the reference and is never modified; fringe top vertices at the seam are
+# snapped to the green's rim height and the correction is blended out over
+# SEAM_POLISH_BLEND_MM into the fringe (cosine falloff) so no new step appears.
+SEAM_POLISH_ENABLED:  bool  = True
+SEAM_POLISH_BAND_MM:  float = 0.6   # fringe verts this close to the green rim are "seam" verts (gap is 0.125 mm)
+SEAM_POLISH_BLEND_MM: float = 3.0   # distance over which the correction fades to zero
+
+
+def _green_rim_edges(green_mesh):
+    """Return (rim_vertex_idx, edges (E,2) of vertex idx) for the green's outer rim:
+    horizontal top edges of vertical wall faces that reach the z=0 base plane."""
+    v = green_mesh.vertices
+    f = green_mesh.faces
+    wall = np.abs(green_mesh.face_normals[:, 2]) < 0.2
+    reaches_base = v[f][:, :, 2].min(axis=1) < 0.01
+    edges = []
+    for tri in f[wall & reaches_base]:
+        for a, b in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])):
+            if v[a, 2] > 0.1 and v[b, 2] > 0.1:
+                edges.append((a, b))
+    if not edges:
+        return np.array([], dtype=int), np.zeros((0, 2), dtype=int)
+    edges = np.array(edges, dtype=int)
+    return np.unique(edges), edges
+
+
+def polish_green_fringe_seam(green_mesh, fringe_mesh,
+                             band_mm: float = SEAM_POLISH_BAND_MM,
+                             blend_mm: float = SEAM_POLISH_BLEND_MM) -> dict:
+    """Force fringe top vertices along the green rim to the green's rim height.
+
+    Mutates ``fringe_mesh`` in place (top-surface vertices only, Z only); the
+    green is untouched.  Returns stats {n_seam, n_blend, max_gap_before, max_gap_after}.
+    """
+    import shapely
+    from shapely.geometry import LineString
+    from scipy.spatial import cKDTree
+
+    stats = {"n_seam": 0, "n_blend": 0, "max_gap_before": 0.0, "max_gap_after": 0.0}
+    if green_mesh is None or fringe_mesh is None:
+        return stats
+    rim_idx, rim_edges = _green_rim_edges(green_mesh)
+    if len(rim_idx) < 3:
+        return stats
+    gv = np.asarray(green_mesh.vertices, dtype=np.float64)
+    rim_xy, rim_z = gv[rim_idx, :2], gv[rim_idx, 2]
+    rim_kd = cKDTree(rim_xy)
+
+    fv = np.asarray(fringe_mesh.vertices, dtype=np.float64).copy()
+    top = np.where(fv[:, 2] > 0.1)[0]
+    if len(top) == 0:
+        return stats
+
+    # Distance of every fringe top vertex to the green rim polyline segments.
+    rim_lines = shapely.multilinestrings(
+        [gv[e, :2] for e in rim_edges]) if len(rim_edges) else None
+    pts = shapely.points(fv[top, :2])
+    d_rim = shapely.distance(rim_lines, pts)
+
+    # Rim Z at each candidate: inverse-distance blend of the 2 nearest rim verts.
+    dd, ii = rim_kd.query(fv[top, :2], k=2)
+    w = 1.0 / np.maximum(dd, 1e-6)
+    z_target = (w * rim_z[ii]).sum(axis=1) / w.sum(axis=1)
+    delta = z_target - fv[top, 2]
+
+    seam = d_rim <= band_mm
+    stats["n_seam"] = int(seam.sum())
+    if not seam.any():
+        return stats
+    stats["max_gap_before"] = float(np.abs(delta[seam]).max())
+
+    seam_kd = cKDTree(fv[top[seam], :2])
+    seam_delta = delta[seam]
+    near = (d_rim > band_mm) & (d_rim <= band_mm + blend_mm)
+    out_delta = np.zeros(len(top))
+    out_delta[seam] = seam_delta
+    if near.any():
+        _, si = seam_kd.query(fv[top[near], :2])
+        t = (d_rim[near] - band_mm) / blend_mm
+        out_delta[near] = seam_delta[si] * 0.5 * (1.0 + np.cos(np.pi * np.clip(t, 0.0, 1.0)))
+        stats["n_blend"] = int(near.sum())
+
+    fv[top, 2] += out_delta
+    fringe_mesh.vertices = fv
+    stats["max_gap_after"] = float(np.abs(z_target[seam] - fv[top[seam], 2]).max())
+    return stats
 
 
 def _verify_fringe_boundary(
@@ -10372,6 +10469,11 @@ def run_pipeline(
             f"    limit_max_slope (fringe Z_mm): iters={_fringe_slope_stats['iters']}, "
             f"cells reduced={_fringe_slope_stats['cells_reduced']}"
         )
+    # zScale: same transform the green gets (after the slope limiter). Traps and
+    # water sample fringe_mesh_flat, so they follow automatically; their floors
+    # stay flat (flat-min rule) -- only their height moves.
+    Z_mm_for_fringe, _fringe_zs = apply_z_scale(Z_mm_for_fringe, inside_mask, _egm_data)
+    print(f"    fringe zScale: {_fringe_zs:.2f}")
     fringe_mesh = None
     fringe_mesh_flat = None   # kept for trap height sampling (no texture perturbation)
 
@@ -10731,6 +10833,19 @@ def run_pipeline(
     else:
         if not _tee_spec:
             print("\n[7d] Tee-hole: no 'tee_hole' key in EGM — skipping.")
+
+    # ── 7e. Final green<->fringe seam polish (after ALL z processing) ───────
+    if SEAM_POLISH_ENABLED and isinstance(fringe_mesh, trimesh.Trimesh):
+        _seam_green = stepped_mesh if _egm_data.get("greenStyle", "smooth") == "terraced" else smooth_mesh_flat
+        try:
+            _seam_stats = polish_green_fringe_seam(_seam_green, fringe_mesh)
+            print(f"\n[7e] Seam polish: {_seam_stats['n_seam']} seam verts snapped "
+                  f"(max gap {_seam_stats['max_gap_before']:.3f} -> {_seam_stats['max_gap_after']:.4f} mm), "
+                  f"{_seam_stats['n_blend']} blended")
+            if isinstance(fringe_no_grass_sample, trimesh.Trimesh):
+                polish_green_fringe_seam(_seam_green, fringe_no_grass_sample)
+        except Exception as _exc_seam:
+            print(f"\n[7e] Seam polish FAILED (non-fatal): {_exc_seam}")
 
     # ── 8. Build sand trap meshes (in-memory) ───────────────────────────────
     # Pass apply_fringe_frame_cap so the trap boundary-band cap mirrors the

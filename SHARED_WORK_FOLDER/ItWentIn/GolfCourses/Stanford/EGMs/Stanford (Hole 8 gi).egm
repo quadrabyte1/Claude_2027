@@ -1,0 +1,211 @@
+{
+  "course": "Stanford",
+  "hole": "8 gi",
+  "image": "Stanford (hole 8, 5396).png",
+  "imageCourse": "Stanford",
+  "imageSize": {
+    "width": 815,
+    "height": 1227
+  },
+  "contourStep": 0.5,
+  "grassAmplitude": 0.5,
+  "grassSpacing": 0.05,
+  "greenStyle": "terraced",
+  "elevationRange": 14.5,
+  "zScale": 1,
+  "greenScale": 1.0065,
+  "fringeEdgeHeight": 10,
+  "baseThicknessMm": 1.5,
+  "includeBoundaryRegion": false,
+  "applyFringeFrameCap": true,
+  "includeFringeWithoutGrass": false,
+  "flagOffsetXMm": 0,
+  "flagOffsetYMm": 0,
+  "polygons": [
+    {
+      "name": "Green",
+      "type": "green",
+      "closed": true,
+      "points": [
+        {
+          "x": 463,
+          "y": 0
+        },
+        {
+          "x": 169,
+          "y": 147
+        },
+        {
+          "x": 72,
+          "y": 449
+        },
+        {
+          "x": 143,
+          "y": 771
+        },
+        {
+          "x": 358,
+          "y": 955
+        },
+        {
+          "x": 612,
+          "y": 809
+        },
+        {
+          "x": 763,
+          "y": 531
+        },
+        {
+          "x": 713,
+          "y": 205
+        }
+      ]
+    },
+    {
+      "name": "Trap 1",
+      "type": "trap",
+      "closed": true,
+      "points": [
+        {
+          "x": 0,
+          "y": 628
+        },
+        {
+          "x": 0,
+          "y": 726
+        },
+        {
+          "x": 0,
+          "y": 825
+        },
+        {
+          "x": 0,
+          "y": 924
+        },
+        {
+          "x": 0,
+          "y": 1023
+        },
+        {
+          "x": 0,
+          "y": 1122
+        },
+        {
+          "x": 23,
+          "y": 1200
+        },
+        {
+          "x": 118,
+          "y": 1189
+        },
+        {
+          "x": 188,
+          "y": 1139
+        },
+        {
+          "x": 252,
+          "y": 1071
+        },
+        {
+          "x": 259,
+          "y": 987
+        },
+        {
+          "x": 187,
+          "y": 942
+        },
+        {
+          "x": 133,
+          "y": 873
+        },
+        {
+          "x": 49,
+          "y": 849
+        },
+        {
+          "x": 80,
+          "y": 776
+        },
+        {
+          "x": 55,
+          "y": 690
+        }
+      ]
+    },
+    {
+      "name": "Water 1",
+      "type": "water",
+      "closed": true,
+      "points": [
+        {
+          "x": 813,
+          "y": 876
+        },
+        {
+          "x": 773,
+          "y": 925
+        },
+        {
+          "x": 735,
+          "y": 976
+        },
+        {
+          "x": 696,
+          "y": 1027
+        },
+        {
+          "x": 658,
+          "y": 1079
+        },
+        {
+          "x": 619,
+          "y": 1130
+        },
+        {
+          "x": 581,
+          "y": 1181
+        },
+        {
+          "x": 560,
+          "y": 1226
+        },
+        {
+          "x": 627,
+          "y": 1226
+        },
+        {
+          "x": 694,
+          "y": 1226
+        },
+        {
+          "x": 761,
+          "y": 1226
+        },
+        {
+          "x": 814,
+          "y": 1210
+        },
+        {
+          "x": 814,
+          "y": 1143
+        },
+        {
+          "x": 814,
+          "y": 1076
+        },
+        {
+          "x": 814,
+          "y": 1009
+        },
+        {
+          "x": 814,
+          "y": 942
+        }
+      ]
+    }
+  ],
+  "tee_hole": {
+    "x_mm": 30,
+    "y_mm": 30
+  }
+}

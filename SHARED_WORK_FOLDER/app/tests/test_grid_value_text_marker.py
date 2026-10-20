@@ -158,21 +158,13 @@ class TestTextFormat:
 # ---------------------------------------------------------------------------
 
 class TestTextColorBlue:
-    """T5 — The fillStyle for the value text uses the blue/indigo accent color."""
+    """T5 (v5.20) - delta-mode value text is plain black with no white outline."""
 
-    def test_blue_fillStyle_in_grid_loop(self):
+    def test_black_fillStyle_and_no_outline_in_grid_loop(self):
         html = _html()
         loop = _grid_loop_body(html)
-        # Accept rgb / rgba / hex variants of the indigo blue family used before.
-        # Original dot was rgba(99,102,241,0.85) — keep similar family.
-        # Accept: 99 (indigo), #6366, rgb/rgba with 99 as R, or any indigo-family hex.
-        assert re.search(
-            r'rgba?\s*\(\s*9\d|#6[0-9a-f]{3,5}|indigo|rgba\(99|fillStyle.*6[36]',
-            loop, re.IGNORECASE
-        ), (
-            "No blue/indigo fillStyle found in grid rendering loop — "
-            "set cells will not be visually accented"
-        )
+        assert "'#000'" in loop, "delta-mode value text should be plain black"
+        assert "strokeText" not in loop, "value labels must have no outline"
 
 
 # ---------------------------------------------------------------------------

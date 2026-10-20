@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{# Boundary Editor v5.19 — Ctrl+Option(Alt)+drag selects cells along the drag path (visit order); popup has first/last boxes, Tab/Enter from the last box spreads first->last linearly (0.1 mm precision). v5.18 — Grid cell value labels/tooltip no longer show a leading '+' on positives (negatives keep '-'). v5.17 — Geo-ref setup dialog removed (orphaned after the GPS panel ⚙ opener was removed); courseGeoRef data still loads/saves untouched. v5.16 — GPS controls removed from the UI (JS state/load/save kept so any EGM gpsBackend block still round-trips). v5.15 — Mouse wheel steps the open grid value box (0.1 mm, Shift = 1.0; no clamp; commit still Enter/Tab). v5.14 — Grid cells colored by value (matplotlib 'terrain', auto-scaled; view-only toggle in localStorage). v5.13 — Only cells FULLY inside a bunker can control it (partial cells ignored). v5.12 — Ring now in delta AND absolute (not off); delta = default + highest cell (was mean). v5.11 — Absolute mode: red ring around the grid cell(s) that control each trap's height (server-computed, mirrors generator). v5.10 — Grid value 0 = empty cell (deleted on commit, dropped on load). Grid lines recolored to indigo; Cmd+drag multi-cell selection with shared-value edit (task 726) #}
+{# Boundary Editor v5.21 — Default tee-hole position moved to (40, 40) mm (was 30, 30); saved positions untouched. v5.20 — Grid cell value labels are plain black (delta) with no white outline; absolute keeps orange. v5.19 — Ctrl+Option(Alt)+drag selects cells along the drag path (visit order); popup has first/last boxes, Tab/Enter from the last box spreads first->last linearly (0.1 mm precision). v5.18 — Grid cell value labels/tooltip no longer show a leading '+' on positives (negatives keep '-'). v5.17 — Geo-ref setup dialog removed (orphaned after the GPS panel ⚙ opener was removed); courseGeoRef data still loads/saves untouched. v5.16 — GPS controls removed from the UI (JS state/load/save kept so any EGM gpsBackend block still round-trips). v5.15 — Mouse wheel steps the open grid value box (0.1 mm, Shift = 1.0; no clamp; commit still Enter/Tab). v5.14 — Grid cells colored by value (matplotlib 'terrain', auto-scaled; view-only toggle in localStorage). v5.13 — Only cells FULLY inside a bunker can control it (partial cells ignored). v5.12 — Ring now in delta AND absolute (not off); delta = default + highest cell (was mean). v5.11 — Absolute mode: red ring around the grid cell(s) that control each trap's height (server-computed, mirrors generator). v5.10 — Grid value 0 = empty cell (deleted on commit, dropped on load). Grid lines recolored to indigo; Cmd+drag multi-cell selection with shared-value edit (task 726) #}
 {% block title %}Boundary Editor — AI Team Workspace{% endblock %}
 {% block content_width %}max-w-6xl{% endblock %}
 {% block content %}
@@ -497,7 +497,7 @@
             :disabled="!imgLoaded"
             :class="!imgLoaded ? 'bg-rose-600/40 cursor-not-allowed' : (teeHole ? 'bg-rose-700 hover:bg-rose-800' : 'bg-rose-600 hover:bg-rose-700')"
             class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md text-white transition-default"
-            :title="teeHole ? 'Remove the tee-hole marker from this hole.' : 'Add a tee-hole marker (default 30 mm in from the top-left of the print bounds). Drag to reposition.'">
+            :title="teeHole ? 'Remove the tee-hole marker from this hole.' : 'Add a tee-hole marker (default 40 mm in from the top-left of the print bounds). Drag to reposition.'">
       <span x-text="teeHole ? 'Remove T Hole' : 'Add T Hole'"></span>
     </button>
 
@@ -724,7 +724,8 @@ function polygonEditor() {
     // Persisted at the top level of the .egm payload as `tee_hole` (or absent).
     teeHole: null,         // null when disabled, or {x_mm, y_mm} from print top-left
     _teeHoleDrag: null,    // {startClientX, startClientY, startImgX, startImgY, moved} during drag
-    TEE_HOLE_DEFAULT_MM: 30.0,  // default inset from top/left of print bounds (mm)
+    TEE_HOLE_DEFAULT_X_MM: 40.0,  // default inset from LEFT of print bounds (mm) — v5.21: was 30
+    TEE_HOLE_DEFAULT_Y_MM: 40.0,  // default inset from TOP of print bounds (mm, y down) — v5.21: was 30
     TEE_HOLE_MARKER_MM: 6.0,    // visual diameter of the marker (mm) — outer circle
     TEE_HOLE_EDGE_CLAMP_MM: 5.0, // minimum distance from any print-bound edge (mm) — buffer past collar radius
 
@@ -1327,7 +1328,7 @@ function polygonEditor() {
           ctx.font = `${11 * dpr}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
           ctx.fillStyle = (this.gridMode === 'absolute')
             ? 'rgba(249,115,22,0.95)'   // tailwind orange-500
-            : 'rgba(99,102,241,0.92)';  // indigo text accent (delta)
+            : '#000';  // v5.20: plain black (delta), no outline
           for (const [idxStr, mm] of Object.entries(this.gridCellHeights)) {
             if (mm === 0) continue;  // zero = empty cell
             const idx = Number(idxStr);
@@ -1339,7 +1340,6 @@ function polygonEditor() {
             const cp = this.imgToCanvas(cxImg, cyImg);
             const mmVal = Number(mm);
             const mmLabel = mmVal.toFixed(1);  // v5.59: no leading '+' on positives; negatives keep '-'
-            if (_colorOn) { ctx.lineJoin = 'round'; ctx.lineWidth = 3 * dpr; ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.strokeText(mmLabel, cp.x, cp.y); }  // v5.14 halo
             ctx.fillText(mmLabel, cp.x, cp.y);
           }
         }
@@ -2224,8 +2224,8 @@ function polygonEditor() {
         this.flash('Tee hole removed', true);
       } else {
         this.teeHole = {
-          x_mm: this.TEE_HOLE_DEFAULT_MM,
-          y_mm: this.TEE_HOLE_DEFAULT_MM,
+          x_mm: this.TEE_HOLE_DEFAULT_X_MM,
+          y_mm: this.TEE_HOLE_DEFAULT_Y_MM,
         };
         this.flash('Tee hole added — drag to reposition', true);
       }
@@ -2926,7 +2926,7 @@ function polygonEditor() {
         // elevationSpikes field in legacy EGMs is silently ignored (T5: OCR pipeline stripped).
         // fringeBoundaryHeights field in legacy EGMs is gracefully ignored —
         // exterior ring numbers are distance-from-pin, not altitude (2026-10-02).
-        // Tee-hole: absent field = default-populate at (30, 30) on the left.
+        // Tee-hole: absent field = default-populate at (40, 40) on the left.
         // A saved position (even in an older EGM) always wins over the default.
         // The default is client-side only — it isn't persisted to disk until the
         // user next triggers autoSave() (e.g. drags the marker, saves, etc.).
@@ -2934,8 +2934,8 @@ function polygonEditor() {
           this.teeHole = { x_mm: data.tee_hole.x_mm, y_mm: data.tee_hole.y_mm };
         } else {
           this.teeHole = {
-            x_mm: this.TEE_HOLE_DEFAULT_MM,
-            y_mm: this.TEE_HOLE_DEFAULT_MM,
+            x_mm: this.TEE_HOLE_DEFAULT_X_MM,
+            y_mm: this.TEE_HOLE_DEFAULT_Y_MM,
           };
         }
         // gridCellHeights — v5.00. Absent in legacy EGMs → default to empty dict.
@@ -3025,11 +3025,11 @@ function polygonEditor() {
       this._gridInputValue  = '';
       this._gridHoveredCell = null;
       this._gridMouseDownAt = null;  // v5.05
-      // Default-populate the tee hole on the left side (30 mm inset) — same
+      // Default-populate the tee hole on the left side (40 mm inset) — same
       // convention as loadProject(). User can remove it explicitly.
       this.teeHole = {
-        x_mm: this.TEE_HOLE_DEFAULT_MM,
-        y_mm: this.TEE_HOLE_DEFAULT_MM,
+        x_mm: this.TEE_HOLE_DEFAULT_X_MM,
+        y_mm: this.TEE_HOLE_DEFAULT_Y_MM,
       };
       this._pendingDetect = true;
       this.loadImage();

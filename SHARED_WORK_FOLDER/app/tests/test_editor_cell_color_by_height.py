@@ -48,7 +48,7 @@ def test_fill_under_numbers_and_rings_and_semi_transparent():
     assert fill < nums < ring
     seg = EDITOR[fill:nums]
     assert "gridMode !== 'off'" in seg and "_drawCellColors" in seg
-    assert "strokeText" in EDITOR[nums:ring]               # legibility halo
+    assert "strokeText" not in EDITOR[nums:ring]           # v5.20: no white outline on value labels
 
 
 def test_degenerate_range_uses_mid_colour():
