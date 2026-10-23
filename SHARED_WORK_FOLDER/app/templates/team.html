@@ -2,7 +2,7 @@
 {% block title %}Team — AI Team Workspace{% endblock %}
 {% block content %}
 
-<!-- v1.1 -->
+<!-- v1.2 -->
 <div class="pb-16">
 <div class="mb-8">
   <h1 class="text-[28px] font-bold text-notion-text leading-tight">Team</h1>
@@ -25,6 +25,7 @@
             model: '{{ m.model or 'opus' }}',
             open: false,
             updating: false,
+            versions: {{ model_versions | tojson }},
             tiers: ['fable','opus','sonnet','haiku'],
             colors: {
               fable:  'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
@@ -51,8 +52,9 @@
             <button @click="open = !open"
               :class="colors[model]"
               class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full cursor-pointer select-none transition-opacity"
+              :title="versions[model] ? versions[model].id : model"
               :disabled="updating">
-              <span x-text="model.charAt(0).toUpperCase() + model.slice(1)"></span>
+              <span x-text="versions[model] ? versions[model].label : model.charAt(0).toUpperCase() + model.slice(1)"></span>
               <svg x-show="!updating" class="w-2.5 h-2.5 opacity-50" viewBox="0 0 10 6" fill="none">
                 <path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
               </svg>
@@ -61,14 +63,15 @@
               </svg>
             </button>
             <div x-show="open" x-transition
-              class="absolute left-0 top-full mt-1 z-10 bg-white border border-notion-border rounded-lg shadow-md py-1 min-w-[7rem]">
+              class="absolute left-0 top-full mt-1 z-10 bg-white border border-notion-border rounded-lg shadow-md py-1 min-w-[8rem]">
               <template x-for="tier in tiers" :key="tier">
                 <button @click="setModel(tier)"
                   :class="[colors[tier], model === tier ? 'opacity-100' : 'opacity-70 hover:opacity-100']"
+                  :title="versions[tier].id"
                   class="w-full text-left text-xs px-3 py-1.5 flex items-center gap-2 transition-opacity">
                   <span class="w-1.5 h-1.5 rounded-full bg-current opacity-60 flex-shrink-0" x-show="model === tier"></span>
                   <span class="w-1.5 h-1.5 flex-shrink-0" x-show="model !== tier"></span>
-                  <span x-text="tier.charAt(0).toUpperCase() + tier.slice(1)"></span>
+                  <span x-text="versions[tier].label"></span>
                 </button>
               </template>
             </div>

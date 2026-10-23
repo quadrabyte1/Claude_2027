@@ -1,0 +1,53 @@
+{
+  "event_id": "2026-10-23-1030-call-in-dog-meds",
+  "schedule": [
+    {
+      "event_id": "2026-10-23-1030-call-in-dog-meds",
+      "kind": "heads_up_30",
+      "fire_at": "2026-10-23T10:00:00-04:00",
+      "tz": "America/New_York",
+      "body": "In 30 minutes: call in dog meds at 10:30 AM.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-23-1030-call-in-dog-meds",
+      "kind": "pre_5",
+      "fire_at": "2026-10-23T10:25:00-04:00",
+      "tz": "America/New_York",
+      "body": "5 minutes: call in dog meds at 10:30 AM.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-23-1030-call-in-dog-meds",
+      "kind": "strike_0",
+      "fire_at": "2026-10-23T10:30:00-04:00",
+      "tz": "America/New_York",
+      "body": "call in dog meds is starting now. Tap OK when you see this.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-23-1030-call-in-dog-meds",
+      "kind": "strike_5",
+      "fire_at": "2026-10-23T10:35:00-04:00",
+      "tz": "America/New_York",
+      "body": "Still on? call in dog meds started 5 minutes ago. Tap OK.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-23-1030-call-in-dog-meds",
+      "kind": "strike_10",
+      "fire_at": "2026-10-23T10:40:00-04:00",
+      "tz": "America/New_York",
+      "body": "Reminder: call in dog meds \u2014 10 minutes ago. Tap OK.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-23-1030-call-in-dog-meds",
+      "kind": "strike_15",
+      "fire_at": "2026-10-23T10:45:00-04:00",
+      "tz": "America/New_York",
+      "body": "Final reminder. call in dog meds. Tap OK or I'll log it as missed.",
+      "status": "pending"
+    }
+  ]
+}

@@ -16,7 +16,7 @@ This folder contains persona files for each AI team member. Each file defines a 
 | **Cass** | Architectural Visualization Specialist (Photo-Composite Mockups) | sonnet | `cass.md` |
 | **Vera** | AI Compositing Specialist (Photorealistic Architectural Inpainting & Mockups) | sonnet | `vera.md` |
 | **Kit** | Senior iOS Developer (Swift / SwiftUI) | sonnet | `kit.md` |
-| **Finn** | 3D Print & Slicer Specialist | haiku | `finn.md` |
+| **Finn** | 3D Print & Slicer Specialist | sonnet | `finn.md` |
 | **Zane** | Consumer Storage Reviewer (SSD Specialist) | sonnet | `zane.md` |
 | **Wren** | Voice-First Mac Productivity Specialist (Dictation, Voice Input & Hotkey Automation) | sonnet | `wren.md` |
 | **Mori** | Voice-First iOS Product Engineer (Homunculus Lead — voice I/O, on-device NLP, local calendar, reminder reliability) | sonnet | `mori.md` |
@@ -27,7 +27,9 @@ This folder contains persona files for each AI team member. Each file defines a 
 
 ## Model Tiers
 
-- **fable** (`claude-fable-5`) — Anthropic's most capable widely released model (GA 2026-06-09). Reserved for long-running agent workloads and top-of-team orchestration. Note: the Agent sub-agent tool's `model` enum does not yet accept `fable`, so this tier currently applies only to Larry (main conversation, switched via `/model`).
-- **opus** (`claude-opus-4-7`) — Reserved for roles where novel reasoning, ambiguous problem-solving, deep debugging, or architectural judgment is core to the job.
-- **sonnet** (`claude-sonnet-4-6`) — Default for implementation-heavy or well-scoped roles following well-trodden patterns.
-- **haiku** (`claude-haiku-4-5-20251001`) — Narrow mechanical roles only (bulk lookups, simple transforms).
+- **fable** (`claude-fable-5-1`, Fable 5.1) — Anthropic's most capable widely released model (GA 2026-06-09). Reserved for long-running agent workloads and top-of-team orchestration. Note: the Agent sub-agent tool's `model` enum does not yet accept `fable`, so this tier currently applies only to Larry (main conversation, switched via `/model`).
+- **opus** (`claude-opus-5-5`, Opus 5.5) — Reserved for roles where novel reasoning, ambiguous problem-solving, deep debugging, or architectural judgment is core to the job.
+- **sonnet** (`claude-sonnet-5-5`, Sonnet 5.5) — Default for implementation-heavy or well-scoped roles following well-trodden patterns.
+- **haiku** (`claude-haiku-5-5`, Haiku 5.5) — Narrow mechanical roles only (bulk lookups, simple transforms).
+
+**As of 2026-10-22, Thomas has standardized all team members on Sonnet 5.5 (`claude-sonnet-5-5`).**

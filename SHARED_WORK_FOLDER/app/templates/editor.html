@@ -3433,7 +3433,9 @@ function polygonEditor() {
           } else if (result.slicer_error) {
             msg += ' · Slicer open failed: ' + result.slicer_error;
           }
-          this.flash(msg, result.slicer_error ? false : true, fname, result.slicer_error ? null : 8000);
+          const warns = result.warnings || [];
+          if (warns.length) msg += ' · WARNING: ' + warns.join(' | ');
+          this.flash(msg, (result.slicer_error || warns.length) ? false : true, fname, (result.slicer_error || warns.length) ? null : 8000);
         } else {
           this.flash('Generation failed after ' + elapsed + 's: ' + (result.msg || result.error || 'unknown error'), false);
         }

@@ -1,3 +1,18 @@
+# v0.26 — 2026-10-20 Topo — Fix missing sand trap (Delaveaga H5 Trap 1).
+#         export_trap_stls swallowed "apply_sand_texture produced non-watertight trap
+#           mesh" and the trap vanished from the 3MF.  Cause: for a long ring chord
+#           (5.8 mm) Delaunay drops the ring edge, ring-stitch adds a fan triangle, then
+#           _earcut_interior_pinholes added a 2nd overlapping top triangle on the same
+#           ring edge (its dup-guard allowed count<2 even for ring edges, which also get
+#           a wall face) -> non-manifold edge -> NM prune opened holes.
+#         _earcut_interior_pinholes: ring edges now limited to ONE top face.
+#         APP_VERSION bumped to v5.65.
+# v0.26b — 2026-10-22 Topo — Fix missing sand trap (Stanford H8) + loud failures.
+#         _fill_missing_ring_edges nearest-fan chose an apex whose triangle (A,B,apex)
+#           overlapped existing faces (contained a vertex / crossed an edge) -> unclosable
+#           pinhole -> non-watertight -> trap silently dropped.  Fan apex must now give
+#           a non-overlapping triangle.  export_trap_stls also records PIPELINE_WARNINGS, returned by
+#           /api/generate_models and shown in the editor.  APP_VERSION v5.66.
 # v0.25 — 2026-10-15 Topo — Bunker rake ridges follow the long axis (reverses task #610).
 #         Thomas: "Bunker rake lines should run parallel to the long axis of a bunker."
 #         SAND_RAKE_ALIGN_TO_MAJOR_AXIS flipped to True (was False since #610, when
@@ -290,6 +305,10 @@ from generate_stl_3mf import interpolate_catmull_rom, course_paths, EGM_BASE
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
+
+# Non-fatal problems collected during the last run_pipeline() call (e.g. a
+# trap that failed to export).  app.py returns these in the generate response.
+PIPELINE_WARNINGS: list = []
 
 REPO_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
 OWNER_INBOX = os.path.join(REPO_ROOT, "owner_inbox")
@@ -6906,6 +6925,9 @@ def export_trap_stls(
             import traceback
             print(f"  ERROR exporting trap {i}: {exc}")
             traceback.print_exc()
+            # Surface the drop to the caller (Flask route -> editor banner).
+            PIPELINE_WARNINGS.append(
+                f"Sand trap {i} FAILED to build and is MISSING from the 3MF: {exc}")
 
     return results
 
@@ -7668,6 +7690,47 @@ def _fill_missing_ring_edges(
     def _signed_area(ax, ay, bx, by, cx, cy):
         return 0.5 * ((bx - ax) * (cy - ay) - (cx - ax) * (by - ay))
 
+    kd_all = cKDTree(all_xy)
+
+    def _segs_cross(p1, p2, p3, p4) -> bool:
+        # Proper (interior) crossing of segments p1p2 and p3p4.
+        d1 = _signed_area(*p3, *p4, *p1)
+        d2 = _signed_area(*p3, *p4, *p2)
+        d3 = _signed_area(*p1, *p2, *p3)
+        d4 = _signed_area(*p1, *p2, *p4)
+        eps = 1e-12
+        return (d1 * d2 < -eps) and (d3 * d4 < -eps)
+
+    def _tri_overlaps_existing(a, b, c) -> bool:
+        # True if triangle (a,b,c) would overlap existing top faces: another
+        # vertex lies strictly inside it, or an existing edge properly crosses
+        # one of its sides.  Such a fan triangle can never be made manifold.
+        A, B, C = (tuple(all_xy[k]) for k in (a, b, c))
+        mx, my = (A[0] + B[0] + C[0]) / 3.0, (A[1] + B[1] + C[1]) / 3.0
+        r = max(np.hypot(P[0] - mx, P[1] - my) for P in (A, B, C)) * 1.5 + 1e-9
+        eps = 1e-9
+        near = kd_all.query_ball_point([mx, my], r)
+        for pi in near:
+            if pi in (a, b, c):
+                continue
+            px, py = all_xy[pi]
+            d1 = _signed_area(*A, *B, px, py)
+            d2 = _signed_area(*B, *C, px, py)
+            d3 = _signed_area(*C, *A, px, py)
+            if (d1 > eps and d2 > eps and d3 > eps) or (d1 < -eps and d2 < -eps and d3 < -eps):
+                return True
+        sides = ((A, B), (B, C), (C, A))
+        for v in near:
+            if v >= n_verts:
+                continue
+            for w in adj[v]:
+                if w < v:
+                    continue
+                for s0, s1 in sides:
+                    if _segs_cross(s0, s1, tuple(all_xy[v]), tuple(all_xy[w])):
+                        return True
+        return False
+
     added: list[tuple[int, int, int]] = []
     missing_count = 0
     closed_via_shared = 0
@@ -7712,6 +7775,11 @@ def _fill_missing_ring_edges(
                 nn_arr = np.atleast_1d(nn)
                 for ci in nn_arr:
                     cx, cy = interior_xy[int(ci)]
+                    # v0.26b: reject a fan apex whose triangle (A,B,apex) overlaps
+                    # existing faces (contains a vertex / crosses an edge) -- it
+                    # leaves an unclosable pinhole (Stanford H8).
+                    if _tri_overlaps_existing(a, b, n_ring + int(ci)):
+                        continue
                     if _signed_area(ax, ay, bx, by, cx, cy) > 0.0:
                         cent = ((ax + bx + cx) / 3.0, (ay + by + cy) / 3.0)
                         if bool(contains_xy(shapely_poly, cent[0], cent[1])):
@@ -8004,7 +8072,10 @@ def _earcut_interior_pinholes(
         ]
         # Reject if any of this triangle's edges is already count=2 in top_faces
         # (adding would make it count=3, i.e. non-manifold).
-        if any(present_count.get(e, 0) >= 2 for e in tri_es):
+        # Ring edges are closed by the wall faces later, so the top surface may
+        # carry at most ONE face per ring edge (limit 1, not 2).
+        if any(present_count.get(e, 0) >= (1 if e in ring_edges_set else 2)
+               for e in tri_es):
             continue
         kept.append(tri)
         existing_tris.add(t)
@@ -10156,6 +10227,7 @@ def run_pipeline(
 
     Returns the absolute path to the generated .3mf file.
     """
+    PIPELINE_WARNINGS.clear()
     print("=" * 60)
     print("Gradient Surface Diagnostic")
     print("=" * 60)

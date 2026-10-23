@@ -1,0 +1,53 @@
+{
+  "event_id": "2026-10-22-0800-build-a-short-deck-for-iwi",
+  "schedule": [
+    {
+      "event_id": "2026-10-22-0800-build-a-short-deck-for-iwi",
+      "kind": "heads_up_30",
+      "fire_at": "2026-10-22T07:30:00-04:00",
+      "tz": "America/New_York",
+      "body": "In 30 minutes: build a short deck for IWI at 8:00 AM.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-22-0800-build-a-short-deck-for-iwi",
+      "kind": "pre_5",
+      "fire_at": "2026-10-22T07:55:00-04:00",
+      "tz": "America/New_York",
+      "body": "5 minutes: build a short deck for IWI at 8:00 AM.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-22-0800-build-a-short-deck-for-iwi",
+      "kind": "strike_0",
+      "fire_at": "2026-10-22T08:00:00-04:00",
+      "tz": "America/New_York",
+      "body": "build a short deck for IWI is starting now. Tap OK when you see this.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-22-0800-build-a-short-deck-for-iwi",
+      "kind": "strike_5",
+      "fire_at": "2026-10-22T08:05:00-04:00",
+      "tz": "America/New_York",
+      "body": "Still on? build a short deck for IWI started 5 minutes ago. Tap OK.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-22-0800-build-a-short-deck-for-iwi",
+      "kind": "strike_10",
+      "fire_at": "2026-10-22T08:10:00-04:00",
+      "tz": "America/New_York",
+      "body": "Reminder: build a short deck for IWI \u2014 10 minutes ago. Tap OK.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-22-0800-build-a-short-deck-for-iwi",
+      "kind": "strike_15",
+      "fire_at": "2026-10-22T08:15:00-04:00",
+      "tz": "America/New_York",
+      "body": "Final reminder. build a short deck for IWI. Tap OK or I'll log it as missed.",
+      "status": "pending"
+    }
+  ]
+}

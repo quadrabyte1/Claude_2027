@@ -23,7 +23,23 @@ app = Flask(__name__)
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "db", "workspace.db")
 
-APP_VERSION = "v5.64"  # unified version for all main-app pages, shown in every sticky footer
+APP_VERSION = "v5.67"  # unified version for all main-app pages, shown in every sticky footer
+
+# Tier -> concrete model (single source of truth for Team page + Dashboard).
+# Keep in sync with the mapping in team/README.md.
+MODEL_VERSIONS = {
+    "fable":  {"label": "Fable 5.1",  "id": "claude-fable-5-1"},
+    "opus":   {"label": "Opus 5.5",   "id": "claude-opus-5-5"},
+    "sonnet": {"label": "Sonnet 5.5", "id": "claude-sonnet-5-5"},
+    "haiku":  {"label": "Haiku 5.5",  "id": "claude-haiku-5-5"},
+}
+
+
+def model_info(tier):
+    """Return {"label", "id"} for a tier; unknown/empty tiers fall back to the raw name."""
+    t = (tier or "sonnet").strip().lower()
+    return MODEL_VERSIONS.get(t, {"label": (tier or t).capitalize(), "id": tier or t})
+
 
 # ── detect_boundaries: classifier knobs ────────────────────────────────────
 # When True the green polygon interior is excluded from trap/water detection.
@@ -457,7 +473,8 @@ def inject_now():
 
 @app.context_processor
 def _inject_app_version():
-    return {"app_version": APP_VERSION}
+    return {"app_version": APP_VERSION, "model_info": model_info,
+            "model_versions": MODEL_VERSIONS}
 
 
 def _is_htmx():
@@ -1872,8 +1889,10 @@ def generate_models():
             slicer_opened = False
             slicer_error  = str(exc)
 
+    import gradient_surface_diagnostic as _gsd
     return jsonify({"status": "ok", "file": result,
-                    "slicer_opened": slicer_opened, "slicer_error": slicer_error})
+                    "slicer_opened": slicer_opened, "slicer_error": slicer_error,
+                    "warnings": list(_gsd.PIPELINE_WARNINGS)})
 
 
 # ── GPS Heightmap Preview ─────────────────────────────────────────────────────

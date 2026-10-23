@@ -1,0 +1,53 @@
+{
+  "event_id": "2026-10-22-1500-look-at-stringers-and-bits",
+  "schedule": [
+    {
+      "event_id": "2026-10-22-1500-look-at-stringers-and-bits",
+      "kind": "heads_up_30",
+      "fire_at": "2026-10-22T14:30:00-04:00",
+      "tz": "America/New_York",
+      "body": "In 30 minutes: look at stringers and bits at 3:00 PM.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-22-1500-look-at-stringers-and-bits",
+      "kind": "pre_5",
+      "fire_at": "2026-10-22T14:55:00-04:00",
+      "tz": "America/New_York",
+      "body": "5 minutes: look at stringers and bits at 3:00 PM.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-22-1500-look-at-stringers-and-bits",
+      "kind": "strike_0",
+      "fire_at": "2026-10-22T15:00:00-04:00",
+      "tz": "America/New_York",
+      "body": "look at stringers and bits is starting now. Tap OK when you see this.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-22-1500-look-at-stringers-and-bits",
+      "kind": "strike_5",
+      "fire_at": "2026-10-22T15:05:00-04:00",
+      "tz": "America/New_York",
+      "body": "Still on? look at stringers and bits started 5 minutes ago. Tap OK.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-22-1500-look-at-stringers-and-bits",
+      "kind": "strike_10",
+      "fire_at": "2026-10-22T15:10:00-04:00",
+      "tz": "America/New_York",
+      "body": "Reminder: look at stringers and bits \u2014 10 minutes ago. Tap OK.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-22-1500-look-at-stringers-and-bits",
+      "kind": "strike_15",
+      "fire_at": "2026-10-22T15:15:00-04:00",
+      "tz": "America/New_York",
+      "body": "Final reminder. look at stringers and bits. Tap OK or I'll log it as missed.",
+      "status": "pending"
+    }
+  ]
+}

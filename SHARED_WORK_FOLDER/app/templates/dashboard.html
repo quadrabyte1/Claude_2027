@@ -155,8 +155,9 @@
                 {% if m.model == 'opus' %}bg-purple-50 text-purple-600
                 {% elif m.model == 'sonnet' %}bg-blue-50 text-blue-600
                 {% elif m.model == 'haiku' %}bg-emerald-50 text-emerald-600
-                {% else %}bg-gray-100 text-gray-500{% endif %}">
-                {{ m.model | capitalize if m.model else 'Sonnet' }}
+                {% else %}bg-gray-100 text-gray-500{% endif %}"
+                title="{{ model_info(m.model).id }}">
+                {{ model_info(m.model).label }}
               </span>
             </div>
             {% if is_busy %}
