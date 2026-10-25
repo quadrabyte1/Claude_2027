@@ -23,7 +23,4 @@ numpy-stl==3.2.0
 requests==2.32.5
 beautifulsoup4==4.14.3
 PyYAML==6.0.3
-
-# Optional (used by the LaMa image-clean helper — safe to skip if not needed)
-simple-lama-inpainting==0.1.2
-replicate==1.0.7
+python-dotenv==1.1.0

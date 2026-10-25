@@ -18,6 +18,15 @@ your machine stay on your machine.
   pyenv install 3.13.1
   pyenv local 3.13.1       # inside the repo root
   ```
+- **Homebrew** (macOS) — needed for `pyenv` and handy for `git`. Install with
+  the official one-liner:
+  ```bash
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  ```
+  When it finishes it prints a **"Next steps"** section with two or three
+  lines (typically `echo >> ~/.zprofile`, `echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile`,
+  and `eval "$(/opt/homebrew/bin/brew shellenv)"`). Run those lines exactly as
+  printed, then confirm with `brew --version`.
 - **git**
 - **~3 GB free disk** for the clone (course folders are in the repo).
 - **macOS or Linux**. The app assumes a POSIX shell (`run.sh`) and calls the
@@ -36,6 +45,10 @@ source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
+
+`requirements-optional.txt` is **not needed for the editors**. It holds extras
+for one of Thomas's one-off helper scripts (`clean_photo_lama.py`) and has its
+own install instructions in the file header. Skip it.
 
 **If you are stuck on Python 3.12**, two pins need loosening (both have 3.12
 wheels, but not at the exact pinned version):
@@ -74,10 +87,31 @@ cd app
 
 Then open:
 
+- Dashboard:       <http://localhost:5051/>
 - Boundary Editor: <http://localhost:5051/editor>
 - Plaque Editor:   <http://localhost:5051/plaque>
 
 Port **5051** must be free. Logs stream to `app/logs/server.log`.
+
+## Auto-start at login (macOS)
+
+Optional. Two user LaunchAgents keep the server running and open the browser
+tabs after login. From the SHARED_WORK_FOLDER root, run one command:
+
+```bash
+scripts/install_autostart.sh
+```
+
+It finds the clone from its own location, checks the `.venv` (Python 3.13),
+writes and validates both plists, loads them, and waits for the server to
+answer on port 5051. Re-running is safe. After a `git pull`, restart the
+server with:
+
+```bash
+launchctl kickstart -k gui/$(id -u)/com.iwi.editor
+```
+
+To remove the agents: `scripts/install_autostart.sh --uninstall`.
 
 ## Known limitations
 
@@ -102,11 +136,6 @@ Port **5051** must be free. Logs stream to `app/logs/server.log`.
   You can ignore all of these. If you ever need one, swap its hardcoded
   constant for an `os.path.dirname(os.path.abspath(__file__))`-relative path.
 
-- **Auto-start Login Item is Mac-only and boot-volume-only.** Thomas's setup
-  starts the Flask app on login via a macOS Login Item that points at
-  `~/.local/bin/start_web_servers.sh`. Don't try to replicate it — just run
-  `./run.sh` manually in a terminal when you want the editor up.
-
 - **`/Volumes/GIT/...` paths will not work on your machine.** Thomas's repo
   lives on an external volume. All editor code uses repo-relative paths
   (`os.path.dirname(__file__)` + `..`), so a plain `git clone` into any
@@ -125,12 +154,40 @@ lsof -i :5051           # find the PID
 kill <pid>
 ```
 
-**`ModuleNotFoundError: No module named 'flask'`** — you forgot to activate
-the venv. `source .venv/bin/activate` from the repo root.
+**`ModuleNotFoundError: No module named 'flask'` (or `dotenv`, `cv2`,
+`shapely`, or any other package)** — the server was almost certainly started
+with plain `python3` (the system/Homebrew interpreter) instead of the venv's
+Python. Either activate the venv first (`source .venv/bin/activate` from the
+repo root, then `python app.py`), or call the venv interpreter directly from
+`app/`: `../.venv/bin/python app.py`. If the module is still missing under
+the venv's Python, re-run `pip install -r requirements.txt`.
 
 **`pip install` fails on numpy or pillow** — you're on Python 3.12 and need
 the pin loosening described above. If `pip` claims no wheel is available on
 3.13 either, your `pip` is stale: `pip install --upgrade pip` and retry.
+
+**`pip install` fails with `ResolutionImpossible` mentioning
+`simple-lama-inpainting` and `numpy<2.0.0`** — you have an old checkout of
+`requirements.txt`. `simple-lama-inpainting` declares `numpy<2`, which can never
+resolve against the `numpy==2.4.2` pin. It is only used by a one-off helper, so
+`git pull` (it now lives in `requirements-optional.txt`) or delete the
+`simple-lama-inpainting` and `replicate` lines from `requirements.txt`, then
+re-run `pip install -r requirements.txt`.
+
+**`ERROR: No matching distribution found for numpy` / "no matching
+distributions available"** — the venv was built with the wrong Python (e.g.
+macOS's system `python3`, which is 3.9). Check:
+```bash
+.venv/bin/python --version     # must say 3.13.x
+```
+If not, delete and recreate it with 3.13:
+```bash
+deactivate 2>/dev/null; rm -rf .venv
+python3.13 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
 
 **Editor loads but course dropdowns are empty** — `ItWentIn/GolfCourses/`
 is missing; check you ran the app from the cloned `SHARED_WORK_FOLDER`.

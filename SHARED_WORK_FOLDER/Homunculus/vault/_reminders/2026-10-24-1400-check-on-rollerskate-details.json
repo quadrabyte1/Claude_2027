@@ -1,0 +1,53 @@
+{
+  "event_id": "2026-10-24-1400-check-on-rollerskate-details",
+  "schedule": [
+    {
+      "event_id": "2026-10-24-1400-check-on-rollerskate-details",
+      "kind": "heads_up_30",
+      "fire_at": "2026-10-24T13:30:00-04:00",
+      "tz": "America/New_York",
+      "body": "In 30 minutes: check on rollerskate details at 2:00 PM.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-24-1400-check-on-rollerskate-details",
+      "kind": "pre_5",
+      "fire_at": "2026-10-24T13:55:00-04:00",
+      "tz": "America/New_York",
+      "body": "5 minutes: check on rollerskate details at 2:00 PM.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-24-1400-check-on-rollerskate-details",
+      "kind": "strike_0",
+      "fire_at": "2026-10-24T14:00:00-04:00",
+      "tz": "America/New_York",
+      "body": "check on rollerskate details is starting now. Tap OK when you see this.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-24-1400-check-on-rollerskate-details",
+      "kind": "strike_5",
+      "fire_at": "2026-10-24T14:05:00-04:00",
+      "tz": "America/New_York",
+      "body": "Still on? check on rollerskate details started 5 minutes ago. Tap OK.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-24-1400-check-on-rollerskate-details",
+      "kind": "strike_10",
+      "fire_at": "2026-10-24T14:10:00-04:00",
+      "tz": "America/New_York",
+      "body": "Reminder: check on rollerskate details \u2014 10 minutes ago. Tap OK.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-24-1400-check-on-rollerskate-details",
+      "kind": "strike_15",
+      "fire_at": "2026-10-24T14:15:00-04:00",
+      "tz": "America/New_York",
+      "body": "Final reminder. check on rollerskate details. Tap OK or I'll log it as missed.",
+      "status": "pending"
+    }
+  ]
+}

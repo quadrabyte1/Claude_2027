@@ -1,0 +1,14 @@
+# Optional extras -- NOT needed for the Boundary Editor or Plaque Editor.
+# Used only by app/clean_photo_lama.py (Thomas's one-off LaMa image-clean helper).
+#
+# simple-lama-inpainting declares numpy<2.0.0, which conflicts with the
+# numpy 2.x pin in requirements.txt. Install it WITHOUT dependency resolution
+# alongside numpy 2.x (this is how Thomas's environment has both):
+#
+#   pip install --no-deps simple-lama-inpainting==0.1.2
+#   pip install -r requirements-optional.txt   # only if you also want replicate
+#
+# (Do not run `pip install -r` on the lama line directly; the resolver will fail.)
+
+# simple-lama-inpainting==0.1.2   # install with --no-deps, see above
+replicate==1.0.7

@@ -1,0 +1,53 @@
+{
+  "event_id": "2026-10-24-1230-talk-to-wayfair-about-returning-the-mailbox",
+  "schedule": [
+    {
+      "event_id": "2026-10-24-1230-talk-to-wayfair-about-returning-the-mailbox",
+      "kind": "heads_up_30",
+      "fire_at": "2026-10-24T12:00:00-04:00",
+      "tz": "America/New_York",
+      "body": "In 30 minutes: talk to Wayfair about returning the mailbox at 12:30 PM.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-24-1230-talk-to-wayfair-about-returning-the-mailbox",
+      "kind": "pre_5",
+      "fire_at": "2026-10-24T12:25:00-04:00",
+      "tz": "America/New_York",
+      "body": "5 minutes: talk to Wayfair about returning the mailbox at 12:30 PM.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-24-1230-talk-to-wayfair-about-returning-the-mailbox",
+      "kind": "strike_0",
+      "fire_at": "2026-10-24T12:30:00-04:00",
+      "tz": "America/New_York",
+      "body": "talk to Wayfair about returning the mailbox is starting now. Tap OK when you see this.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-24-1230-talk-to-wayfair-about-returning-the-mailbox",
+      "kind": "strike_5",
+      "fire_at": "2026-10-24T12:35:00-04:00",
+      "tz": "America/New_York",
+      "body": "Still on? talk to Wayfair about returning the mailbox started 5 minutes ago. Tap OK.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-24-1230-talk-to-wayfair-about-returning-the-mailbox",
+      "kind": "strike_10",
+      "fire_at": "2026-10-24T12:40:00-04:00",
+      "tz": "America/New_York",
+      "body": "Reminder: talk to Wayfair about returning the mailbox \u2014 10 minutes ago. Tap OK.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-24-1230-talk-to-wayfair-about-returning-the-mailbox",
+      "kind": "strike_15",
+      "fire_at": "2026-10-24T12:45:00-04:00",
+      "tz": "America/New_York",
+      "body": "Final reminder. talk to Wayfair about returning the mailbox. Tap OK or I'll log it as missed.",
+      "status": "pending"
+    }
+  ]
+}
