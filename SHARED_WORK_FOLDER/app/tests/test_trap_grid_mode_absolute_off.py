@@ -28,7 +28,7 @@ def _gsd():
 
 
 def _geom(g):
-    half = g.PRINT_SIZE_MM / 2.0 + g.FRINGE_XY_EXPANSION_MM / 2.0
+    half = g.FRINGE_HALF_MM
     return half, 2 * half / 20
 
 
@@ -76,4 +76,6 @@ def test_t5_export_trap_stls_uses_helper_and_gridmode():
     g = _gsd()
     src = inspect.getsource(g.export_trap_stls)
     assert "_resolve_trap_height_from_grid" in src
-    assert "gridMode" in src
+    # the generator reads the EGM key via its named constant (Coding Standard), not a literal
+    assert g.EGM_KEY_GRID_MODE == "gridMode"
+    assert "EGM_KEY_GRID_MODE" in src

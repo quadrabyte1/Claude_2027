@@ -413,7 +413,7 @@ class TestFringAtFrameEdge:
             fringe_grid_res=100,
         )
 
-        half = gsd.PRINT_SIZE_MM / 2.0 + gsd.FRINGE_XY_EXPANSION_MM / 2.0
+        half = gsd.FRINGE_HALF_MM
 
         # Frame-edge vertices: |x| > half*0.88 OR |y| > half*0.88,
         # filtered to top-surface only (Z > 1.0 mm to exclude bottom/walls).
@@ -471,7 +471,7 @@ class TestTPSPrimitiveRegression:
         green_bnd_px = gsd.interpolate_catmull_rom(egm["polygons"][0]["points"])
         green_bnd_mm = gsd._px_to_mm_2d(green_bnd_px.copy(), scale, centroid_px)
 
-        half = gsd.PRINT_SIZE_MM / 2.0 + gsd.FRINGE_XY_EXPANSION_MM / 2.0
+        half = gsd.FRINGE_HALF_MM
         gx = np.linspace(-half, half, 20)
         gy = np.linspace(-half, half, 20)
         GX, GY = np.meshgrid(gx, gy)

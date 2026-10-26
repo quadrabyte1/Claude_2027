@@ -31,7 +31,7 @@ def test_normalize_resolution():
 def test_controlling_cells_use_resolution():
     from shapely.geometry import box
     g = _gsd()
-    half = g.PRINT_SIZE_MM / 2.0 + g.FRINGE_XY_EXPANSION_MM / 2.0
+    half = g.FRINGE_HALF_MM
     side = 2 * half / 40
     # cell row 30, col 5 at 40x40
     poly = box(-half + 4.9 * side, -half + 29.9 * side, -half + 6.1 * side, -half + 31.1 * side)
@@ -41,7 +41,7 @@ def test_controlling_cells_use_resolution():
 
 def test_tps_field_40_grid():
     g = _gsd()
-    half = g.PRINT_SIZE_MM / 2.0 + g.FRINGE_XY_EXPANSION_MM / 2.0
+    half = g.FRINGE_HALF_MM
     t = np.linspace(0, 2 * np.pi, 60, endpoint=False)
     bnd = np.column_stack([30 * np.cos(t), 30 * np.sin(t)])
     bz = np.full(60, 5.0)

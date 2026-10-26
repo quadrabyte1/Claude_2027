@@ -66,15 +66,53 @@ import trimesh
 # Constants
 # ---------------------------------------------------------------------------
 
+# SHARED CONSTANTS: PRINT_SIZE_MM, FRINGE_XY_EXPANSION_MM, FRINGE_HALF_MM and the EGM key /
+# polygon-type names below are defined ONCE here and imported by gradient_surface_diagnostic.py
+# (the editor's mirrors are asserted equal by tests/test_editor_server_constants_sync.py).
 PRINT_SIZE_MM: float = 171.45       # max bounding-box dimension after scaling (6.75 in)
 CATMULL_TENSION: float = 0.5        # editor uses 0.5
 CATMULL_SEGMENTS: int = 16          # editor uses 16 segments per edge
 
+# EGM JSON keys (the .egm project file format; the editor writes them, both generators read them)
+EGM_KEY_POLYGONS: str = "polygons"
+EGM_KEY_TYPE: str = "type"
+EGM_KEY_POINTS: str = "points"
+EGM_KEY_NAME: str = "name"
+EGM_KEY_COURSE: str = "course"
+EGM_KEY_HOLE: str = "hole"
+EGM_KEY_IMAGE: str = "image"
+EGM_KEY_IMAGE_SIZE: str = "imageSize"
+EGM_KEY_CONTOUR_STEP: str = "contourStep"
+
+# Polygon types stored under EGM_KEY_TYPE
+POLY_TYPE_GREEN: str = "green"
+POLY_TYPE_FRINGE: str = "fringe"
+POLY_TYPE_TRAP: str = "trap"
+POLY_TYPE_WATER: str = "water"
+POLY_TYPE_BOULDERS: str = "boulders"
+POLY_TYPE_CONTOUR: str = "contour"
+
+# Defaults when an EGM omits the key
+DEFAULT_IMAGE_SIZE_PX: int = 600     # width and height fallback for EGM_KEY_IMAGE_SIZE
+DEFAULT_CONTOUR_STEP_MM: float = 0.5
+DEFAULT_COURSE_NAME: str = "Unknown Course"
+DEFAULT_HOLE_LABEL: str = "0"
+DEFAULT_REGION_NAME: str = "Region"
+MIN_SPLINE_CONTROL_POINTS: int = 3   # fewer control points -> straight edges / skipped
+HOLE_LABEL_WIDTH: int = 2            # numeric hole labels are zero-padded to this width in filenames
+
+# Keys of the dicts generate_from_egm() returns, and their file-type values
+OUT_KEY_NAME: str = "name"
+OUT_KEY_PATH: str = "path"
+OUT_KEY_TYPE: str = "type"
+FILE_TYPE_3MF: str = "3mf"
+FILE_TYPE_STL: str = "stl"
+
 THICKNESS_BY_TYPE: dict[str, float] = {
-    "green":    15.0,
-    "fringe":   12.0,
-    "trap":     10.0,
-    "boulders":  2.5,
+    POLY_TYPE_GREEN:    15.0,
+    POLY_TYPE_FRINGE:   12.0,
+    POLY_TYPE_TRAP:     10.0,
+    POLY_TYPE_BOULDERS:  2.5,
 }
 DEFAULT_THICKNESS: float = 2.5
 PRINT_TOLERANCE_MM: float = 0.25    # inset each piece by this much for easier fit
@@ -91,16 +129,34 @@ PRINT_TOLERANCE_MM: float = 0.25    # inset each piece by this much for easier f
 FRINGE_XY_EXPANSION_MM: float = -1.057  # signed total XY offset per axis (negative = shrink)
 FRINGE_HALF_MM: float = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0   # ~88.47 mm after shrink
 
+DIR_OWNER_INBOX: str = "owner_inbox"
+DIR_TEAM_INBOX: str = "team_inbox"
 OWNER_INBOX: str = os.path.join(
-    os.path.dirname(__file__), "..", "owner_inbox"
+    os.path.dirname(__file__), "..", DIR_OWNER_INBOX
 )
 
 # ---------------------------------------------------------------------------
 # EGM folder structure helpers
 # ---------------------------------------------------------------------------
 
+# Per-course subfolder names (keys of course_paths()' result map to these folders).
+COURSE_SUBDIR_IMAGES: str = "Images"
+COURSE_SUBDIR_EGMS: str = "EGMs"
+COURSE_SUBDIR_STLS: str = "STLs"
+COURSE_SUBDIR_3MFS: str = "3MFs"
+PATH_KEY_IMAGES: str = "images"
+PATH_KEY_EGMS: str = "egms"
+PATH_KEY_STLS: str = "stls"
+PATH_KEY_3MFS: str = "3mfs"
+
+DIR_GOLF_COURSES_PARENT: str = "ItWentIn"
+DIR_GOLF_COURSES: str = "GolfCourses"
+# NOTE: app.py builds the same path as `_EGM_BASE` from its own DIR_GOLF_COURSES_PARENT /
+# DIR_GOLF_COURSES constants (app.py is intentionally not imported here: it pulls in Flask and
+# opens the DB at import time).  tests/test_editor_server_constants_sync.py::test_egm_base_matches_generator
+# asserts `app._EGM_BASE == generate_stl_3mf.EGM_BASE`, so the two cannot drift apart.
 EGM_BASE: str = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), "..", "ItWentIn", "GolfCourses")
+    os.path.join(os.path.dirname(__file__), "..", DIR_GOLF_COURSES_PARENT, DIR_GOLF_COURSES)
 )
 
 
@@ -111,10 +167,10 @@ def course_paths(course: str) -> dict:
     """
     base = os.path.join(EGM_BASE, course)
     return {
-        "images": os.path.join(base, "Images"),
-        "egms":   os.path.join(base, "EGMs"),
-        "stls":   os.path.join(base, "STLs"),
-        "3mfs":   os.path.join(base, "3MFs"),
+        PATH_KEY_IMAGES: os.path.join(base, COURSE_SUBDIR_IMAGES),
+        PATH_KEY_EGMS:   os.path.join(base, COURSE_SUBDIR_EGMS),
+        PATH_KEY_STLS:   os.path.join(base, COURSE_SUBDIR_STLS),
+        PATH_KEY_3MFS:   os.path.join(base, COURSE_SUBDIR_3MFS),
     }
 
 # ---------------------------------------------------------------------------
@@ -161,7 +217,7 @@ def interpolate_catmull_rom(
     np.ndarray of shape (N, 2), dtype float64 — the spline vertices in image pixels
     """
     n = len(control_points)
-    if n < 3:
+    if n < MIN_SPLINE_CONTROL_POINTS:
         # Fall back to straight edges for degenerate polygons
         return np.array([[p["x"], p["y"]] for p in control_points], dtype=np.float64)
 
@@ -895,7 +951,7 @@ def _slugify(text: str) -> str:
 
 def _3mf_filename(course: str, hole: str, serial: int | None = None) -> str:
     """e.g. "Moffett Field (Hole 09) [105].3mf" (or without brackets if no serial)."""
-    hole_label = str(hole).zfill(2) if str(hole).isdigit() else str(hole)
+    hole_label = str(hole).zfill(HOLE_LABEL_WIDTH) if str(hole).isdigit() else str(hole)
     base = f"{course} (Hole {hole_label})"
     if serial is not None:
         return f"{base} [{serial}].3mf"
@@ -935,50 +991,51 @@ def generate_from_egm(
     """
     thickness_map = {**THICKNESS_BY_TYPE, **(thickness_override or {})}
 
-    course = egm_data.get("course", "Unknown Course")
-    hole = egm_data.get("hole", "0")
+    course = egm_data.get(EGM_KEY_COURSE, DEFAULT_COURSE_NAME)
+    hole = egm_data.get(EGM_KEY_HOLE, DEFAULT_HOLE_LABEL)
 
     # Resolve output directories: course-specific 3MFs/ and STLs/ folders.
     # If output_dir is explicitly passed, use it for both (backwards compat).
     _cpaths = course_paths(course)
     if output_dir is None:
-        output_dir_3mf = _cpaths["3mfs"]
-        output_dir_stl = _cpaths["stls"]
+        output_dir_3mf = _cpaths[PATH_KEY_3MFS]
+        output_dir_stl = _cpaths[PATH_KEY_STLS]
     else:
         output_dir_3mf = output_dir
         output_dir_stl = output_dir
     os.makedirs(output_dir_3mf, exist_ok=True)
     os.makedirs(output_dir_stl, exist_ok=True)
 
-    image_size = egm_data.get("imageSize", {"width": 600, "height": 600})
-    polygons = egm_data.get("polygons", [])
-    contour_step_mm: float = float(egm_data.get("contourStep", 0.5))
+    image_size = egm_data.get(
+        EGM_KEY_IMAGE_SIZE, {"width": DEFAULT_IMAGE_SIZE_PX, "height": DEFAULT_IMAGE_SIZE_PX})
+    polygons = egm_data.get(EGM_KEY_POLYGONS, [])
+    contour_step_mm: float = float(egm_data.get(EGM_KEY_CONTOUR_STEP, DEFAULT_CONTOUR_STEP_MM))
 
     if not polygons:
         return []
 
     # Separate regular polygons from contour lines
-    regular_polys = [p for p in polygons if p.get("type", "").lower() != "contour"]
-    contour_polys = [p for p in polygons if p.get("type", "").lower() == "contour"]
+    regular_polys = [p for p in polygons if p.get(EGM_KEY_TYPE, "").lower() != POLY_TYPE_CONTOUR]
+    contour_polys = [p for p in polygons if p.get(EGM_KEY_TYPE, "").lower() == POLY_TYPE_CONTOUR]
 
     # --- 1. Interpolate all splines (regular polygons only) ---
     splines_px: list[np.ndarray] = []
     for poly in regular_polys:
-        pts = poly.get("points", [])
-        if len(pts) < 3:
+        pts = poly.get(EGM_KEY_POINTS, [])
+        if len(pts) < MIN_SPLINE_CONTROL_POINTS:
             arr = np.array([[p["x"], p["y"]] for p in pts], dtype=np.float64)
         else:
             arr = interpolate_catmull_rom(pts)
         splines_px.append(arr)
 
     # Resolve source image path (for color-band scoring in stepped green)
-    image_name = egm_data.get("image", "")
+    image_name = egm_data.get(EGM_KEY_IMAGE, "")
     image_path: str | None = None
     if image_name:
         # Check course Images/ folder first, then team_inbox as fallback
         paths = course_paths(course)
-        for candidate_dir in (paths["images"],
-                              os.path.join(os.path.dirname(__file__), "..", "team_inbox")):
+        for candidate_dir in (paths[PATH_KEY_IMAGES],
+                              os.path.join(os.path.dirname(__file__), "..", DIR_TEAM_INBOX)):
             candidate = os.path.join(candidate_dir, image_name)
             if os.path.isfile(candidate):
                 image_path = candidate
@@ -1014,11 +1071,11 @@ def generate_from_egm(
     for poly, sp, outline_mm in zip(regular_polys, shapely_polys, splines_mm):
         if sp is None:
             continue
-        ptype = poly.get("type", "").lower()
-        if ptype == "green" and green_shapely is None:
+        ptype = poly.get(EGM_KEY_TYPE, "").lower()
+        if ptype == POLY_TYPE_GREEN and green_shapely is None:
             green_shapely = sp
             green_outline_mm = outline_mm
-        elif ptype == "trap":
+        elif ptype == POLY_TYPE_TRAP:
             trap_shapely_list.append(sp)
 
     # --- 6. Build meshes and assemble scene ---
@@ -1049,8 +1106,8 @@ def generate_from_egm(
 
     # Build and add each polygon mesh
     for poly, sp_px, outline_mm in zip(regular_polys, splines_px, splines_mm):
-        poly_name = poly.get("name", "Region")
-        poly_type = poly.get("type", "").lower()
+        poly_name = poly.get(EGM_KEY_NAME, DEFAULT_REGION_NAME)
+        poly_type = poly.get(EGM_KEY_TYPE, "").lower()
         thickness = thickness_map.get(poly_type, DEFAULT_THICKNESS)
 
         # Inset outline by PRINT_TOLERANCE_MM for easier fit between pieces
@@ -1064,7 +1121,7 @@ def generate_from_egm(
             # NOTE: gradient (Poisson) green surface branch removed 2026-05-07.
             # Green-surface generation is now handled by
             # `gradient_surface_diagnostic.run_pipeline()`.
-            if poly_type == "green" and contour_lines_mm:
+            if poly_type == POLY_TYPE_GREEN and contour_lines_mm:
                 # Legacy: stepped surface from drawn contour lines
                 print(f"[generate_stl_3mf] Building stepped green with "
                       f"{len(contour_lines_mm)} contour line(s), step={contour_step_mm}mm")
@@ -1088,7 +1145,8 @@ def generate_from_egm(
 
     # --- 7. Build and add fringe ring ---
     if green_shapely is not None:
-        fringe_thickness = thickness_map.get("fringe", THICKNESS_BY_TYPE["fringe"])
+        fringe_thickness = thickness_map.get(
+            POLY_TYPE_FRINGE, THICKNESS_BY_TYPE[POLY_TYPE_FRINGE])
         fringe_mesh = _build_fringe(green_shapely, trap_shapely_list, fringe_thickness)
         if fringe_mesh is not None:
             _add_to_scene(fringe_mesh, "Fringe")
@@ -1104,7 +1162,7 @@ def generate_from_egm(
         fname_3mf = _3mf_filename(course, hole, serial=serial)
         path_3mf = os.path.join(output_dir_3mf, fname_3mf)
         scene.export(path_3mf)
-        generated.append({"name": fname_3mf, "path": path_3mf, "type": "3mf"})
+        generated.append({OUT_KEY_NAME: fname_3mf, OUT_KEY_PATH: path_3mf, OUT_KEY_TYPE: FILE_TYPE_3MF})
         print(f"[generate_stl_3mf] Written 3MF: {path_3mf}")
 
         # Export each scene object as an individual STL
@@ -1113,7 +1171,7 @@ def generate_from_egm(
             stl_name = f"{base_slug}_{_slugify(geom_name)}.stl"
             stl_path = os.path.join(output_dir_stl, stl_name)
             mesh.export(stl_path)
-            generated.append({"name": stl_name, "path": stl_path, "type": "stl"})
+            generated.append({OUT_KEY_NAME: stl_name, OUT_KEY_PATH: stl_path, OUT_KEY_TYPE: FILE_TYPE_STL})
             print(f"[generate_stl_3mf]   STL: {stl_name}")
 
         print(f"[generate_stl_3mf] Scene contains {len(scene.geometry)} object(s): "
@@ -1174,4 +1232,4 @@ if __name__ == "__main__":
     results = generate_from_egm_file(egm_path, output_dir=out_dir, serial=_cli_serial)
     print("\nGenerated files:")
     for r in results:
-        print(f"  [{r['type'].upper():3s}] {r['path']}")
+        print(f"  [{r[OUT_KEY_TYPE].upper():3s}] {r[OUT_KEY_PATH]}")

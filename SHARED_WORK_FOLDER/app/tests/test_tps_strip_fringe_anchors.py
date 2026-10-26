@@ -90,7 +90,7 @@ def _base_egm(cx_px=300.0, cy_px=300.0, r_px=105.0, n=64,
 
 
 def _build_grid(gsd, n=50):
-    half = gsd.PRINT_SIZE_MM / 2.0 + gsd.FRINGE_XY_EXPANSION_MM / 2.0
+    half = gsd.FRINGE_HALF_MM
     gx = np.linspace(-half, half, n)
     gy = np.linspace(-half, half, n)
     return np.meshgrid(gx, gy)
@@ -270,7 +270,7 @@ class TestStripOuterFrameHonored:
         snapped_xy = green_bnd_mm[idx]
 
         GX, GY = _build_grid(gsd, n=60)
-        half = gsd.PRINT_SIZE_MM / 2.0 + gsd.FRINGE_XY_EXPANSION_MM / 2.0
+        half = gsd.FRINGE_HALF_MM
 
         z_tps = gsd._build_tps_base(
             egm_data=egm,
@@ -314,7 +314,7 @@ class TestStripSmoothnessRegression:
         # Build 1D transect grid along X axis through spike
         step_mm = 1.0
         n_sample = 30
-        half = gsd.PRINT_SIZE_MM / 2.0 + gsd.FRINGE_XY_EXPANSION_MM / 2.0
+        half = gsd.FRINGE_HALF_MM
         sample_xs = np.linspace(-half, half, n_sample)
         sample_ys = np.zeros(n_sample)
         GX = sample_xs.reshape(1, -1)

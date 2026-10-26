@@ -232,7 +232,7 @@ class TestTPSPrimitiveCallable:
         green_bnd_px = gsd.interpolate_catmull_rom(egm["polygons"][0]["points"])
         green_bnd_mm = gsd._px_to_mm_2d(green_bnd_px.copy(), scale, centroid_px)
 
-        half = gsd.PRINT_SIZE_MM / 2.0 + gsd.FRINGE_XY_EXPANSION_MM / 2.0
+        half = gsd.FRINGE_HALF_MM
         grid_res = 30
         gx = np.linspace(-half, half, grid_res)
         gy = np.linspace(-half, half, grid_res)

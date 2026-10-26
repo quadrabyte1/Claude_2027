@@ -168,7 +168,7 @@ class TestTPSFringeAnchorHonored:
         snapped_xy = green_bnd_mm[idx]  # (x_mm, y_mm)
 
         # Build TPS surface — no interior spikes
-        half = gsd.PRINT_SIZE_MM / 2.0 + gsd.FRINGE_XY_EXPANSION_MM / 2.0
+        half = gsd.FRINGE_HALF_MM
         grid_res = 50
         gx = np.linspace(-half, half, grid_res)
         gy = np.linspace(-half, half, grid_res)
@@ -228,7 +228,7 @@ class TestTPSInteriorSpikeHonored:
         spike_mm_xy = gsd._px_to_mm_2d(spike_px, scale, centroid_px)[0]
         spike_z = 12.0
 
-        half = gsd.PRINT_SIZE_MM / 2.0 + gsd.FRINGE_XY_EXPANSION_MM / 2.0
+        half = gsd.FRINGE_HALF_MM
         grid_res = 50
         gx = np.linspace(-half, half, grid_res)
         gy = np.linspace(-half, half, grid_res)
@@ -287,7 +287,7 @@ class TestTPSOuterFrameDecay:
         _, idx = bnd_kd.query(anchor_mm[:2], k=1)
         snapped_xy = green_bnd_mm[idx]
 
-        half = gsd.PRINT_SIZE_MM / 2.0 + gsd.FRINGE_XY_EXPANSION_MM / 2.0
+        half = gsd.FRINGE_HALF_MM
         grid_res = 60
         gx = np.linspace(-half, half, grid_res)
         gy = np.linspace(-half, half, grid_res)
@@ -343,7 +343,7 @@ class TestTPSDegenerate:
         green_bnd_px = gsd.interpolate_catmull_rom(egm["polygons"][0]["points"])
         green_bnd_mm = gsd._px_to_mm_2d(green_bnd_px.copy(), scale, centroid_px)
 
-        half = gsd.PRINT_SIZE_MM / 2.0 + gsd.FRINGE_XY_EXPANSION_MM / 2.0
+        half = gsd.FRINGE_HALF_MM
         grid_res = 30
         gx = np.linspace(-half, half, grid_res)
         gy = np.linspace(-half, half, grid_res)
@@ -424,7 +424,7 @@ class TestTPSSeamContinuity:
                                for i in range(n_sample)])
         sample_ys = np.full(n_sample, snapped_xy[1])
 
-        half = gsd.PRINT_SIZE_MM / 2.0 + gsd.FRINGE_XY_EXPANSION_MM / 2.0
+        half = gsd.FRINGE_HALF_MM
         # Build a narrow grid covering just this transect
         gx = sample_xs
         gy = sample_ys
@@ -655,7 +655,7 @@ class TestTPSConflictingConstraints:
             {"xy_mm": pt_mm.copy(), "z_mm": 10.0},
         ]
 
-        half = gsd.PRINT_SIZE_MM / 2.0 + gsd.FRINGE_XY_EXPANSION_MM / 2.0
+        half = gsd.FRINGE_HALF_MM
         grid_res = 20
         gx = np.linspace(-half, half, grid_res)
         gy = np.linspace(-half, half, grid_res)
@@ -705,7 +705,7 @@ class TestTPSOnlyFrameAnchors:
         green_bnd_px = gsd.interpolate_catmull_rom(egm["polygons"][0]["points"])
         green_bnd_mm = gsd._px_to_mm_2d(green_bnd_px.copy(), scale, centroid_px)
 
-        half = gsd.PRINT_SIZE_MM / 2.0 + gsd.FRINGE_XY_EXPANSION_MM / 2.0
+        half = gsd.FRINGE_HALF_MM
         grid_res = 40
         gx = np.linspace(-half, half, grid_res)
         gy = np.linspace(-half, half, grid_res)

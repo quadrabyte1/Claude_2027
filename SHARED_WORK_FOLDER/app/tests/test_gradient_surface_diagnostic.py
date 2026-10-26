@@ -451,7 +451,7 @@ class TestTrapFrameCapParity:
         """
         gsd = _load_gsd()
 
-        frame_half = gsd.PRINT_SIZE_MM / 2.0 + gsd.FRINGE_XY_EXPANSION_MM / 2.0
+        frame_half = gsd.FRINGE_HALF_MM
         trap_height = gsd.BOUNDARY_HEIGHT_CAP_MM + 3.0  # 12 mm — clearly over cap
 
         mesh = self._build_frame_edge_trap_mesh(frame_half, trap_height)
@@ -499,7 +499,7 @@ class TestTrapFrameCapParity:
         """
         gsd = _load_gsd()
 
-        frame_half = gsd.PRINT_SIZE_MM / 2.0 + gsd.FRINGE_XY_EXPANSION_MM / 2.0
+        frame_half = gsd.FRINGE_HALF_MM
         trap_height = gsd.BOUNDARY_HEIGHT_CAP_MM + 3.0  # 12 mm
 
         mesh = self._build_frame_edge_trap_mesh(frame_half, trap_height)
@@ -1202,7 +1202,7 @@ class TestCapEnabledToggle:
         from generate_stl_3mf import _build_slab_from_shapely
 
         gsd = _load_gsd()
-        frame_half = gsd.PRINT_SIZE_MM / 2.0 + gsd.FRINGE_XY_EXPANSION_MM / 2.0
+        frame_half = gsd.FRINGE_HALF_MM
         poly = ShapelyPolygon([
             (-frame_half,       -5.0),
             (-frame_half + 8.0, -5.0),

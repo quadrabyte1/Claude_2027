@@ -50,7 +50,7 @@ def _make_synthetic_setup(gsd, grid_res: int = 40):
     TARGET_Z : float
     W_mm : float  — blend band width used
     """
-    half = gsd.PRINT_SIZE_MM / 2.0 + gsd.FRINGE_XY_EXPANSION_MM / 2.0
+    half = gsd.FRINGE_HALF_MM
     xs = np.linspace(-half, half, grid_res)
     ys = np.linspace(-half, half, grid_res)
     GX, GY = np.meshgrid(xs, ys)

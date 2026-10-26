@@ -22,6 +22,12 @@ numpy-stl==3.2.0
 lxml==6.0.2
 mapbox_earcut==2.0.0
 networkx==3.6.1
+# Without `triangle`, the fringe top silently falls back to earcut: a flat fan
+# with no interior verts, so grid heights and grass texture are lost.
+triangle==20250106
+# Boolean engine for tee-hole / pin-hole cuts (trimesh.boolean engine='manifold')
+manifold3d==3.4.1
+rtree==1.4.1
 
 # HTTP / scraping / config
 requests==2.32.5

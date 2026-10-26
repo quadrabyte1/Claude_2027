@@ -99,7 +99,7 @@ def _flat_green_arrays(cx_px=300.0, cy_px=300.0, r_px=105.0,
 def _get_grid_geometry(gsd):
     """Return (half, cell_side, GRID_SIZE) matching _build_tps_grid_height_field."""
     GRID_SIZE = 20
-    half = gsd.PRINT_SIZE_MM / 2.0 + gsd.FRINGE_XY_EXPANSION_MM / 2.0
+    half = gsd.FRINGE_HALF_MM
     cell_side = (2.0 * half) / GRID_SIZE
     return half, cell_side, GRID_SIZE
 

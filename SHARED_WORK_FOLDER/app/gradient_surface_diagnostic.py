@@ -300,7 +300,167 @@ import trimesh
 from shapely.geometry import Polygon as ShapelyPolygon, box as shapely_box, MultiPolygon as ShapelyMultiPolygon
 from skimage import measure
 
-from generate_stl_3mf import interpolate_catmull_rom, course_paths, EGM_BASE
+from generate_stl_3mf import (
+    interpolate_catmull_rom, course_paths, EGM_BASE,
+    # Defined ONCE in generate_stl_3mf.py and imported here (Coding Standard: one definition per value):
+    PRINT_SIZE_MM, FRINGE_XY_EXPANSION_MM, FRINGE_HALF_MM,
+    EGM_KEY_POLYGONS, EGM_KEY_TYPE, EGM_KEY_POINTS, EGM_KEY_COURSE,
+    POLY_TYPE_GREEN, POLY_TYPE_TRAP, POLY_TYPE_WATER, POLY_TYPE_BOULDERS,
+    PATH_KEY_IMAGES, PATH_KEY_STLS, PATH_KEY_3MFS,
+    DIR_OWNER_INBOX, DIR_TEAM_INBOX,
+)
+
+# ---------------------------------------------------------------------------
+# NAMED CONSTANTS  (CLAUDE.md Coding Standard: Named Constants, No Literals)
+#
+# Every shared / repeated value and every tunable that used to be buried in a function body
+# lives here (or in the topical constant blocks further down).  Existing UPPER_SNAKE tunables
+# (FRINGE_TOP_MAX_TRIANGLE_AREA_MM2, TRAP_FRINGE_GAP_MM, ...) are unchanged.  Pure refactor:
+# every value below equals the literal it replaced, so generated geometry is byte-identical.
+# ---------------------------------------------------------------------------
+
+# --- EGM project-file keys read by this module (polygon keys come from generate_stl_3mf) ---
+EGM_KEY_GRID_CELL_HEIGHTS: str = "gridCellHeights"
+EGM_KEY_GRID_MODE: str = "gridMode"
+EGM_KEY_GRID_RESOLUTION: str = "gridResolution"
+EGM_KEY_ELEVATION_RANGE: str = "elevationRange"
+EGM_KEY_Z_SCALE: str = "zScale"
+
+# --- Grid-cell height overrides (editor mirrors: GRID_* in templates/editor.html; drift-guarded
+#     by tests/test_editor_server_constants_sync.py) ---
+GRID_N_DEFAULT: int = 20            # cells per axis, legacy default (EGM omits gridResolution)
+GRID_N_FINE: int = 40               # cells per axis, fine grid
+GRID_RESOLUTIONS: tuple = (GRID_N_DEFAULT, GRID_N_FINE)
+GRID_MODE_DELTA: str = "delta"        # values are additive offsets over the Poisson default
+GRID_MODE_ABSOLUTE: str = "absolute"  # values REPLACE the Poisson default
+GRID_MODE_OFF: str = "off"            # overrides disabled (values kept on disk)
+GRID_MODES: tuple = (GRID_MODE_DELTA, GRID_MODE_ABSOLUTE, GRID_MODE_OFF)
+DEFAULT_GRID_MODE: str = GRID_MODE_DELTA
+GRID_DELTA_MIN_MM: float = -20.0    # delta-mode clamp
+GRID_DELTA_MAX_MM: float = 20.0
+GRID_ABSOLUTE_MIN_MM: float = 0.0   # absolute-mode clamp
+GRID_ABSOLUTE_MAX_MM: float = 30.0
+
+# --- Misc EGM keys / defaults ---
+EGM_KEY_GREEN_SCALE: str = "greenScale"
+EGM_KEY_GRASS_SPACING: str = "grassSpacing"
+DEFAULT_GREEN_SCALE: float = 1.0065        # px->mm fudge applied when the EGM has no greenScale
+DEFAULT_GRASS_SPACING_MM: float = 2.4      # grass bump spacing when the EGM has no grassSpacing
+MIN_POLYGON_POINTS: int = 4                # fewer vertices cannot form a usable ring / polyline
+RIM_TOP_Z_MIN_MM: float = 0.1              # green-rim / fringe vertices above this are "top surface"
+RING_FILL_MAX_INTERIOR_CANDIDATES: int = 32  # _fill_missing_ring_edges: nearest interior verts tried
+
+# --- zScale (vertical amplitude multiplier) ---
+Z_SCALE_MIN: float = 0.5
+Z_SCALE_MAX: float = 5.0
+Z_SCALE_UNITY_TOL: float = 1e-6     # |zScale - 1| below this = "no scaling"
+
+# --- Grid resolutions of the numeric pipeline ---
+FRINGE_GRID_RES: int = 200          # fringe mesh sample grid (cells per axis); also the mount-bore ring step
+GRADIENT_GRID_RES: int = 200        # Poisson gradient-field grid (run_pipeline)
+GRADIENT_GRID_RES_DEFAULT: int = 100  # build_gradient_field() default when called without grid_res
+
+# --- Mesh tessellation / engines ---
+CIRCLE_SEGMENTS_DEFAULT: int = 64   # sections / n_seg for drilled cylinders, pipes, ball stand
+TEE_COLLAR_SEGMENTS: int = 48       # tee-hole collar tube segments
+CIRCLE_BUFFER_RESOLUTION: int = 32  # shapely buffer(resolution=) for tee bore / island discs
+VERTEX_MERGE_DIGITS: int = 6        # trimesh merge_vertices(digits_vertex=)
+BOOLEAN_ENGINES: tuple = ("manifold", "blender")   # tried in order by trimesh.boolean.difference
+TRIANGULATE_ENGINE_TRIANGLE: str = "triangle"      # trimesh extrude_polygon engines
+TRIANGULATE_ENGINE_EARCUT: str = "earcut"
+TRIANGLE_MIN_ANGLE_DEG: int = 30    # Triangle quality flag q<deg> in triangle_args "pq<deg>a<area>"
+SPLINE_MIN_POINTS: int = 8          # _spline_smooth_closed: fewer points -> return input unchanged
+SPLINE_MIN_OUTPUT_POINTS: int = 64  # _spline_smooth_closed: minimum resampled vertex count
+PERIMETER_MEDIAN_WINDOW_PX: int = 7 # window for _perimeter_median_filter at the green/fringe seam
+IDW_NEIGHBOURS: int = 4             # K nearest neighbours for inverse-distance Z lookups
+BOUNDARY_IDW_NEIGHBOURS: int = 24   # K nearest green-boundary points for the fringe lerp source
+MIN_WATERTIGHT_REWRITE_VERTS: int = 4  # below this the old fringe mesh is treated as empty
+FRINGE_SPIKE_THRESHOLD_MM: float = 1.5  # a fringe cell this far above its 8-neighbour median is a "spike"
+OCR_SPIKE_MAX_MM: float = 50.0      # reject fringe-boundary OCR heights above this (and <= 0)
+SEAM_RADIUS_CELLS: float = 1.5      # fringe seam capture radius, in fringe grid cells
+TW_SEAM_RADIUS_CELLS: float = 0.9   # trap/water seam-reseat radius, in fringe grid cells
+FRINGE_SAMPLE_GRID_N: int = 12      # n x n fringe-Z samples over a water/boulders footprint
+TRAP_BASE_Z_GRID_STEP_MM: float = 0.225   # trap base-Z sample pitch (= sand grain_spacing * 0.2)
+TRAP_FALLBACK_HEIGHT_TOL_MM: float = 0.05 # computed trap height this close to TRAP_THICKNESS_MM = fallback
+
+# --- Numeric tolerances ---
+EPS_LINEAR: float = 1e-6            # coincident-point / above-zero-height / distance floor (mm)
+EPS_ZERO_LENGTH: float = 1e-9       # zero-length / zero-range guard
+EPS_AREA: float = 1e-12             # degenerate area / tiny-denominator guard
+EPS_DIV: float = 1e-30              # divide-by-zero guard on squared lengths
+LSQR_TOL: float = 1e-10             # scipy lsqr atol / btol in solve_lsq_height
+LSQR_MAX_ITERS: int = 20000
+
+# --- Tee hole ---
+TEE_HOLE_GUARD_MM: float = 0.15     # keep-out added to the collar radius for the bore
+TEE_ISLAND_MARGIN_MM: float = 1.5   # fringe island radius beyond the bore
+
+# --- Thin-wall / TPS base ---
+TPS_FRAME_RING_FACTOR: float = 1.1  # outer-frame anchor circle radius = half * this
+TPS_FRAME_RING_POINTS: int = 16     # number of outer-frame anchors
+TPS_MIN_CONSTRAINTS: int = 5        # fewer unique constraints -> flat base fallback
+
+# --- Texture generators ---
+TEXTURE_MAX_GRID_PTS: int = 150_000 # cap on sand / water-ripple sample grid points
+TEXTURE_TOP_BAND_MM: float = 0.1    # within this of z_max counts as "top surface"
+SAND_GRID_STEP_FRACTION: float = 0.2  # sand sample pitch = grain_spacing * this
+GRASS_RNG_SEED: int = 42            # deterministic grass bump layout
+INTERIOR_BOUNDARY_CLOSE_MAX_PASSES: int = 8   # _close_interior_boundary_edges iterations
+EARCUT_PINHOLE_MAX_PASSES: int = 5            # interior-pinhole earcut passes
+
+# --- Arrow detection (StrackaLine navy arrows) ---
+ARROW_DARK_V_THRESHOLD: int = 50    # V channel below this = dark ink
+ARROW_MAX_AREA_PX_DEFAULT: int = 1200   # detect_arrows() default max blob area
+ARROW_MAX_AREA_PX_PIPELINE: int = 600   # value run_pipeline passes
+ARROW_MIN_AREA_PX: int = 25         # smaller blobs are noise / decimal dots
+ARROW_FULL_GLYPH_AREA_RATIO: float = 1.1  # whole-glyph blob must exceed clipped blob by this
+NAVY_HUE_MIN: int = 90              # OpenCV HSV hue range of navy arrows
+NAVY_HUE_MAX: int = 135
+NAVY_SAT_MIN: int = 150
+NAVY_VAL_MAX: int = 105
+MASK_ON: int = 255                  # uint8 "on" value of binary masks
+CV_HUE_MAX: int = 179               # OpenCV 8-bit hue range top
+ARROW_VIS_LENGTH_PX: int = 15       # drawn arrow length in diagnostic images
+DIAGNOSTIC_IMAGE_DPI: int = 150
+
+# --- Boundary-region (water ring) derivation ---
+WATER_SHRINK_SIMPLIFY_TOL_MM: float = 0.01
+WATER_SHRINK_SNAP_TOL_MM: float = 0.02
+
+# --- Scene / 3MF assembly ---
+SCENE_NAME_GREEN_SURFACE: str = "green_surface"
+SCENE_NAME_FRINGE: str = "fringe"
+SCENE_NAME_FRINGE_NO_GRASS_SAMPLE: str = "fringe_no_grass_sample"
+SCENE_NAME_UNNAMED_FIRST: str = "geometry_1"   # trimesh's default name for the first unnamed geometry
+SCENE_PREFIX_GREEN: str = "green"      # _filament_for_scene_name prefixes
+SCENE_PREFIX_FRINGE: str = "fringe"
+SCENE_PREFIX_TRAP: str = "trap"
+SCENE_PREFIX_SAND_TRAP: str = "sand_trap"
+SCENE_PREFIX_WATER: str = "water"
+SCENE_PREFIX_BOULDERS: str = "boulders"
+FILAMENT_GREEN: int = 1                # Bambu extruder slots
+FILAMENT_FRINGE: int = 2
+FILAMENT_TRAP: int = 3
+FILAMENT_WATER: int = 4
+FILAMENT_BOULDERS: int = 5
+FILAMENT_DEFAULT: int = FILAMENT_GREEN # unknown geometries land on slot 1
+MANIFOLD_TOLERATE_BOUNDARY_EDGES: int = 30
+MANIFOLD_TOLERATE_TRIPLE_SHARED: int = 5
+BAMBU_BED_CENTER_MM: tuple = (128.0, 128.0)   # fallback bed centre when project settings have none
+BAMBU_PART_ID_BASE: int = 1000
+THREE_MF_MODEL_PATH: str = "3D/3dmodel.model"
+THREE_MF_CONTENT_TYPES_PATH: str = "[Content_Types].xml"
+XML_ENCODING: str = "utf-8"
+
+# --- Console log formatting ---
+LOG_RULE_WIDTH: int = 60
+LOG_RULE: str = "=" * LOG_RULE_WIDTH
+LOG_TAG_TEE_HOLE: str = "[tee_hole]"
+LOG_TAG_TPS: str = "[TPS]"
+LOG_TAG_TPS_GRID: str = "[TPS-grid]"
+LOG_TAG_GREEN_CARVE: str = "[green_carve]"
+LOG_TAG_GENERATE: str = "[generate]"
+LOG_TAG_CONFIG: str = "[config]"
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -311,8 +471,8 @@ from generate_stl_3mf import interpolate_catmull_rom, course_paths, EGM_BASE
 PIPELINE_WARNINGS: list = []
 
 REPO_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
-OWNER_INBOX = os.path.join(REPO_ROOT, "owner_inbox")
-TEAM_INBOX  = os.path.join(REPO_ROOT, "team_inbox")
+OWNER_INBOX = os.path.join(REPO_ROOT, DIR_OWNER_INBOX)
+TEAM_INBOX  = os.path.join(REPO_ROOT, DIR_TEAM_INBOX)
 
 # Diagnostic PNGs (arrows, height map, contours, arrows-vs-output) written per Generate.
 SAVE_DIAGNOSTIC_IMAGES = True
@@ -511,7 +671,7 @@ def soften_extremes(
     num = uniform_filter(Z_filled, size=win_size, mode="reflect")
     den = uniform_filter(weight,   size=win_size, mode="reflect")
     with np.errstate(invalid="ignore", divide="ignore"):
-        baseline = np.where(den > 0, num / np.maximum(den, 1e-9), 0.0)
+        baseline = np.where(den > 0, num / np.maximum(den, EPS_ZERO_LENGTH), 0.0)
 
     # Compute delta only inside the valid region; zero elsewhere so that
     # the subsequent gaussian smoothing of the correction doesn't bleed
@@ -737,14 +897,14 @@ def _spline_smooth_closed(
     Falls back to the input on any splprep failure (degenerate polygon,
     duplicate vertices, insufficient points).
     """
-    if polyline.shape[0] < 8:
+    if polyline.shape[0] < SPLINE_MIN_POINTS:
         return polyline
     pts = np.asarray(polyline, dtype=np.float64)
     # Deduplicate consecutive coincident points (splprep dislikes them)
     diffs = np.linalg.norm(np.diff(pts, axis=0, append=pts[:1]), axis=1)
-    keep = diffs > 1e-6
+    keep = diffs > EPS_LINEAR
     pts = pts[keep]
-    if pts.shape[0] < 8:
+    if pts.shape[0] < SPLINE_MIN_POINTS:
         return polyline
     try:
         # per=1 → periodic (closed) spline; k=3 → cubic
@@ -754,7 +914,7 @@ def _spline_smooth_closed(
     # Estimate perimeter to choose an output vertex count
     seg = np.linalg.norm(np.diff(pts, axis=0, append=pts[:1]), axis=1)
     perimeter = float(seg.sum())
-    n_out = max(64, int(round(perimeter / max(resample_spacing_px, 0.25))))
+    n_out = max(SPLINE_MIN_OUTPUT_POINTS, int(round(perimeter / max(resample_spacing_px, 0.25))))
     u_new = np.linspace(0.0, 1.0, n_out, endpoint=False)
     try:
         xs_new, ys_new = splev(u_new, tck)
@@ -805,16 +965,16 @@ def _prepare_egm_geometry(data: dict, green_poly: dict) -> np.ndarray:
     # Green scale: XY-only multiplier applied to the green polygon around its own
     # centroid, in pixel space. Fringe/traps/water/boulders are unaffected because
     # only the green polygon's control points are transformed. Default 1.0 = no-op.
-    green_scale = float(data.get("greenScale") or 1.0065)
-    if green_scale != 1.0 and green_poly["points"]:
-        pts = np.array([[p["x"], p["y"]] for p in green_poly["points"]], dtype=np.float64)
+    green_scale = float(data.get(EGM_KEY_GREEN_SCALE) or DEFAULT_GREEN_SCALE)
+    if green_scale != 1.0 and green_poly[EGM_KEY_POINTS]:
+        pts = np.array([[p["x"], p["y"]] for p in green_poly[EGM_KEY_POINTS]], dtype=np.float64)
         cx = float(pts[:, 0].mean())
         cy = float(pts[:, 1].mean())
         pts[:, 0] = cx + (pts[:, 0] - cx) * green_scale
         pts[:, 1] = cy + (pts[:, 1] - cy) * green_scale
-        green_poly["points"] = [{"x": float(x), "y": float(y)} for x, y in pts]
+        green_poly[EGM_KEY_POINTS] = [{"x": float(x), "y": float(y)} for x, y in pts]
 
-    boundary_px = interpolate_catmull_rom(green_poly["points"])
+    boundary_px = interpolate_catmull_rom(green_poly[EGM_KEY_POINTS])
 
     # Hard spline smoothing (task 679, Topo 2026-08-30). Runs BEFORE the
     # Chaikin polish and BEFORE any downstream stage sees the boundary.
@@ -861,21 +1021,21 @@ def _prepare_egm_geometry(data: dict, green_poly: dict) -> np.ndarray:
     # Prints `[trap_smooth]` / `[water_smooth]` per-polygon so a future
     # regression is diagnosable in seconds — same tag pattern as the
     # `[green_carve]` markers.
-    for _poly in data.get("polygons", []):
-        _ptype = _poly.get("type")
-        if _ptype == "trap":
+    for _poly in data.get(EGM_KEY_POLYGONS, []):
+        _ptype = _poly.get(EGM_KEY_TYPE)
+        if _ptype == POLY_TYPE_TRAP:
             _smooth_px = TRAP_BOUNDARY_SPLINE_SMOOTHING_PX
             _resample_px = TRAP_BOUNDARY_SPLINE_RESAMPLE_PX
             _chaikin_iters = TRAP_BOUNDARY_SMOOTH_ITERATIONS
             _tag = "trap_smooth"
-        elif _ptype == "water":
+        elif _ptype == POLY_TYPE_WATER:
             _smooth_px = WATER_BOUNDARY_SPLINE_SMOOTHING_PX
             _resample_px = WATER_BOUNDARY_SPLINE_RESAMPLE_PX
             _chaikin_iters = WATER_BOUNDARY_SMOOTH_ITERATIONS
             _tag = "water_smooth"
         else:
             continue
-        _ctrl = _poly.get("points") or []
+        _ctrl = _poly.get(EGM_KEY_POINTS) or []
         if len(_ctrl) < 3:
             print(f"  [{_tag}] skipped: only {len(_ctrl)} control pts")
             continue
@@ -919,13 +1079,13 @@ def _prepare_egm_geometry(data: dict, green_poly: dict) -> np.ndarray:
             # LinearRing repeats the first point at the end — drop the dup
             if len(_coords) >= 2 and np.allclose(_coords[0], _coords[-1]):
                 _coords = _coords[:-1]
-            if len(_coords) >= 4:
+            if len(_coords) >= MIN_POLYGON_POINTS:
                 _dense = _coords
         except Exception as _exc_simp:
             print(f"  [{_tag}] simplify failed ({_exc_simp}) — keeping dense pts")
         _n_final = _dense.shape[0]
         # Write smoothed dense polyline back and flag it as pre-densified.
-        _poly["points"] = [{"x": float(x), "y": float(y)} for x, y in _dense]
+        _poly[EGM_KEY_POINTS] = [{"x": float(x), "y": float(y)} for x, y in _dense]
         _poly["_dense_px_points"] = True
         print(f"  [{_tag}] {_n_raw} → {_n_spl} → {_n_chk} → {_n_final} pts "
               f"(s={_smooth_px} px, resample={_resample_px} px, "
@@ -948,7 +1108,7 @@ def load_egm(egm_path: str) -> tuple[dict, str, np.ndarray]:
         data = json.load(f)
 
     image_filename = data["image"]
-    course = data.get("course", "")
+    course = data.get(EGM_KEY_COURSE, "")
     # imageCourse records which course folder the image file actually lives in.
     # This may differ from ``course`` when the user selected an image from a
     # different course's folder when creating the project.
@@ -959,10 +1119,10 @@ def load_egm(egm_path: str) -> tuple[dict, str, np.ndarray]:
     image_path = None
     search_dirs = []
     if image_course:
-        search_dirs.append(os.path.abspath(course_paths(image_course)["images"]))
+        search_dirs.append(os.path.abspath(course_paths(image_course)[PATH_KEY_IMAGES]))
     # Also try the project's own course folder (in case imageCourse is stale)
     if course and course != image_course:
-        search_dirs.append(os.path.abspath(course_paths(course)["images"]))
+        search_dirs.append(os.path.abspath(course_paths(course)[PATH_KEY_IMAGES]))
     # Fallback: scan all other course Images/ dirs to handle cross-course references
     if os.path.isdir(EGM_BASE):
         for entry in sorted(os.listdir(EGM_BASE)):
@@ -986,8 +1146,8 @@ def load_egm(egm_path: str) -> tuple[dict, str, np.ndarray]:
 
     # Extract green polygon (first polygon of type 'green')
     green_poly = None
-    for poly in data["polygons"]:
-        if poly.get("type") == "green":
+    for poly in data[EGM_KEY_POLYGONS]:
+        if poly.get(EGM_KEY_TYPE) == POLY_TYPE_GREEN:
             green_poly = poly
             break
     if green_poly is None:
@@ -1005,7 +1165,7 @@ def load_egm(egm_path: str) -> tuple[dict, str, np.ndarray]:
 def build_dark_mask_inside_green(
     img: np.ndarray,
     green_boundary_px: np.ndarray,
-    dark_threshold: int = 50,
+    dark_threshold: int = ARROW_DARK_V_THRESHOLD,
 ) -> np.ndarray:
     """Return a uint8 binary mask: 255 where dark pixels lie inside the green.
 
@@ -1020,7 +1180,7 @@ def build_dark_mask_inside_green(
     h, w = img.shape[:2]
     boundary_i = green_boundary_px.astype(np.int32)
     green_mask = np.zeros((h, w), dtype=np.uint8)
-    cv2.fillPoly(green_mask, [boundary_i], 255)
+    cv2.fillPoly(green_mask, [boundary_i], MASK_ON)
 
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     h_ch = hsv[:, :, 0]
@@ -1030,10 +1190,11 @@ def build_dark_mask_inside_green(
     # (a) generic dark pixels (covers legacy sources)
     dark_any = v_ch < dark_threshold
     # (b) StrackaLine navy: saturated dark blue (arrows are V≈90, S≈255, H≈103-105)
-    dark_navy = (h_ch >= 90) & (h_ch <= 135) & (s_ch > 150) & (v_ch < 105)
+    dark_navy = ((h_ch >= NAVY_HUE_MIN) & (h_ch <= NAVY_HUE_MAX)
+                 & (s_ch > NAVY_SAT_MIN) & (v_ch < NAVY_VAL_MAX))
 
     dark_mask = np.zeros((h, w), dtype=np.uint8)
-    dark_mask[((dark_any | dark_navy) & (green_mask == 255))] = 255
+    dark_mask[((dark_any | dark_navy) & (green_mask == MASK_ON))] = MASK_ON
     return dark_mask
 
 
@@ -1118,8 +1279,8 @@ def resolve_arrow_direction(
 def detect_arrows(
     img: np.ndarray,
     green_boundary_px: np.ndarray,
-    dark_threshold: int = 50,
-    max_arrow_area: int = 1200,
+    dark_threshold: int = ARROW_DARK_V_THRESHOLD,
+    max_arrow_area: int = ARROW_MAX_AREA_PX_DEFAULT,
 ) -> list[dict]:
     """
     Find all arrow blobs, determine centroid and downhill gradient direction.
@@ -1171,9 +1332,9 @@ def detect_arrows(
     # Unclipped navy components: edge arrows are cut by the green polygon, which
     # removes the head; direction must come from the whole glyph (task 799).
     _hsv_full = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    _navy_full = (((_hsv_full[:, :, 0] >= 90) & (_hsv_full[:, :, 0] <= 135)
-                   & (_hsv_full[:, :, 1] > 150) & (_hsv_full[:, :, 2] < 105))
-                  .astype(np.uint8) * 255)
+    _navy_full = (((_hsv_full[:, :, 0] >= NAVY_HUE_MIN) & (_hsv_full[:, :, 0] <= NAVY_HUE_MAX)
+                   & (_hsv_full[:, :, 1] > NAVY_SAT_MIN) & (_hsv_full[:, :, 2] < NAVY_VAL_MAX))
+                  .astype(np.uint8) * MASK_ON)
     _nf_n, _nf_labels, _nf_stats, _ = cv2.connectedComponentsWithStats(_navy_full, connectivity=8)
 
     arrows = []
@@ -1184,7 +1345,7 @@ def detect_arrows(
         area = int(stats[lbl, cv2.CC_STAT_AREA])
         if area > max_arrow_area:
             continue  # skip large blobs (contour lines)
-        if area < 25:
+        if area < ARROW_MIN_AREA_PX:
             continue  # skip noise + the decimal-dot blobs themselves (≤ 20 px)
 
         ys, xs = np.where(labels == lbl)
@@ -1230,7 +1391,7 @@ def detect_arrows(
         if _nl.max() > 0:
             _fl = int(_nl.argmax())
             _fa = int(_nf_stats[_fl, cv2.CC_STAT_AREA])
-            if ARROW_FULL_GLYPH and area * 1.1 < _fa <= max_arrow_area:
+            if ARROW_FULL_GLYPH and area * ARROW_FULL_GLYPH_AREA_RATIO < _fa <= max_arrow_area:
                 r_ys, r_xs = np.where(_nf_labels == _fl)
                 r_cx, r_cy, r_dx, r_dy = pca_orientation(r_ys, r_xs)
                 n_full_blob += 1
@@ -1238,7 +1399,7 @@ def detect_arrows(
 
         # Normalise
         mag = math.hypot(gdx, gdy)
-        if mag < 1e-9:
+        if mag < EPS_ZERO_LENGTH:
             continue
         gdx /= mag
         gdy /= mag
@@ -1270,7 +1431,7 @@ def detect_arrows(
 def build_gradient_field(
     arrows: list[dict],
     green_boundary_px: np.ndarray,
-    grid_res: int = 100,
+    grid_res: int = GRADIENT_GRID_RES_DEFAULT,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Create a regular grid covering the green, compute IDW-interpolated gradient.
@@ -1324,7 +1485,7 @@ def build_gradient_field(
             dist2 = (arrow_cx - gx) ** 2 + (arrow_cy - gy) ** 2
             weights = 1.0 / (dist2 ** (IDW_POWER / 2) + IDW_EPSILON)
             w_sum = weights.sum()
-            if w_sum < 1e-12:
+            if w_sum < EPS_AREA:
                 continue
             # Sign convention fix (Topo-754):
             # resolve_arrow_direction() returns the DOWNHILL direction (toward
@@ -1472,7 +1633,7 @@ def solve_lsq_height(
         eq_r += [e, e]; eq_c += [b_i[ok], a_i[ok]]; eq_v += [np.ones(m), -np.ones(m)]
         rhs.append(G[ok]); k += m
     A = csr_matrix((np.concatenate(eq_v), (np.concatenate(eq_r), np.concatenate(eq_c))), shape=(k, n))
-    z = lsqr(A, np.concatenate(rhs), atol=1e-10, btol=1e-10, iter_lim=20000)[0]
+    z = lsqr(A, np.concatenate(rhs), atol=LSQR_TOL, btol=LSQR_TOL, iter_lim=LSQR_MAX_ITERS)[0]
     Z = np.full((rows, cols), np.nan)
     Z[inside_mask] = z - z.min()
     print(f"  LSQ gradient fit: {n} unknowns, {k} equations")
@@ -1513,12 +1674,12 @@ def save_arrow_directions(
         dx, dy = a["dx"], a["dy"]
         angle = math.atan2(dy, dx)                  # -π .. π
         # Map angle to hue (0-179 in OpenCV HSV)
-        hue = int(((angle + math.pi) / (2 * math.pi)) * 179)
+        hue = int(((angle + math.pi) / (2 * math.pi)) * CV_HUE_MAX)
         # HSV → BGR
         hsv_pixel = np.array([[[hue, 255, 255]]], dtype=np.uint8)
         bgr = cv2.cvtColor(hsv_pixel, cv2.COLOR_HSV2BGR)[0, 0].tolist()
 
-        length = 15
+        length = ARROW_VIS_LENGTH_PX
         ex = int(round(cx + dx * length))
         ey = int(round(cy + dy * length))
         cv2.arrowedLine(vis, (cx, cy), (ex, ey), color=bgr, thickness=2, tipLength=0.4)
@@ -1578,7 +1739,7 @@ def save_height_map(
 
     plt.tight_layout()
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    plt.savefig(out_path, dpi=150)
+    plt.savefig(out_path, dpi=DIAGNOSTIC_IMAGE_DPI)
     plt.close(fig)
     print(f"  Saved: {out_path}")
 
@@ -1616,10 +1777,10 @@ def save_arrow_vs_output_overlay(
         cx, cy = a["cx"], a["cy"]
         dx, dy = a["dx"], a["dy"]
         angle = math.atan2(dy, dx)
-        hue = int(((angle + math.pi) / (2 * math.pi)) * 179)
+        hue = int(((angle + math.pi) / (2 * math.pi)) * CV_HUE_MAX)
         hsv_pixel = np.array([[[hue, 255, 255]]], dtype=np.uint8)
         rgb = cv2.cvtColor(hsv_pixel, cv2.COLOR_HSV2RGB)[0, 0] / 255.0
-        length = 15
+        length = ARROW_VIS_LENGTH_PX
         # Cosmetic-only fix (Topo-771): matplotlib `arrowstyle="->"` puts the
         # head at `xy`.  Empirically on Delaveaga H11 v5.33 the marker arrows
         # appeared to point OPPOSITE to the dark StrackaLine arrows underneath,
@@ -1679,7 +1840,7 @@ def save_arrow_vs_output_overlay(
     plt.suptitle(os.path.basename(out_path), fontsize=10)
     plt.tight_layout()
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    plt.savefig(out_path, dpi=150)
+    plt.savefig(out_path, dpi=DIAGNOSTIC_IMAGE_DPI)
     plt.close(fig)
     print(f"  Saved: {out_path}")
 
@@ -1688,8 +1849,9 @@ def save_arrow_vs_output_overlay(
 # Step 6: Build STL meshes from height map
 # ---------------------------------------------------------------------------
 
-# Physical print constants (matching generate_stl_3mf.py)
-PRINT_SIZE_MM: float = 171.45   # max bounding-box dimension (6.75 in)
+# Physical print constants.  PRINT_SIZE_MM (max bounding-box dimension, 6.75 in) and
+# FRINGE_XY_EXPANSION_MM / FRINGE_HALF_MM are defined ONCE in generate_stl_3mf.py and
+# imported at the top of this module.
 ELEVATION_RANGE_MM: float = 20.09  # total elevation variation on top surface (0.85in = 21.59mm total - 1.5mm base)
 BASE_THICKNESS_MM: float = 1.5    # flat base below lowest point
 # NOTE: FRINGE_EDGE_HEIGHT_MM and the `fringeEdgeHeight` EGM key were removed
@@ -1709,7 +1871,8 @@ N_CONTOUR_LEVELS: int = 27        # steps for quantized surface
 # so they still mate with the un-shrunk green and trap meshes.
 # Value = prior -0.2 mm inset + 0.5% shrink of PRINT_SIZE_MM (0.005 * 171.45 = 0.857 mm)
 # = -1.057 mm total.  v3.16 (Topo, 2026-04-23).
-FRINGE_XY_EXPANSION_MM: float = -1.057  # signed total XY offset per axis (negative = shrink); -1.057 mm = prior 0.2mm inset + 0.5% shrink
+# (Defined in generate_stl_3mf.py as FRINGE_XY_EXPANSION_MM = -1.057 and imported above; the
+#  half-frame size PRINT_SIZE_MM/2 + FRINGE_XY_EXPANSION_MM/2 is FRINGE_HALF_MM.)
 
 # Designed structural wall thickness for printed features that need a guaranteed
 # solid wall regardless of slicer interpretation (e.g. the upper-left mounting-
@@ -2268,12 +2431,12 @@ def _build_heightmap_mesh(
         valid_vals = Z_mm[inside_mask]
         z_min_mm, z_max_mm = valid_vals.min(), valid_vals.max()
         z_range_mm = z_max_mm - z_min_mm
-        if contour_step_mm > 0.0 and z_range_mm > 1e-9:
+        if contour_step_mm > 0.0 and z_range_mm > EPS_ZERO_LENGTH:
             n_levels = max(1, round(z_range_mm / contour_step_mm))
             step = z_range_mm / n_levels
         else:
             step = z_range_mm / N_CONTOUR_LEVELS
-        if step < 1e-9:
+        if step < EPS_ZERO_LENGTH:
             step = 1.0
         Z_plot = np.copy(Z_mm)
         Z_plot[inside_mask] = (
@@ -2290,7 +2453,7 @@ def _build_heightmap_mesh(
     # while i+1 and i+2 are still original. Targets the 12:00 north pointy
     # spike cluster identified in [135] without re-introducing the south
     # arc spike cluster (Cluster A).
-    Z_plot = _perimeter_median_filter(Z_plot, inside_mask, window=7)
+    Z_plot = _perimeter_median_filter(Z_plot, inside_mask, window=PERIMETER_MEDIAN_WINDOW_PX)
 
     # --- Grid px → mm ---
     xs_mm = (xs_grid - centroid_px[0]) * scale   # shape (grid_res,)
@@ -2356,7 +2519,7 @@ def _build_heightmap_mesh(
     # Skipped when `_green_boundary_px` has < 4 points (defensive; can happen
     # for degenerate inputs where the caller passes an empty array — e.g. for
     # trap sub-meshes that reuse this function).
-    if _green_boundary_px is not None and len(_green_boundary_px) >= 4:
+    if _green_boundary_px is not None and len(_green_boundary_px) >= MIN_POLYGON_POINTS:
         _gbnd_mm_local = _px_to_mm_2d(
             _green_boundary_px.copy(), scale, centroid_px
         )
@@ -2551,14 +2714,14 @@ def drill_flag_hole(
 
     radius = diameter / 2.0
     # segments=64 gives a smooth enough hole at 2.5 mm diameter
-    cylinder = trimesh.creation.cylinder(radius=radius, height=cyl_height, sections=64)
+    cylinder = trimesh.creation.cylinder(radius=radius, height=cyl_height, sections=CIRCLE_SEGMENTS_DEFAULT)
 
     # Translate cylinder so its axis passes through (cx, cy) and spans the right Z range
     cylinder.apply_translation([cx, cy, cyl_center_z])
 
     # --- Boolean difference: try manifold3d first, then blender, then fallback ---
     result = None
-    for engine in ('manifold', 'blender'):
+    for engine in BOOLEAN_ENGINES:
         try:
             result = trimesh.boolean.difference([mesh, cylinder], engine=engine)
             if result is not None and len(result.faces) > 0:
@@ -2631,7 +2794,7 @@ def drill_fringe_hole(
     cyl_center_z = (z_max + 2.0) / 2.0 - 1.0  # midpoint of [-1, z_max+1]
 
     radius = diameter / 2.0
-    cylinder = trimesh.creation.cylinder(radius=radius, height=cyl_height, sections=64)
+    cylinder = trimesh.creation.cylinder(radius=radius, height=cyl_height, sections=CIRCLE_SEGMENTS_DEFAULT)
 
     # Translate cylinder so its axis passes through (cx, cy) and spans the right Z range
     cylinder.apply_translation([cx, cy, cyl_center_z])
@@ -2639,7 +2802,7 @@ def drill_fringe_hole(
     # --- Boolean difference: try manifold3d first, then blender, then fallback ---
     # Use the repaired copy so the boolean engine receives a watertight (or closer-to-watertight) mesh
     result = None
-    for engine in ('manifold', 'blender'):
+    for engine in BOOLEAN_ENGINES:
         try:
             result = trimesh.boolean.difference([mesh_repaired, cylinder], engine=engine)
             if result is not None and len(result.faces) > 0:
@@ -2873,21 +3036,21 @@ def drill_tee_hole(
         from the frame-edge cap band.
     """
     # ---- 1. Convert print-top-left mm → mesh world coords -----------------
-    half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0
+    half = FRINGE_HALF_MM
     cx = -half + float(x_mm_from_topleft)
     cy = +half - float(y_mm_from_topleft)
 
     bounds = mesh.bounds  # ((xmin,ymin,zmin),(xmax,ymax,zmax))
     z_min_mesh = float(bounds[0, 2])
     z_max_mesh = float(bounds[1, 2])
-    print(f"  [tee_hole] top-left mm=({x_mm_from_topleft:.2f}, {y_mm_from_topleft:.2f}) "
+    print(f"  {LOG_TAG_TEE_HOLE} top-left mm=({x_mm_from_topleft:.2f}, {y_mm_from_topleft:.2f}) "
           f"→ mesh world=({cx:.2f}, {cy:.2f}) mm  (half={half:.3f})")
-    print(f"  [tee_hole] fringe Z range: [{z_min_mesh:.3f}, {z_max_mesh:.3f}] mm  "
+    print(f"  {LOG_TAG_TEE_HOLE} fringe Z range: [{z_min_mesh:.3f}, {z_max_mesh:.3f}] mm  "
           f"diameter={diameter} mm  collar_od={collar_od} mm  protrude={collar_protrude} mm")
 
     # ---- 2. Sanity: bore XY must land inside fringe outer bbox ------------
     if not (bounds[0, 0] <= cx <= bounds[1, 0] and bounds[0, 1] <= cy <= bounds[1, 1]):
-        print(f"  [tee_hole] WARNING: XY ({cx:.2f}, {cy:.2f}) is OUTSIDE fringe bounds "
+        print(f"  {LOG_TAG_TEE_HOLE} WARNING: XY ({cx:.2f}, {cy:.2f}) is OUTSIDE fringe bounds "
               f"X=[{bounds[0,0]:.2f}, {bounds[1,0]:.2f}] Y=[{bounds[0,1]:.2f}, {bounds[1,1]:.2f}]. "
               f"Skipping tee-hole punch to avoid an empty subtract.")
         return mesh
@@ -2895,7 +3058,7 @@ def drill_tee_hole(
     inner_r = float(diameter) / 2.0
     outer_r = float(collar_od) / 2.0
     if outer_r <= inner_r:
-        print(f"  [tee_hole] WARNING: collar_od ({collar_od}) must exceed diameter "
+        print(f"  {LOG_TAG_TEE_HOLE} WARNING: collar_od ({collar_od}) must exceed diameter "
               f"({diameter}); skipping tee hole.")
         return mesh
 
@@ -2930,7 +3093,7 @@ def drill_tee_hole(
     # sweep and just concatenate the collar into the already-clean bore. If
     # for any reason the carve is absent (task 748 fallback / EGM edge case),
     # fall back to the historic face-removal so we still open a through-hole.
-    guard_mm = 0.15  # small keep-out so the collar wall isn't touched by leftover fringe faces
+    guard_mm = TEE_HOLE_GUARD_MM  # small keep-out so the collar wall isn't touched by leftover fringe faces
     remove_r = outer_r + guard_mm
 
     # Bore-already-carved detection: does any triangle's XY footprint cover
@@ -2956,7 +3119,7 @@ def drill_tee_hole(
         # at r=outer_r+guard. Do NOT run the vertex/pt/edge sweep — it would
         # destroy those walls (edge_hit fires on every wall face lying along
         # the bore boundary → non-manifold ring, Bambu auto-fills).
-        print(f"  [tee_hole] bore already carved in fringe (0 faces cover tee axis) — "
+        print(f"  {LOG_TAG_TEE_HOLE} bore already carved in fringe (0 faces cover tee axis) — "
               f"skipping destructive face-removal (task 508). Walls at r={remove_r:.3f} preserved.")
         fringe_carved = mesh
         n_removed = 0
@@ -2964,16 +3127,16 @@ def drill_tee_hole(
         # Fallback: bore not carved into fringe (rare — bottom_poly path failed
         # or the EGM version predates task 748). Run the legacy sweep so we
         # still get an open hole, even if the resulting boundary is jagged.
-        print(f"  [tee_hole] {_n_face_covers} faces cover tee axis — running legacy "
+        print(f"  {LOG_TAG_TEE_HOLE} {_n_face_covers} faces cover tee axis — running legacy "
               f"face-removal sweep (fallback, may produce jagged rim).")
-        bore_disk = _ShapelyPointDisk(cx, cy).buffer(remove_r, resolution=32)
+        bore_disk = _ShapelyPointDisk(cx, cy).buffer(remove_r, resolution=CIRCLE_BUFFER_RESOLUTION)
         fringe_carved, n_removed = _remove_faces_whose_footprint_overlaps_polygon(
             mesh, bore_disk, label=f"tee_hole@({cx:.2f},{cy:.2f})",
         )
         if n_removed == 0:
             # Nothing to remove and nothing covered → tee is outside fringe
             # entirely. Refuse to drop a floating tube on top of empty space.
-            print("  [tee_hole] WARNING: no fringe faces near tee point — skipping.")
+            print(f"  {LOG_TAG_TEE_HOLE} WARNING: no fringe faces near tee point — skipping.")
             return mesh
 
     # ---- 4. Build the watertight annular collar tube ----------------------
@@ -3000,7 +3163,7 @@ def drill_tee_hole(
     if _top_mask.any():
         _local_zs = _verts[_top_mask, 2]
         z_local = float(np.max(_local_zs))
-        print(f"  [tee_hole] local fringe surface sample: {int(_top_mask.sum())} verts "
+        print(f"  {LOG_TAG_TEE_HOLE} local fringe surface sample: {int(_top_mask.sum())} verts "
               f"within {_sample_r:.2f} mm of tee, Z range=[{_local_zs.min():.3f}, "
               f"{_local_zs.max():.3f}] mm → local top = {z_local:.3f} mm  "
               f"(global fringe max = {z_max_mesh:.3f} mm)")
@@ -3008,11 +3171,11 @@ def drill_tee_hole(
         # Fallback: no top-surface verts near tee (fringe carved away here?).
         # Use a small positive height so the collar isn't a zero-tall ring.
         z_local = max(float(BASE_THICKNESS_MM), 2.0)
-        print(f"  [tee_hole] WARNING: no top-surface fringe verts within "
+        print(f"  {LOG_TAG_TEE_HOLE} WARNING: no top-surface fringe verts within "
               f"{_sample_r:.2f} mm of tee — falling back to z_local={z_local:.3f} mm")
     tube_top = float(z_local) + max(float(collar_protrude), 0.0)
     if tube_top <= 0.0:
-        print(f"  [tee_hole] WARNING: computed tube top ({tube_top}) <= 0 — skipping.")
+        print(f"  {LOG_TAG_TEE_HOLE} WARNING: computed tube top ({tube_top}) <= 0 — skipping.")
         return mesh
     try:
         collar_tube = build_mount_pipe_mesh(
@@ -3020,22 +3183,22 @@ def drill_tee_hole(
             inner_radius=inner_r,
             outer_radius=outer_r,
             z_top=tube_top,
-            n_seg=48,
+            n_seg=TEE_COLLAR_SEGMENTS,
         )
     except Exception as exc:
-        print(f"  [tee_hole] ERROR building collar tube: {exc} — returning carved fringe (open hole).")
+        print(f"  {LOG_TAG_TEE_HOLE} ERROR building collar tube: {exc} — returning carved fringe (open hole).")
         return fringe_carved
-    print(f"  [tee_hole] collar tube: r_in={inner_r:.2f} r_out={outer_r:.2f} "
+    print(f"  {LOG_TAG_TEE_HOLE} collar tube: r_in={inner_r:.2f} r_out={outer_r:.2f} "
           f"z=[0.00, {tube_top:.3f}]  verts={len(collar_tube.vertices)} "
           f"faces={len(collar_tube.faces)} watertight={collar_tube.is_watertight}")
 
     # ---- 5. Concatenate collar tube into carved fringe --------------------
     combined = trimesh.util.concatenate([fringe_carved, collar_tube])
-    combined.merge_vertices(digits_vertex=6)
+    combined.merge_vertices(digits_vertex=VERTEX_MERGE_DIGITS)
     combined.update_faces(combined.nondegenerate_faces())
     combined.update_faces(combined.unique_faces())
     combined.remove_unreferenced_vertices()
-    print(f"  [tee_hole] fringe + collar merged: verts={len(combined.vertices)} "
+    print(f"  {LOG_TAG_TEE_HOLE} fringe + collar merged: verts={len(combined.vertices)} "
           f"faces={len(combined.faces)} watertight={combined.is_watertight} "
           f"Z=[{combined.bounds[0,2]:.3f}, {combined.bounds[1,2]:.3f}] mm")
     return combined
@@ -3049,12 +3212,12 @@ def apply_z_scale(Z_mm: np.ndarray, inside_mask: np.ndarray, egm_data: dict) -> 
     Shared by the green and the fringe so both surfaces (and the traps/water
     that sample the fringe) scale identically.  Returns (Z_mm_scaled, zscale).
     """
-    raw = (egm_data or {}).get("zScale")
+    raw = (egm_data or {}).get(EGM_KEY_Z_SCALE)
     try:
-        zs = 1.0 if raw is None else max(0.5, min(5.0, float(raw)))
+        zs = 1.0 if raw is None else max(Z_SCALE_MIN, min(Z_SCALE_MAX, float(raw)))
     except (TypeError, ValueError):
         zs = 1.0
-    if abs(zs - 1.0) > 1e-6:
+    if abs(zs - 1.0) > Z_SCALE_UNITY_TOL:
         Z_mm = np.where(inside_mask,
                         BASE_THICKNESS_MM + (Z_mm - BASE_THICKNESS_MM) * zs, Z_mm)
     return Z_mm, zs
@@ -3079,7 +3242,7 @@ def save_stl_meshes(
     scale, centroid_px = _compute_px_to_mm(green_boundary_px, egm_data)
     print(f"  Scale: {scale:.6f} px→mm, centroid: {centroid_px}")
 
-    elevation_range_mm = float(egm_data.get("elevationRange") or ELEVATION_RANGE_MM)
+    elevation_range_mm = float(egm_data.get(EGM_KEY_ELEVATION_RANGE) or ELEVATION_RANGE_MM)
     print(f"  Elevation range from EGM: {elevation_range_mm} mm")
     # `fringeEdgeHeight` intentionally NOT read here — the fringe Z math no
     # longer ramps to a rectangle-edge target (task 483). The EGM key remains
@@ -3118,7 +3281,7 @@ def save_stl_meshes(
     # 2026-10-09, replaces the rescale-after-limiter (reverted this same turn).
     Z_mm, _z_scale = apply_z_scale(Z_mm, inside_mask, egm_data)
     valid_mm = Z_mm[inside_mask]
-    if abs(_z_scale - 1.0) > 1e-6:
+    if abs(_z_scale - 1.0) > Z_SCALE_UNITY_TOL:
         print(
             f"  Z_mm range post-zScale: {valid_mm.min():.3f} .. {valid_mm.max():.3f} mm "
             f"(zScale={_z_scale:.2f}×, applied over BASE_THICKNESS_MM={BASE_THICKNESS_MM:.2f})"
@@ -3192,7 +3355,7 @@ def save_stl_meshes(
 def _dist_to_segment(px: float, py: float, ax: float, ay: float, bx: float, by: float) -> float:
     """Squared distance from point (px, py) to segment (ax,ay)-(bx,by)."""
     dx, dy = bx - ax, by - ay
-    t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy + 1e-30)
+    t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy + EPS_DIV)
     t = max(0.0, min(1.0, t))
     nx, ny = ax + t * dx, ay + t * dy
     return math.hypot(px - nx, py - ny), nx, ny
@@ -3215,7 +3378,7 @@ def _min_dist_to_polyline(px: float, py: float, pts: np.ndarray) -> tuple[float,
     a = pts                                # (N, 2) segment starts
     b = np.roll(pts, -1, axis=0)           # (N, 2) segment ends (closed)
     d = b - a                              # (N, 2) edge vectors
-    denom = (d * d).sum(axis=1) + 1e-30    # (N,) squared edge lengths
+    denom = (d * d).sum(axis=1) + EPS_DIV    # (N,) squared edge lengths
     px_a = np.array([px, py]) - a          # (N, 2)
     t = (px_a * d).sum(axis=1) / denom     # (N,) projection param
     np.clip(t, 0.0, 1.0, out=t)
@@ -3290,7 +3453,7 @@ def _replace_fringe_with_watertight_extrusion(
     old_mesh: "trimesh.Trimesh",
     bottom_poly: "ShapelyPolygon",
     fringe_max_z: float,
-    label: str = "fringe",
+    label: str = SCENE_NAME_FRINGE,
 ) -> "trimesh.Trimesh":
     """
     Task 742 (Topo, 2026-09-05): rewrite fringe mesh assembly using
@@ -3351,18 +3514,18 @@ def _replace_fringe_with_watertight_extrusion(
     # bumps at spacing 1-2.4 mm — each bump landed on ≤1 interior vertex,
     # producing spikes instead of grass. Now 1 mm² (~1.5 mm triangles) so the
     # interior carries enough vertex density for grass to actually read as grass.
-    _tri_args = f"pq30a{FRINGE_TOP_MAX_TRIANGLE_AREA_MM2}"
+    _tri_args = f"pq{TRIANGLE_MIN_ANGLE_DEG}a{FRINGE_TOP_MAX_TRIANGLE_AREA_MM2}"
     try:
         new_mesh = trimesh.creation.extrude_polygon(
             bottom_poly, height=float(fringe_max_z),
-            engine="triangle", triangle_args=_tri_args,
+            engine=TRIANGULATE_ENGINE_TRIANGLE, triangle_args=_tri_args,
         )
     except Exception as exc_ex:
         print(f"  [{label} watertight-rewrite] extrude with triangle FAILED ({exc_ex}) "
               f"→ falling back to earcut (no interior verts, flat top)")
         try:
             new_mesh = trimesh.creation.extrude_polygon(
-                bottom_poly, height=float(fringe_max_z), engine="earcut",
+                bottom_poly, height=float(fringe_max_z), engine=TRIANGULATE_ENGINE_EARCUT,
             )
         except Exception as exc_earcut:
             print(f"  [{label} watertight-rewrite] earcut fallback ALSO FAILED "
@@ -3377,7 +3540,7 @@ def _replace_fringe_with_watertight_extrusion(
 
     # --- Build KD-tree of old mesh top-surface vertices for Z sampling ------
     old_verts = old_mesh.vertices
-    if len(old_verts) < 4:
+    if len(old_verts) < MIN_WATERTIGHT_REWRITE_VERTS:
         print(f"  [{label} watertight-rewrite] old mesh empty — skipping displacement.")
         return new_mesh
 
@@ -3405,7 +3568,7 @@ def _replace_fringe_with_watertight_extrusion(
     top_xy_new = new_verts[top_mask_new, :2]
 
     # Sample old-mesh Z via IDW over K nearest neighbours for smoother result.
-    K = min(4, len(top_z_old))
+    K = min(IDW_NEIGHBOURS, len(top_z_old))
     dists_s, idxs_s = old_kd.query(top_xy_new, k=K)
     # Ensure 2D shape for K=1 case
     dists_s = np.atleast_2d(dists_s.T).T if K == 1 else dists_s
@@ -3415,8 +3578,8 @@ def _replace_fringe_with_watertight_extrusion(
     else:
         # Guard divide-by-zero: any near-coincident (< 1e-6 mm) vertex snaps
         # to the exact nearest Z (no blending).
-        _coincident = dists_s.min(axis=1) < 1e-6
-        w = 1.0 / np.maximum(dists_s, 1e-6) ** 2
+        _coincident = dists_s.min(axis=1) < EPS_LINEAR
+        w = 1.0 / np.maximum(dists_s, EPS_LINEAR) ** 2
         w /= w.sum(axis=1, keepdims=True)
         sampled_z = (w * top_z_old[idxs_s]).sum(axis=1)
         if _coincident.any():
@@ -3513,8 +3676,8 @@ def _build_tps_base(
     """
     from scipy.interpolate import RBFInterpolator
 
-    _elevation_range_mm = float(egm_data.get("elevationRange") or ELEVATION_RANGE_MM)
-    half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0
+    _elevation_range_mm = float(egm_data.get(EGM_KEY_ELEVATION_RANGE) or ELEVATION_RANGE_MM)
+    half = FRINGE_HALF_MM
 
     # ── Deprecated parameters — accepted but ignored ─────────────────────────
     # elevation_spikes_mm — DEPRECATED (task 698, Topo 2026-10-02).
@@ -3522,7 +3685,7 @@ def _build_tps_base(
     # (Thomas pivot).  Interior spikes no longer shape the TPS surface.
     if elevation_spikes_mm:
         print(
-            f"  [TPS] DEPRECATED: elevation_spikes_mm passed "
+            f"  {LOG_TAG_TPS} DEPRECATED: elevation_spikes_mm passed "
             f"({len(elevation_spikes_mm)} item(s)) but ignored — "
             f"spike-application pipeline removed in task 698. "
             f"Remove callers; this parameter will be deleted in a future version."
@@ -3535,7 +3698,7 @@ def _build_tps_base(
     # stability (Sienna removes callers in T2); its contents are now ignored.
     if fringe_boundary_heights_mm:
         print(
-            f"  [TPS] DEPRECATED: fringe_boundary_heights_mm passed "
+            f"  {LOG_TAG_TPS} DEPRECATED: fringe_boundary_heights_mm passed "
             f"({len(fringe_boundary_heights_mm)} item(s)) but ignored — "
             f"strip fringeBoundaryHeights from TPS constraints (task 690). "
             f"Remove callers; this parameter will be deleted in a future version."
@@ -3562,8 +3725,8 @@ def _build_tps_base(
     # NOT added here — both are deprecated/ignored as of task 698.
 
     # Outer frame anchors — 16 evenly spaced around a circle at 1.1× half
-    r_frame = half * 1.1
-    for angle in np.linspace(0, 2 * np.pi, 16, endpoint=False):
+    r_frame = half * TPS_FRAME_RING_FACTOR
+    for angle in np.linspace(0, 2 * np.pi, TPS_FRAME_RING_POINTS, endpoint=False):
         fxy = np.array([r_frame * np.cos(angle), r_frame * np.sin(angle)])
         _add(fxy, BASE_THICKNESS_MM)
 
@@ -3572,14 +3735,14 @@ def _build_tps_base(
     constraints_z = []
     for k, (z_sum, count, ox, oy) in xy_dict.items():
         if count > 1:
-            print(f"  [TPS] co-located {count} constraints at ({ox:.2f},{oy:.2f}) "
+            print(f"  {LOG_TAG_TPS} co-located {count} constraints at ({ox:.2f},{oy:.2f}) "
                   f"→ averaged Z={z_sum/count:.3f} mm")
         constraints_xy.append([ox, oy])
         constraints_z.append(z_sum / count)
 
     n_constraints = len(constraints_xy)
-    if n_constraints < 5:
-        print(f"  [TPS] only {n_constraints} unique constraints — "
+    if n_constraints < TPS_MIN_CONSTRAINTS:
+        print(f"  {LOG_TAG_TPS} only {n_constraints} unique constraints — "
               f"falling back to flat BASE_THICKNESS_MM={BASE_THICKNESS_MM:.3f} mm")
         return np.full(grid_x.shape, BASE_THICKNESS_MM)
 
@@ -3596,7 +3759,7 @@ def _build_tps_base(
             smoothing=0.0,
         )
     except Exception as exc:
-        print(f"  [TPS] RBFInterpolator fit failed ({exc}) — "
+        print(f"  {LOG_TAG_TPS} RBFInterpolator fit failed ({exc}) — "
               f"falling back to flat BASE_THICKNESS_MM")
         return np.full(grid_x.shape, BASE_THICKNESS_MM)
 
@@ -3605,7 +3768,7 @@ def _build_tps_base(
     try:
         z_flat = rbf(query_xy)
     except Exception as exc:
-        print(f"  [TPS] RBFInterpolator eval failed ({exc}) — "
+        print(f"  {LOG_TAG_TPS} RBFInterpolator eval failed ({exc}) — "
               f"falling back to flat BASE_THICKNESS_MM")
         return np.full(grid_x.shape, BASE_THICKNESS_MM)
 
@@ -3615,7 +3778,7 @@ def _build_tps_base(
     # constraints. Hard clamp keeps the mesh inside the printer envelope.
     z_base = np.clip(z_base, 0.0, BASE_THICKNESS_MM + _elevation_range_mm + 2.0)
 
-    print(f"  [TPS] fit N={n_constraints} constraints, "
+    print(f"  {LOG_TAG_TPS} fit N={n_constraints} constraints, "
           f"Z range [{float(z_base.min()):.3f}, {float(z_base.max()):.3f}] mm")
     return z_base
 
@@ -3691,9 +3854,9 @@ def _build_tps_grid_height_field(
     from scipy.spatial import cKDTree
 
     # v5.22: resolution is per-EGM (20 legacy default, or 40).
-    GRID_SIZE = _normalize_grid_resolution(egm_data.get("gridResolution"))
-    _elevation_range_mm = float(egm_data.get("elevationRange") or ELEVATION_RANGE_MM)
-    half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0
+    GRID_SIZE = _normalize_grid_resolution(egm_data.get(EGM_KEY_GRID_RESOLUTION))
+    _elevation_range_mm = float(egm_data.get(EGM_KEY_ELEVATION_RANGE) or ELEVATION_RANGE_MM)
+    half = FRINGE_HALF_MM
     cell_side = (2.0 * half) / GRID_SIZE  # square cells
 
     # ── Step 1: Compute default Z for every cell centre via nearest bnd_z ──────
@@ -3722,12 +3885,10 @@ def _build_tps_grid_height_field(
     #   "delta"    — additive offset (±20 mm) over Poisson-nearest default (default/legacy behavior)
     #   "absolute" — value REPLACES the Poisson default; clamped to [0, 30] mm, floored at BASE_THICKNESS_MM
     #   "off"      — overrides disabled entirely; all 400 cells use Poisson defaults (gridCellHeights preserved on disk)
-    grid_mode = str(egm_data.get("gridMode") or "delta").lower()
-    if grid_mode not in ("delta", "absolute", "off"):
-        grid_mode = "delta"  # defensive fallback for unknown modes
-    grid_cell_heights = egm_data.get("gridCellHeights") or {}
+    grid_mode = _normalize_grid_mode(egm_data.get(EGM_KEY_GRID_MODE))  # unknown modes -> delta
+    grid_cell_heights = egm_data.get(EGM_KEY_GRID_CELL_HEIGHTS) or {}
     n_overrides = 0
-    if grid_mode != "off":
+    if grid_mode != GRID_MODE_OFF:
         for key, val_mm in grid_cell_heights.items():
             try:
                 ci = int(key)
@@ -3736,11 +3897,11 @@ def _build_tps_grid_height_field(
                 continue
             if ci < 0 or ci >= n_cells:
                 continue
-            if grid_mode == "absolute":
+            if grid_mode == GRID_MODE_ABSOLUTE:
                 # Value REPLACES the Poisson default.  Clamp to [0, 30] mm per UI spec,
                 # then floor the resolved Z at BASE_THICKNESS_MM so the cell cannot sit
                 # below the base plate (invalid geometry).
-                val = max(0.0, min(30.0, val))
+                val = max(GRID_ABSOLUTE_MIN_MM, min(GRID_ABSOLUTE_MAX_MM, val))
                 cell_defaults[ci] = max(BASE_THICKNESS_MM, val)
             else:  # delta (default/legacy)
                 # User value is an ADDITIVE OFFSET in mm over the Poisson-nearest default.
@@ -3748,11 +3909,11 @@ def _build_tps_grid_height_field(
                 # though the UI already enforces the same bounds.  Floor the resolved
                 # absolute Z at BASE_THICKNESS_MM so a large negative delta cannot push a
                 # cell below the base plate (invalid geometry).
-                val = max(-20.0, min(20.0, val))  # clamp delta to ±20 mm
+                val = max(GRID_DELTA_MIN_MM, min(GRID_DELTA_MAX_MM, val))  # clamp delta to ±20 mm
                 cell_defaults[ci] = max(BASE_THICKNESS_MM, cell_defaults[ci] + val)
             n_overrides += 1
 
-    print(f"  [TPS-grid] mode={grid_mode}; 400 cells: {n_overrides} user-set, "
+    print(f"  {LOG_TAG_TPS_GRID} mode={grid_mode}; {n_cells} cells: {n_overrides} user-set, "
           f"{n_cells - n_overrides} Poisson-default; "
           f"resolved Z range [{float(cell_defaults.min()):.3f}, {float(cell_defaults.max()):.3f}] mm")
 
@@ -3766,7 +3927,7 @@ def _build_tps_grid_height_field(
             smoothing=0.0,
         )
     except Exception as exc:
-        print(f"  [TPS-grid] RBFInterpolator fit failed ({exc}) — "
+        print(f"  {LOG_TAG_TPS_GRID} RBFInterpolator fit failed ({exc}) — "
               f"falling back to _build_tps_base (flat BASE_THICKNESS_MM)")
         return np.full(grid_x.shape, BASE_THICKNESS_MM)
 
@@ -3775,7 +3936,7 @@ def _build_tps_grid_height_field(
     try:
         z_flat = rbf(query_xy)
     except Exception as exc:
-        print(f"  [TPS-grid] RBFInterpolator eval failed ({exc}) — "
+        print(f"  {LOG_TAG_TPS_GRID} RBFInterpolator eval failed ({exc}) — "
               f"falling back to flat BASE_THICKNESS_MM")
         return np.full(grid_x.shape, BASE_THICKNESS_MM)
 
@@ -3794,7 +3955,7 @@ def _build_tps_grid_height_field(
     )
     z_grid = np.clip(z_grid, 0.0, _z_ceiling)
 
-    print(f"  [TPS-grid] surface Z range [{float(z_grid.min()):.3f}, "
+    print(f"  {LOG_TAG_TPS_GRID} surface Z range [{float(z_grid.min()):.3f}, "
           f"{float(z_grid.max()):.3f}] mm")
     return z_grid
 
@@ -3831,8 +3992,8 @@ def _normalize_green_fringe_interface(
     """
     from scipy.spatial import cKDTree as _KDT
 
-    half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0
-    cell_side_mm = (2.0 * half) / 20.0
+    half = FRINGE_HALF_MM
+    cell_side_mm = (2.0 * half) / GRID_N_DEFAULT
     W_mm = blend_cells * cell_side_mm
 
     bnd_kd = _KDT(green_bnd_mm)
@@ -3864,7 +4025,7 @@ def build_fringe_mesh(
     inside_mask: np.ndarray,
     green_boundary_px: np.ndarray,
     egm_data: dict,
-    fringe_grid_res: int = 200,
+    fringe_grid_res: int = FRINGE_GRID_RES,
     holes: list | None = None,
 ) -> trimesh.Trimesh:
     """
@@ -3888,12 +4049,12 @@ def build_fringe_mesh(
     from scipy.spatial import cKDTree
     from collections import defaultdict
 
-    _elevation_range_mm = float(egm_data.get("elevationRange") or ELEVATION_RANGE_MM)
+    _elevation_range_mm = float(egm_data.get(EGM_KEY_ELEVATION_RANGE) or ELEVATION_RANGE_MM)
 
     # zScale applied in the main pipeline — ceiling must account for vertical stretch.
-    _z_scale_raw_fringe = (egm_data or {}).get("zScale")
+    _z_scale_raw_fringe = (egm_data or {}).get(EGM_KEY_Z_SCALE)
     try:
-        _z_scale_fringe = max(0.5, min(5.0, float(_z_scale_raw_fringe))) if _z_scale_raw_fringe is not None else 1.0
+        _z_scale_fringe = max(Z_SCALE_MIN, min(Z_SCALE_MAX, float(_z_scale_raw_fringe))) if _z_scale_raw_fringe is not None else 1.0
     except (TypeError, ValueError):
         _z_scale_fringe = 1.0
 
@@ -3902,7 +4063,7 @@ def build_fringe_mesh(
     # are now ADDITIVE OFFSETS, not absolute Z values, so we cannot use the
     # raw values as a ceiling.  Overshoot is harmless — the ceiling only
     # prevents false clipping; a too-high ceiling costs nothing.
-    _grid_heights = (egm_data or {}).get("gridCellHeights") or {}
+    _grid_heights = (egm_data or {}).get(EGM_KEY_GRID_CELL_HEIGHTS) or {}
     _max_positive_delta = 0.0
     if _grid_heights:
         try:
@@ -3922,7 +4083,7 @@ def build_fringe_mesh(
     xs_mm_green = (xs_grid - centroid_px[0]) * scale        # shape (grid_res,)
     ys_mm_green = -(ys_grid - centroid_px[1]) * scale       # shape (grid_res,), Y flipped
 
-    half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0  # ±89.625 mm + signed offset per edge
+    half = FRINGE_HALF_MM  # ±89.625 mm + signed offset per edge
 
     # --- Build a grid covering the FULL print rectangle in mm coords ---
     xs_mm = np.linspace(-half, half, fringe_grid_res)
@@ -3958,9 +4119,9 @@ def build_fringe_mesh(
         for _hcx, _hcy, _hr in holes:
             _hole_circles.append(_ShapelyPoint(_hcx, _hcy).buffer(_hr))
 
-    for poly in egm_data.get("polygons", []):
-        ptype = poly.get("type")
-        if ptype not in ("trap", "water"):
+    for poly in egm_data.get(EGM_KEY_POLYGONS, []):
+        ptype = poly.get(EGM_KEY_TYPE)
+        if ptype not in (POLY_TYPE_TRAP, POLY_TYPE_WATER):
             continue
         # task 723: use RAW Catmull-Rom polygon (pre-smoothing) for the fringe
         # carve-out exclusion test and the snap target.  The smoothed polygon
@@ -3974,7 +4135,7 @@ def build_fringe_mesh(
         try:
             pts_px = _poly_to_raw_catmull_px(poly)
         except Exception:
-            pts_px = np.array([[p["x"], p["y"]] for p in poly["points"]], dtype=np.float64)
+            pts_px = np.array([[p["x"], p["y"]] for p in poly[EGM_KEY_POINTS]], dtype=np.float64)
         pts_mm = _px_to_mm_2d(pts_px, scale, centroid_px)
         try:
             sp = ShapelyPolygon(pts_mm)
@@ -3989,7 +4150,7 @@ def build_fringe_mesh(
                             else max(sp_diff.geoms, key=lambda g: g.area)
         except Exception:
             sp = None
-        if ptype == "trap":
+        if ptype == POLY_TYPE_TRAP:
             trap_polys_mm.append(pts_mm)
             if sp is not None:
                 trap_shapely.append(sp)
@@ -4017,13 +4178,13 @@ def build_fringe_mesh(
     # water_shapely) to avoid a second px→mm pass.
     if water_shapely:
         from shapely.ops import unary_union as _fringe_uu
-        for _bpoly in egm_data.get("polygons", []):
-            if _bpoly.get("type") != "boulders":
+        for _bpoly in egm_data.get(EGM_KEY_POLYGONS, []):
+            if _bpoly.get(EGM_KEY_TYPE) != POLY_TYPE_BOULDERS:
                 continue
             try:
                 _b_pts_px = _poly_to_dense_px(_bpoly)
             except Exception:
-                _b_pts_px = np.array([[p["x"], p["y"]] for p in _bpoly["points"]], dtype=np.float64)
+                _b_pts_px = np.array([[p["x"], p["y"]] for p in _bpoly[EGM_KEY_POINTS]], dtype=np.float64)
             _b_pts_mm = _px_to_mm_2d(_b_pts_px, scale, centroid_px)
             try:
                 _b_sp = ShapelyPolygon(_b_pts_mm)
@@ -4050,12 +4211,12 @@ def build_fringe_mesh(
                 print(f"  WARNING: fringe boulders-annulus carve failed: {_exc_ba}")
 
     # --- Build Shapely green polygon for point-in-polygon tests ---
-    print(f"  [green_carve] building green ShapelyPolygon from {len(green_bnd_mm)} boundary pts")
+    print(f"  {LOG_TAG_GREEN_CARVE} building green ShapelyPolygon from {len(green_bnd_mm)} boundary pts")
     green_shapely = ShapelyPolygon(green_bnd_mm)
     if not green_shapely.is_valid:
-        print("  [green_carve] green polygon invalid → buffer(0) repair")
+        print(f"  {LOG_TAG_GREEN_CARVE} green polygon invalid → buffer(0) repair")
         green_shapely = green_shapely.buffer(0)
-    print(f"  [green_carve] green area={green_shapely.area:.2f} mm² valid={green_shapely.is_valid}")
+    print(f"  {LOG_TAG_GREEN_CARVE} green area={green_shapely.area:.2f} mm² valid={green_shapely.is_valid}")
 
     # Task 677 (Topo, 2026-08-28): expand the green polygon by GREEN_FRINGE_GAP_MM
     # for the fringe-exclusion test ONLY. This carves a deterministic slit
@@ -4064,15 +4225,15 @@ def build_fringe_mesh(
     # itself is left unmodified because downstream code (seam-Z sampling,
     # bnd_z lookups) needs the exact green edge to preserve seam-match Z.
     if GREEN_FRINGE_GAP_MM > 0:
-        print(f"  [green_carve] buffering green by +{GREEN_FRINGE_GAP_MM} mm for exclusion")
+        print(f"  {LOG_TAG_GREEN_CARVE} buffering green by +{GREEN_FRINGE_GAP_MM} mm for exclusion")
         green_shapely_exclusion = green_shapely.buffer(+GREEN_FRINGE_GAP_MM)
         if not green_shapely_exclusion.is_valid:
-            print("  [green_carve] exclusion polygon invalid → buffer(0) repair")
+            print(f"  {LOG_TAG_GREEN_CARVE} exclusion polygon invalid → buffer(0) repair")
             green_shapely_exclusion = green_shapely_exclusion.buffer(0)
     else:
-        print("  [green_carve] GREEN_FRINGE_GAP_MM == 0 → exclusion polygon == green polygon (identity)")
+        print(f"  {LOG_TAG_GREEN_CARVE} GREEN_FRINGE_GAP_MM == 0 → exclusion polygon == green polygon (identity)")
         green_shapely_exclusion = green_shapely
-    print(f"  [green_carve] exclusion ready: area={green_shapely_exclusion.area:.2f} mm² empty={green_shapely_exclusion.is_empty}")
+    print(f"  {LOG_TAG_GREEN_CARVE} exclusion ready: area={green_shapely_exclusion.area:.2f} mm² empty={green_shapely_exclusion.is_empty}")
 
     # Union all traps + water + boulders-annuli polygons.  They share the same
     # carve-out role: any fringe cell falling inside any of these shapes is
@@ -4150,7 +4311,7 @@ def build_fringe_mesh(
     # keeps the lerp baseline at the green edge and the seam-reseat snap
     # targets in lockstep — no step at the seam between the lerp source and
     # the seam vertices.
-    _Z_lerp_src = _perimeter_median_filter(_Z_lerp_src, inside_mask, window=7)
+    _Z_lerp_src = _perimeter_median_filter(_Z_lerp_src, inside_mask, window=PERIMETER_MEDIAN_WINDOW_PX)
 
     valid_rows_g, valid_cols_g = np.where(inside_mask)
     green_cell_xy = np.column_stack([xs_mm_green[valid_cols_g], ys_mm_green[valid_rows_g]])
@@ -4192,7 +4353,7 @@ def build_fringe_mesh(
     # 300 mm-perimeter green with 176 densified points), 24 pts cover ~50 mm
     # of arc, wide enough to bridge the concave flip on H12 but narrow enough
     # to preserve local Z structure on convex greens.
-    K_BND_IDW = min(24, len(gbnd))
+    K_BND_IDW = min(BOUNDARY_IDW_NEIGHBOURS, len(gbnd))
 
     # Pre-compute boundary-point Z by looking up the nearest green cell Z for
     # each boundary point. This is O(N_bnd) and only runs once per hole.
@@ -4233,7 +4394,7 @@ def build_fringe_mesh(
                 _av_mm = float(_fbh["value"])
             except (KeyError, TypeError, ValueError):
                 continue
-            if not (0.0 < _av_mm <= 50.0):
+            if not (0.0 < _av_mm <= OCR_SPIKE_MAX_MM):
                 continue   # reject out-of-range values (matches _OCR_SPIKE_MAX_MM)
             # Convert pixel coords to mm-space using the same transform as polygons
             _a_mm = _px_to_mm_2d(
@@ -4269,7 +4430,7 @@ def build_fringe_mesh(
     # Kept for the pre-#509 sanity check / rollback (K=4 green-cell IDW at
     # the projection). Not used on the fix path but preserved for diagnostic
     # scripts that want to inspect the old behaviour.
-    K_LERP_NEIGHBOURS = min(4, len(green_cell_z))
+    K_LERP_NEIGHBOURS = min(IDW_NEIGHBOURS, len(green_cell_z))
 
     # ── TPS grid-cell height field (task 704, Topo 2026-10-04) ─────────────────
     # Phase 2 of the 20×20 grid-cell elevation mechanism.  Replaces the task-700
@@ -4390,7 +4551,7 @@ def build_fringe_mesh(
                 dists_b, idxs_b = gbnd_kd_lerp.query([x, y], k=K_BND_IDW)
                 dists_b = np.atleast_1d(np.asarray(dists_b, dtype=np.float64))
                 idxs_b = np.atleast_1d(np.asarray(idxs_b, dtype=np.int64))
-                if float(dists_b.min()) < 1e-9:
+                if float(dists_b.min()) < EPS_ZERO_LENGTH:
                     green_edge_h = float(bnd_z[idxs_b[int(np.argmin(dists_b))]])
                 else:
                     w = 1.0 / (dists_b ** 2)
@@ -4470,7 +4631,7 @@ def build_fringe_mesh(
     # the filtered lerp source (same filter recipe applied above). Without
     # this the seam snap-targets would drift from the interior lerp baseline
     # and re-open a step at the fringe's inner boundary.
-    Z_for_seam = _perimeter_median_filter(Z_for_seam, inside_mask, window=7)
+    Z_for_seam = _perimeter_median_filter(Z_for_seam, inside_mask, window=PERIMETER_MEDIAN_WINDOW_PX)
 
     # Collect green top-boundary ring (mm space, with Z)
     g_nrows, g_ncols = inside_mask.shape
@@ -4516,7 +4677,7 @@ def build_fringe_mesh(
                     _av_mm = float(_fbh["value"])
                 except (KeyError, TypeError, ValueError):
                     continue
-                if not (0.0 < _av_mm <= 50.0):
+                if not (0.0 < _av_mm <= OCR_SPIKE_MAX_MM):
                     continue
                 _a_mm = _px_to_mm_2d(
                     np.array([[_ax_px, _ay_px]], dtype=np.float64), scale, centroid_px
@@ -4539,7 +4700,7 @@ def build_fringe_mesh(
         # Fringe cell spacing (approx; grid may be anisotropic — take max for safety)
         dx_fringe = float(xs_mm[1] - xs_mm[0])
         dy_fringe = float(ys_mm[1] - ys_mm[0])
-        seam_radius = 1.5 * max(abs(dx_fringe), abs(dy_fringe))
+        seam_radius = SEAM_RADIUS_CELLS * max(abs(dx_fringe), abs(dy_fringe))
 
         # Pre-build a KD-tree of green boundary polyline for seam-cell detection
         gbnd_kd_seam = cKDTree(gbnd)
@@ -4567,7 +4728,7 @@ def build_fringe_mesh(
         #
         # We still keep the fringe cell's grid (r, c) as the mesh index so
         # downstream triangulation (top_faces, walls, hole walls) is unchanged.
-        K_SEAM_NEIGHBOURS = min(4, len(g_bdry_arr))
+        K_SEAM_NEIGHBOURS = min(IDW_NEIGHBOURS, len(g_bdry_arr))
         seam_override: dict[tuple[int, int], tuple[float, float, float]] = {}
         _seam_snap_shifts_mm: list[float] = []  # diagnostic — how far each seam XY moved
 
@@ -4602,7 +4763,7 @@ def build_fringe_mesh(
                 dists, gi_arr = g_bdry_kd.query([x, y], k=K_SEAM_NEIGHBOURS)
                 dists = np.atleast_1d(np.asarray(dists, dtype=np.float64))
                 gi_arr = np.atleast_1d(np.asarray(gi_arr, dtype=np.int64))
-                if float(dists.min()) < 1e-9:
+                if float(dists.min()) < EPS_ZERO_LENGTH:
                     # Coincident: use that vertex's Z exactly.
                     gz = float(g_bdry_arr[gi_arr[int(np.argmin(dists))], 2])
                 else:
@@ -4658,9 +4819,9 @@ def build_fringe_mesh(
     # the SINGLE innermost fringe ring (the one directly on the cutout edge),
     # not a two-cell-deep band. Two-deep folds onto itself when the polyline
     # is closer to a grid cell than the grid pitch, creating twisted quads.
-    _tw_seam_radius = 0.9 * max(abs(dx_fringe), abs(dy_fringe))
-    _tw_snap_shifts: dict[str, list[float]] = {"trap": [], "water": []}
-    _tw_snap_counts: dict[str, int] = {"trap": 0, "water": 0}
+    _tw_seam_radius = TW_SEAM_RADIUS_CELLS * max(abs(dx_fringe), abs(dy_fringe))
+    _tw_snap_shifts: dict[str, list[float]] = {POLY_TYPE_TRAP: [], POLY_TYPE_WATER: []}
+    _tw_snap_counts: dict[str, int] = {POLY_TYPE_TRAP: 0, POLY_TYPE_WATER: 0}
     # Track which cells we've already claimed for a trap/water seam so a cell
     # near TWO cutouts (e.g. two adjacent traps) keeps the first snap — a
     # second snap would drag it toward a different polyline and could create
@@ -4671,7 +4832,7 @@ def build_fringe_mesh(
         pts_mm_arr: np.ndarray, label: str, kind: str
     ) -> None:
         """Snap fringe cells near ``pts_mm_arr`` onto that polyline (XY only)."""
-        if pts_mm_arr is None or len(pts_mm_arr) < 4:
+        if pts_mm_arr is None or len(pts_mm_arr) < MIN_POLYGON_POINTS:
             return
         _kd = cKDTree(pts_mm_arr)
         for r_ in range(fringe_grid_res):
@@ -4703,7 +4864,7 @@ def build_fringe_mesh(
     def _buffered_snap_polyline(
         pts_mm_arr: np.ndarray, gap_mm: float
     ) -> np.ndarray:
-        if gap_mm <= 0 or pts_mm_arr is None or len(pts_mm_arr) < 4:
+        if gap_mm <= 0 or pts_mm_arr is None or len(pts_mm_arr) < MIN_POLYGON_POINTS:
             return pts_mm_arr
         try:
             _poly = ShapelyPolygon(pts_mm_arr)
@@ -4718,12 +4879,12 @@ def build_fringe_mesh(
 
     for _ti, _tp_mm in enumerate(trap_polys_mm, start=1):
         _snap_target = _buffered_snap_polyline(_tp_mm, TRAP_FRINGE_GAP_MM)
-        _snap_fringe_to_polygon_polyline(_snap_target, f"trap_{_ti}", "trap")
+        _snap_fringe_to_polygon_polyline(_snap_target, f"trap_{_ti}", POLY_TYPE_TRAP)
     for _wi, _wp_mm in enumerate(water_polys_mm, start=1):
         _snap_target = _buffered_snap_polyline(_wp_mm, WATER_FRINGE_GAP_MM)
-        _snap_fringe_to_polygon_polyline(_snap_target, f"water_{_wi}", "water")
+        _snap_fringe_to_polygon_polyline(_snap_target, f"water_{_wi}", POLY_TYPE_WATER)
 
-    for _kind in ("trap", "water"):
+    for _kind in (POLY_TYPE_TRAP, POLY_TYPE_WATER):
         _shifts_list = _tw_snap_shifts[_kind]
         if _shifts_list:
             _arr = np.asarray(_shifts_list, dtype=np.float64)
@@ -4732,7 +4893,7 @@ def build_fringe_mesh(
                   f"onto smooth {_kind} polyline(s) "
                   f"(XY snap median={float(np.median(_arr)):.3f} mm "
                   f"max={float(_arr.max()):.3f} mm)")
-        elif ({"trap": trap_polys_mm, "water": water_polys_mm}[_kind]):
+        elif ({POLY_TYPE_TRAP: trap_polys_mm, POLY_TYPE_WATER: water_polys_mm}[_kind]):
             print(f"  Seam-reseat ({_kind}, task 705): no fringe cells within "
                   f"{_tw_seam_radius:.2f} mm of any {_kind} polyline (unusual — "
                   f"check {_kind} polygons vs fringe grid)")
@@ -4774,7 +4935,7 @@ def build_fringe_mesh(
 
     if fringe_mask.any():
         # Spike-scanner BEFORE: 8-neighbour median + 1.5 mm threshold
-        before_count = _count_fringe_spikes(Z_fringe, fringe_mask, 1.5)
+        before_count = _count_fringe_spikes(Z_fringe, fringe_mask, FRINGE_SPIKE_THRESHOLD_MM)
 
         # ── Half-strength median (task #315, Thomas) ─────────────────────
         # Per Thomas, the full 3x3 mask-aware median over-smoothed the
@@ -4794,10 +4955,10 @@ def build_fringe_mesh(
             Z_fringe,
         )
         Z_fringe = Z_blended
-        after_count = _count_fringe_spikes(Z_fringe, fringe_mask, 1.5)
+        after_count = _count_fringe_spikes(Z_fringe, fringe_mask, FRINGE_SPIKE_THRESHOLD_MM)
         print(f"  Spike filter (3x3 mask-aware median, "
               f"blend={FRINGE_MEDIAN_BLEND:.2f}): "
-              f"spikes >1.5mm above 8-nbr median: {before_count} -> {after_count}")
+              f"spikes >{FRINGE_SPIKE_THRESHOLD_MM}mm above 8-nbr median: {before_count} -> {after_count}")
 
         # Escalate to 5x5 if any spike survives — same blend ratio.
         if after_count > 0:
@@ -4809,7 +4970,7 @@ def build_fringe_mesh(
                 Z_fringe,
             )
             after_count2, _spike_locs = _count_fringe_spikes(
-                Z_fringe, fringe_mask, 1.5, return_locations=True
+                Z_fringe, fringe_mask, FRINGE_SPIKE_THRESHOLD_MM, return_locations=True
             )
             print(f"  Spike filter (5x5 escalation, "
                   f"blend={FRINGE_MEDIAN_BLEND:.2f}): "
@@ -4836,9 +4997,9 @@ def build_fringe_mesh(
     Z_final_top = Z_fringe.copy()
     for (sr, sc), (_sx, _sy, sz) in seam_override.items():
         Z_final_top[sr, sc] = sz
-    final_spikes = _count_fringe_spikes(Z_final_top, fringe_mask, 1.5)
+    final_spikes = _count_fringe_spikes(Z_final_top, fringe_mask, FRINGE_SPIKE_THRESHOLD_MM)
     print(f"  FINAL fringe top surface (Z_fringe + seam_override) "
-          f"spikes >1.5mm above 8-nbr median: {final_spikes}")
+          f"spikes >{FRINGE_SPIKE_THRESHOLD_MM}mm above 8-nbr median: {final_spikes}")
 
     # --- Build mesh using the same grid-triangulation approach as _build_heightmap_mesh ---
     # We reuse that function by passing our fringe grid and mask.
@@ -5041,17 +5202,17 @@ def build_fringe_mesh(
             from shapely.geometry import Point as _SPPt_tee
             _tee_cx = -half + _tx
             _tee_cy = +half - _ty
-            _tee_bore_r = TEE_HOLE_COLLAR_OD_MM / 2.0 + 0.15  # match drill_tee_hole's guard
+            _tee_bore_r = TEE_HOLE_COLLAR_OD_MM / 2.0 + TEE_HOLE_GUARD_MM  # match drill_tee_hole's guard
             _tee_bore_disk = _SPPt_tee(_tee_cx, _tee_cy).buffer(
-                _tee_bore_r, resolution=32
+                _tee_bore_r, resolution=CIRCLE_BUFFER_RESOLUTION
             )
             # First guarantee the tee area is fringe material (union an island)
             # in case a boundary-touching trap/water carve ate the surrounding
             # fringe. Island slightly larger than the bore so the difference
             # below leaves a full-thickness fringe wall around the collar.
-            _tee_island_r = _tee_bore_r + 1.5   # ~1.5 mm of fringe outside the bore
+            _tee_island_r = _tee_bore_r + TEE_ISLAND_MARGIN_MM   # ~1.5 mm of fringe outside the bore
             _tee_island = _SPPt_tee(_tee_cx, _tee_cy).buffer(
-                _tee_island_r, resolution=32
+                _tee_island_r, resolution=CIRCLE_BUFFER_RESOLUTION
             ).intersection(_cap_rect)
             _bp_before_area = bottom_poly.area
             _bp_before_interiors = len(list(bottom_poly.interiors))
@@ -5084,7 +5245,7 @@ def build_fringe_mesh(
 
     try:
         cap_verts_2d, cap_tri_idx = trimesh.creation.triangulate_polygon(
-            bottom_poly, engine="earcut"
+            bottom_poly, engine=TRIANGULATE_ENGINE_EARCUT
         )
         # Snap each triangulation vertex to nearest bot_vert.  Use the same
         # 3-grid-cell threshold as the previous implementation so cap vertices
@@ -5602,7 +5763,7 @@ def build_fringe_mesh(
         try:
             _old_top_z = float(mesh.vertices[:, 2].max()) if len(mesh.vertices) else 0.0
             _new_mesh = _replace_fringe_with_watertight_extrusion(
-                mesh, bottom_poly, fringe_max_z=_old_top_z, label="fringe",
+                mesh, bottom_poly, fringe_max_z=_old_top_z, label=SCENE_NAME_FRINGE,
             )
             if _new_mesh is not None and len(_new_mesh.faces) > 0:
                 mesh = _new_mesh
@@ -5633,7 +5794,7 @@ def _green_rim_edges(green_mesh):
     edges = []
     for tri in f[wall & reaches_base]:
         for a, b in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])):
-            if v[a, 2] > 0.1 and v[b, 2] > 0.1:
+            if v[a, 2] > RIM_TOP_Z_MIN_MM and v[b, 2] > RIM_TOP_Z_MIN_MM:
                 edges.append((a, b))
     if not edges:
         return np.array([], dtype=int), np.zeros((0, 2), dtype=int)
@@ -5664,7 +5825,7 @@ def polish_green_fringe_seam(green_mesh, fringe_mesh,
     rim_kd = cKDTree(rim_xy)
 
     fv = np.asarray(fringe_mesh.vertices, dtype=np.float64).copy()
-    top = np.where(fv[:, 2] > 0.1)[0]
+    top = np.where(fv[:, 2] > RIM_TOP_Z_MIN_MM)[0]
     if len(top) == 0:
         return stats
 
@@ -5676,7 +5837,7 @@ def polish_green_fringe_seam(green_mesh, fringe_mesh,
 
     # Rim Z at each candidate: inverse-distance blend of the 2 nearest rim verts.
     dd, ii = rim_kd.query(fv[top, :2], k=2)
-    w = 1.0 / np.maximum(dd, 1e-6)
+    w = 1.0 / np.maximum(dd, EPS_LINEAR)
     z_target = (w * rim_z[ii]).sum(axis=1) / w.sum(axis=1)
     delta = z_target - fv[top, 2]
 
@@ -5717,7 +5878,7 @@ def _verify_fringe_boundary(
     Prints a brief report.
     """
     scale, centroid_px = _compute_px_to_mm(green_boundary_px, egm_data)
-    half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0  # matches build_fringe_mesh; signed offset
+    half = FRINGE_HALF_MM  # matches build_fringe_mesh; signed offset
 
     verts = fringe_mesh.vertices  # (N, 3)
 
@@ -5793,7 +5954,7 @@ def build_mount_pipe_mesh(
     inner_radius: float,
     outer_radius: float,
     z_top: float,
-    n_seg: int = 64,
+    n_seg: int = CIRCLE_SEGMENTS_DEFAULT,
 ) -> trimesh.Trimesh:
     """
     Build a watertight hollow cylinder ("pipe") for the upper-left mounting
@@ -6040,7 +6201,7 @@ def _clip_polygon_to_fringe_rect(
     The rectangle is centred at the origin in mm space and uses the same
     half-extent as the fringe builder:
 
-        _half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0
+        _half = FRINGE_HALF_MM
 
     Returns:
       * The clipped Polygon if the input intersects the rectangle (possibly
@@ -6052,7 +6213,7 @@ def _clip_polygon_to_fringe_rect(
     trap/water shape is sliced in two by the rectangle), the largest piece
     by area is returned and the discarded pieces are logged.
     """
-    _half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0
+    _half = FRINGE_HALF_MM
     fringe_rect = shapely_box(-_half, -_half, +_half, +_half)
     if not poly.is_valid:
         poly = poly.buffer(0)
@@ -6091,7 +6252,7 @@ def _clip_polygon_to_fringe_rect(
 
 def _hole_has_water(egm_data: dict) -> bool:
     """True iff the EGM defines one or more polygons of type 'water'."""
-    return any(p.get("type") == "water" for p in egm_data.get("polygons", []))
+    return any(p.get(EGM_KEY_TYPE) == POLY_TYPE_WATER for p in egm_data.get(EGM_KEY_POLYGONS, []))
 
 
 def _polygon_touches_frame_boundary(
@@ -6103,7 +6264,7 @@ def _polygon_touches_frame_boundary(
     fringe rectangle perimeter (±_half per axis). The fringe rectangle is the
     same one used by ``_clip_polygon_to_fringe_rect``.
     """
-    _half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0
+    _half = FRINGE_HALF_MM
     coords = np.asarray(poly.exterior.coords, dtype=np.float64)
     if coords.size == 0:
         return False
@@ -6141,7 +6302,7 @@ def _apply_lift_and_cap(
     max_clip_mm, z_top_before, z_top_after, band_verts, uncapped_above_cap}.
     """
     verts = mesh.vertices  # live reference
-    top_mask = verts[:, 2] > 1e-6
+    top_mask = verts[:, 2] > EPS_LINEAR
     if not top_mask.any():
         return {
             "applied": False,
@@ -6189,7 +6350,7 @@ def _apply_lift_and_cap(
             # have their EXCESS above the cap scaled by `strength`. This avoids
             # the hard cliff that showed up when a water/trap polygon reached
             # the outer edge (task #488).
-            _half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0
+            _half = FRINGE_HALF_MM
             xy_top = verts[top_mask, :2]
             dx = np.minimum(xy_top[:, 0] - (-_half), _half - xy_top[:, 0])
             dy = np.minimum(xy_top[:, 1] - (-_half), _half - xy_top[:, 1])
@@ -6224,7 +6385,7 @@ def _apply_lift_and_cap(
                 scale = cap_mm / zmax
                 # "Vertices clipped" here = vertices whose z was lowered.
                 lowered = z_top * scale
-                n_clipped = int((z_top - lowered > 1e-6).sum())
+                n_clipped = int((z_top - lowered > EPS_LINEAR).sum())
                 max_clip = float((z_top - lowered).max())
                 verts[top_mask, 2] = lowered
         else:
@@ -6262,26 +6423,26 @@ def _apply_lift_and_cap(
 
 
 def _normalize_grid_resolution(value) -> int:
-    """Return the EGM grid resolution N (cells per axis): 20 (legacy default) or 40.
+    """Return the EGM grid resolution N (cells per axis): GRID_N_DEFAULT (legacy) or GRID_N_FINE.
 
-    Missing / unknown values fall back to 20 so old EGMs behave unchanged.
+    Missing / unknown values fall back to GRID_N_DEFAULT so old EGMs behave unchanged.
     """
     try:
         n = int(value)
     except (TypeError, ValueError):
-        return 20
-    return n if n in (20, 40) else 20
+        return GRID_N_DEFAULT
+    return n if n in GRID_RESOLUTIONS else GRID_N_DEFAULT
 
 
 def _normalize_grid_mode(mode) -> str:
     """Return 'delta' | 'absolute' | 'off' (unknown/missing -> 'delta')."""
-    m = str(mode or "delta").lower()
-    return m if m in ("delta", "absolute", "off") else "delta"
+    m = str(mode or DEFAULT_GRID_MODE).lower()
+    return m if m in GRID_MODES else DEFAULT_GRID_MODE
 
 
 def _resolve_trap_height_from_grid(
     trap_poly_mm, grid_cell_heights, grid_mode, default_height,
-    cell_side, half, grid_size=20,
+    cell_side, half, grid_size=GRID_N_DEFAULT,
 ):
     """Resolve a trap's flat slab height from user-set grid cells, honouring gridMode.
 
@@ -6294,9 +6455,9 @@ def _resolve_trap_height_from_grid(
     Returns None when no override applies.
     """
     mode = _normalize_grid_mode(grid_mode)
-    if mode == "off" or not grid_cell_heights:
+    if mode == GRID_MODE_OFF or not grid_cell_heights:
         return None
-    if mode == "delta":
+    if mode == GRID_MODE_DELTA:
         delta = _trap_grid_override(trap_poly_mm, grid_cell_heights, cell_side, half, grid_size)
         if delta is None:
             return None
@@ -6304,10 +6465,10 @@ def _resolve_trap_height_from_grid(
     _cells = _trap_inside_cells(trap_poly_mm, grid_cell_heights, cell_side, half, grid_size)
     if not _cells:
         return None
-    return max(BASE_THICKNESS_MM, min(30.0, max(v for _, v in _cells)))
+    return max(BASE_THICKNESS_MM, min(GRID_ABSOLUTE_MAX_MM, max(v for _, v in _cells)))
 
 
-def _trap_inside_cells(trap_poly_mm, grid_cell_heights, cell_side, half, grid_size=20):
+def _trap_inside_cells(trap_poly_mm, grid_cell_heights, cell_side, half, grid_size=GRID_N_DEFAULT):
     """[(cell_index, value)] for set (non-zero) cells whose WHOLE square lies within
     the trap footprint (Shapely ``covers``; v5.13 -- was centre-in-polygon).
     Half-in/half-out cells are ignored.  Single source of the 'inside the trap'
@@ -6328,7 +6489,7 @@ def _trap_inside_cells(trap_poly_mm, grid_cell_heights, cell_side, half, grid_si
     return out
 
 
-def controlling_cells_for_trap(trap_poly_mm, grid_cell_heights, cell_side, half, grid_size=20):
+def controlling_cells_for_trap(trap_poly_mm, grid_cell_heights, cell_side, half, grid_size=GRID_N_DEFAULT):
     """Absolute mode: indices of the in-trap cell(s) holding the max value (ties
     all returned).  Zero/empty cells are not set cells.  [] if none."""
     cells = _trap_inside_cells(trap_poly_mm, grid_cell_heights, cell_side, half, grid_size)
@@ -6362,24 +6523,24 @@ def compute_trap_controlling_cells(egm_data: dict) -> dict:
     Mirrors export_trap_stls + _resolve_trap_height_from_grid.  'off' returns none;
     delta and absolute both have a single controlling (highest) cell per trap."""
     import copy
-    mode = _normalize_grid_mode(egm_data.get("gridMode"))
+    mode = _normalize_grid_mode(egm_data.get(EGM_KEY_GRID_MODE))
     out = {"mode": mode, "traps": []}
-    gch = egm_data.get("gridCellHeights") or {}
-    if mode == "off" or not gch:
+    gch = egm_data.get(EGM_KEY_GRID_CELL_HEIGHTS) or {}
+    if mode == GRID_MODE_OFF or not gch:
         return out
     data = copy.deepcopy(egm_data)
-    green_poly = next((p for p in data.get("polygons", []) if p.get("type") == "green"), None)
+    green_poly = next((p for p in data.get(EGM_KEY_POLYGONS, []) if p.get(EGM_KEY_TYPE) == POLY_TYPE_GREEN), None)
     if green_poly is None:
         return out
     green_boundary_px = _prepare_egm_geometry(data, green_poly)
     scale, centroid_px = _compute_px_to_mm(green_boundary_px, data)
-    half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0
-    grid_n = _normalize_grid_resolution(egm_data.get("gridResolution"))
+    half = FRINGE_HALF_MM
+    grid_n = _normalize_grid_resolution(egm_data.get(EGM_KEY_GRID_RESOLUTION))
     side = (2.0 * half) / grid_n
     pipe_circle = None
     if ENABLE_MOUNT_BORE:
         pipe_circle = _build_pipe_circle(-half + MOUNT_BORE_INSET_MM, half - MOUNT_BORE_INSET_MM)
-    traps = [p for p in data.get("polygons", []) if p.get("type") == "trap"]
+    traps = [p for p in data.get(EGM_KEY_POLYGONS, []) if p.get(EGM_KEY_TYPE) == POLY_TYPE_TRAP]
     for i, tp in enumerate(traps, start=1):
         try:
             fp = _build_trap_footprint(tp, scale, centroid_px, pipe_circle, f"Trap {i}")
@@ -6398,7 +6559,7 @@ def _trap_grid_override(
     grid_cell_heights: dict,
     cell_side: float,
     half: float,
-    grid_size: int = 20,
+    grid_size: int = GRID_N_DEFAULT,
 ) -> "float | None":
     """Return the HIGHEST (v5.12; was mean) user-set grid-cell value whose centre is inside the trap
     polygon, or ``None`` if no user-set cells fall inside the polygon.
@@ -6433,7 +6594,7 @@ def _trap_grid_override(
     half : float
         Half-frame size in mm: ``PRINT_SIZE_MM/2 + FRINGE_XY_EXPANSION_MM/2``.
     grid_size : int
-        Number of cells per axis (default 20 → 20×20 = 400 cells).
+        Number of cells per axis (default GRID_N_DEFAULT = 20 → 20×20 = 400 cells).
 
     Returns
     -------
@@ -6764,16 +6925,16 @@ def export_trap_stls(
 
     if write_stls:
         if stl_dir is None:
-            course = egm_data.get("course", "")
+            course = egm_data.get(EGM_KEY_COURSE, "")
             if course:
-                stl_dir = course_paths(course)["stls"]
+                stl_dir = course_paths(course)[PATH_KEY_STLS]
             else:
                 stl_dir = OWNER_INBOX
         os.makedirs(stl_dir, exist_ok=True)
 
     scale, centroid_px = _compute_px_to_mm(green_boundary_px, egm_data)
 
-    trap_polygons = [p for p in egm_data.get("polygons", []) if p.get("type") == "trap"]
+    trap_polygons = [p for p in egm_data.get(EGM_KEY_POLYGONS, []) if p.get(EGM_KEY_TYPE) == POLY_TYPE_TRAP]
     if not trap_polygons:
         print("  No trap polygons found in EGM data.")
         return []
@@ -6826,7 +6987,7 @@ def export_trap_stls(
             # Build the interior grid for base-Z sampling (used only on curved path;
             # on flat path the grid is still passed in for a uniform-Z result which
             # detects the fringe-min height).
-            _gstep = 0.225   # matches apply_sand_texture default grain_spacing*0.2
+            _gstep = TRAP_BASE_Z_GRID_STEP_MM   # matches apply_sand_texture default grain_spacing*0.2
             _minx_t, _miny_t, _maxx_t, _maxy_t = shapely_inset.bounds
             _gxs = np.arange(_minx_t, _maxx_t + _gstep, _gstep)
             _gys = np.arange(_miny_t, _maxy_t + _gstep, _gstep)
@@ -6838,7 +6999,7 @@ def export_trap_stls(
             )
             _computed_height = float(_base_z_vals.max())  # scalar on flat, max on curved
             _is_fallback = (fringe_mesh is None or
-                            abs(_computed_height - TRAP_THICKNESS_MM) < 0.05)
+                            abs(_computed_height - TRAP_THICKNESS_MM) < TRAP_FALLBACK_HEIGHT_TOL_MM)
 
             if not _is_fallback:
                 if TRAP_SURFACE_CURVED:
@@ -6870,11 +7031,11 @@ def export_trap_stls(
             # Only applies on the flat path (TRAP_SURFACE_CURVED=False).
             # The curved path sets trap_height per-point above; override not applied.
             if not TRAP_SURFACE_CURVED:
-                _gch = egm_data.get("gridCellHeights") or {}
-                _grid_half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0
-                _grid_n = _normalize_grid_resolution(egm_data.get("gridResolution"))
+                _gch = egm_data.get(EGM_KEY_GRID_CELL_HEIGHTS) or {}
+                _grid_half = FRINGE_HALF_MM
+                _grid_n = _normalize_grid_resolution(egm_data.get(EGM_KEY_GRID_RESOLUTION))
                 _grid_cell_side = (2.0 * _grid_half) / _grid_n
-                _trap_grid_mode = _normalize_grid_mode(egm_data.get("gridMode"))
+                _trap_grid_mode = _normalize_grid_mode(egm_data.get(EGM_KEY_GRID_MODE))
                 _new_height = _resolve_trap_height_from_grid(
                     shapely_trap, _gch, _trap_grid_mode, trap_height,
                     _grid_cell_side, _grid_half, _grid_n,
@@ -6975,16 +7136,16 @@ def export_water_meshes(
 
     if write_stls:
         if stl_dir is None:
-            course = egm_data.get("course", "")
+            course = egm_data.get(EGM_KEY_COURSE, "")
             if course:
-                stl_dir = course_paths(course)["stls"]
+                stl_dir = course_paths(course)[PATH_KEY_STLS]
             else:
                 stl_dir = OWNER_INBOX
         os.makedirs(stl_dir, exist_ok=True)
 
     scale, centroid_px = _compute_px_to_mm(green_boundary_px, egm_data)
 
-    water_polygons = [p for p in egm_data.get("polygons", []) if p.get("type") == "water"]
+    water_polygons = [p for p in egm_data.get(EGM_KEY_POLYGONS, []) if p.get(EGM_KEY_TYPE) == POLY_TYPE_WATER]
     if not water_polygons:
         print("  No water polygons found in EGM data.")
         return []
@@ -7037,7 +7198,7 @@ def export_water_meshes(
             # slab never pokes above the surrounding surface.
             if fringe_kd is not None:
                 minx, miny, maxx, maxy = shapely_inset.bounds
-                n_sample = 12
+                n_sample = FRINGE_SAMPLE_GRID_N
                 xs_s = np.linspace(minx, maxx, n_sample)
                 ys_s = np.linspace(miny, maxy, n_sample)
                 sample_pts = []
@@ -7068,7 +7229,7 @@ def export_water_meshes(
                 apply_water_ripple_texture(
                     mesh,
                     water_index=i,
-                    control_points_px=water_poly.get("points", []),
+                    control_points_px=water_poly.get(EGM_KEY_POINTS, []),
                 )
 
             # NOTE (Topo, 2026-09-26 — fix #600): post-ripple flatten removed.
@@ -7149,29 +7310,29 @@ def export_boulders_meshes(
 
     if write_stls:
         if stl_dir is None:
-            course = egm_data.get("course", "")
+            course = egm_data.get(EGM_KEY_COURSE, "")
             if course:
-                stl_dir = course_paths(course)["stls"]
+                stl_dir = course_paths(course)[PATH_KEY_STLS]
             else:
                 stl_dir = OWNER_INBOX
         os.makedirs(stl_dir, exist_ok=True)
 
     scale, centroid_px = _compute_px_to_mm(green_boundary_px, egm_data)
 
-    boulders_polygons = [p for p in egm_data.get("polygons", []) if p.get("type") == "boulders"]
+    boulders_polygons = [p for p in egm_data.get(EGM_KEY_POLYGONS, []) if p.get(EGM_KEY_TYPE) == POLY_TYPE_BOULDERS]
     if not boulders_polygons:
         print("  No boulders polygons found in EGM data.")
         return []
 
     # Pre-build Shapely water polygons in mm coords for containment checks.
     water_shapely_mm: list[ShapelyPolygon] = []
-    for wp in egm_data.get("polygons", []):
-        if wp.get("type") != "water":
+    for wp in egm_data.get(EGM_KEY_POLYGONS, []):
+        if wp.get(EGM_KEY_TYPE) != POLY_TYPE_WATER:
             continue
         try:
             w_pts_px = _poly_to_dense_px(wp)
         except Exception:
-            w_pts_px = np.array([[p["x"], p["y"]] for p in wp["points"]], dtype=np.float64)
+            w_pts_px = np.array([[p["x"], p["y"]] for p in wp[EGM_KEY_POINTS]], dtype=np.float64)
         w_pts_mm = _px_to_mm_2d(w_pts_px, scale, centroid_px)
         try:
             wsp = ShapelyPolygon(w_pts_mm)
@@ -7253,7 +7414,7 @@ def export_boulders_meshes(
             # Sample fringe Z over the boulders footprint (same recipe as water).
             if fringe_kd is not None:
                 minx, miny, maxx, maxy = shapely_inset.bounds
-                n_sample = 12
+                n_sample = FRINGE_SAMPLE_GRID_N
                 xs_s = np.linspace(minx, maxx, n_sample)
                 ys_s = np.linspace(miny, maxy, n_sample)
                 sample_pts = []
@@ -7341,11 +7502,11 @@ def _poly_to_dense_px(poly: dict) -> np.ndarray:
     """
     if poly.get("_dense_px_points"):
         pts = np.array(
-            [[p["x"], p["y"]] for p in poly.get("points", [])],
+            [[p["x"], p["y"]] for p in poly.get(EGM_KEY_POINTS, [])],
             dtype=np.float64,
         )
         return pts
-    return interpolate_catmull_rom(poly["points"])
+    return interpolate_catmull_rom(poly[EGM_KEY_POINTS])
 
 
 def _poly_to_raw_catmull_px(poly: dict) -> np.ndarray:
@@ -7439,20 +7600,20 @@ def _apply_boundary_region_derivation(
 
     Mutates ``egm_data["polygons"]`` in place.
     """
-    polygons = egm_data.get("polygons", [])
-    water_polys = [p for p in polygons if p.get("type") == "water"]
+    polygons = egm_data.get(EGM_KEY_POLYGONS, [])
+    water_polys = [p for p in polygons if p.get(EGM_KEY_TYPE) == POLY_TYPE_WATER]
     print(
         f"[BOUNDARY_REGION] _apply_boundary_region_derivation called: "
         f"band_mm={band_mm:.2f}, water_polygons={len(water_polys)}, "
         f"existing_boulders="
-        f"{sum(1 for p in polygons if p.get('type') == 'boulders')}"
+        f"{sum(1 for p in polygons if p.get(EGM_KEY_TYPE) == POLY_TYPE_BOULDERS)}"
     )
     if not water_polys:
         print("  boundary region: no water polygons — nothing to derive.")
         return
 
     scale, centroid_px = _compute_px_to_mm(green_boundary_px, egm_data)
-    _half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0
+    _half = FRINGE_HALF_MM
     fringe_rect = shapely_box(-_half, -_half, +_half, +_half)
 
     # Frame-edge band: a ``band_mm``-wide corridor running along the inside of
@@ -7470,7 +7631,7 @@ def _apply_boundary_region_derivation(
         if frame_edge_band.is_empty or not frame_edge_band.is_valid:
             frame_edge_band = None
 
-    n_existing_boulders = sum(1 for p in polygons if p.get("type") == "boulders")
+    n_existing_boulders = sum(1 for p in polygons if p.get(EGM_KEY_TYPE) == POLY_TYPE_BOULDERS)
     if n_existing_boulders:
         print(
             f"  boundary region: replacing {n_existing_boulders} existing "
@@ -7481,19 +7642,19 @@ def _apply_boundary_region_derivation(
     n_rings = 0
     n_skipped = 0
     for poly in polygons:
-        ptype = poly.get("type")
-        if ptype == "boulders":
+        ptype = poly.get(EGM_KEY_TYPE)
+        if ptype == POLY_TYPE_BOULDERS:
             # Drop existing boulders polygons — the derivation replaces them.
             continue
-        if ptype != "water":
+        if ptype != POLY_TYPE_WATER:
             new_polygons.append(poly)
             continue
 
         # ── Build mm-space shapes for this water polygon ──
         try:
-            pts_px = interpolate_catmull_rom(poly["points"])
+            pts_px = interpolate_catmull_rom(poly[EGM_KEY_POINTS])
         except Exception:
-            pts_px = np.array([[p["x"], p["y"]] for p in poly["points"]],
+            pts_px = np.array([[p["x"], p["y"]] for p in poly[EGM_KEY_POINTS]],
                               dtype=np.float64)
         pts_mm = _px_to_mm_2d(pts_px, scale, centroid_px)
         try:
@@ -7545,7 +7706,7 @@ def _apply_boundary_region_derivation(
                     # Delaunay water mesh as edges shared by 3+ faces. Heal with
                     # buffer(0) + simplify before the outline is consumed.
                     water_shrunk = water_shrunk.buffer(0)
-                    water_shrunk = water_shrunk.simplify(0.01, preserve_topology=True)
+                    water_shrunk = water_shrunk.simplify(WATER_SHRINK_SIMPLIFY_TOL_MM, preserve_topology=True)
                     # Fix (task #466): simplify(0.01) can nudge vertices up to
                     # 0.01 mm outward, pushing water_shrunk just outside
                     # water_orig_clipped. Snap shared vertices back so the
@@ -7557,7 +7718,7 @@ def _apply_boundary_region_derivation(
                     # the water polygon).
                     from shapely import snap as _shapely_snap
                     water_shrunk = _shapely_snap(
-                        water_shrunk, water_orig_clipped, 0.02
+                        water_shrunk, water_orig_clipped, WATER_SHRINK_SNAP_TOL_MM
                     )
                     if not water_shrunk.is_valid:
                         water_shrunk = water_shrunk.buffer(0)
@@ -7601,7 +7762,7 @@ def _apply_boundary_region_derivation(
             n_skipped += 1
             continue
         new_water = dict(poly)
-        new_water["points"] = new_water_pts
+        new_water[EGM_KEY_POINTS] = new_water_pts
         # The new water points are a dense exterior outline straight from
         # Shapely (post-buffer + simplify). They MUST NOT be passed through
         # Catmull-Rom again — that would re-introduce overshoot bulges that
@@ -7624,7 +7785,7 @@ def _apply_boundary_region_derivation(
             continue
         new_polygons.append({
             "name": f"boulders_auto_{n_rings + 1}",
-            "type": "boulders",
+            EGM_KEY_TYPE: POLY_TYPE_BOULDERS,
             "closed": True,
             "points": boulders_outer_pts,
             "auto_derived": True,
@@ -7642,13 +7803,13 @@ def _apply_boundary_region_derivation(
             f"ring area ≈ {(water_orig_clipped.area - water_shrunk.area):.2f} mm^2."
         )
 
-    egm_data["polygons"] = new_polygons
+    egm_data[EGM_KEY_POLYGONS] = new_polygons
     print(
         f"[BOUNDARY_REGION] derivation done: derived {n_rings} ring(s); "
         f"skipped {n_skipped}; dropped {n_existing_boulders} manual boulders polygon(s); "
         f"post-derivation polygon count={len(new_polygons)} "
-        f"(water={sum(1 for p in new_polygons if p.get('type')=='water')}, "
-        f"boulders={sum(1 for p in new_polygons if p.get('type')=='boulders')})."
+        f"(water={sum(1 for p in new_polygons if p.get(EGM_KEY_TYPE)==POLY_TYPE_WATER)}, "
+        f"boulders={sum(1 for p in new_polygons if p.get(EGM_KEY_TYPE)==POLY_TYPE_BOULDERS)})."
     )
 
 
@@ -7713,7 +7874,7 @@ def _fill_missing_ring_edges(
         d2 = _signed_area(*p3, *p4, *p2)
         d3 = _signed_area(*p1, *p2, *p3)
         d4 = _signed_area(*p1, *p2, *p4)
-        eps = 1e-12
+        eps = EPS_AREA
         return (d1 * d2 < -eps) and (d3 * d4 < -eps)
 
     def _tri_overlaps_existing(a, b, c) -> bool:
@@ -7722,8 +7883,8 @@ def _fill_missing_ring_edges(
         # one of its sides.  Such a fan triangle can never be made manifold.
         A, B, C = (tuple(all_xy[k]) for k in (a, b, c))
         mx, my = (A[0] + B[0] + C[0]) / 3.0, (A[1] + B[1] + C[1]) / 3.0
-        r = max(np.hypot(P[0] - mx, P[1] - my) for P in (A, B, C)) * 1.5 + 1e-9
-        eps = 1e-9
+        r = max(np.hypot(P[0] - mx, P[1] - my) for P in (A, B, C)) * 1.5 + EPS_ZERO_LENGTH
+        eps = EPS_ZERO_LENGTH
         near = kd_all.query_ball_point([mx, my], r)
         for pi in near:
             if pi in (a, b, c):
@@ -7785,7 +7946,7 @@ def _fill_missing_ring_edges(
             # Fallback: nearest-interior fan (may add new boundary edges).
             if chosen is None and kd is not None:
                 mid = np.array([(ax + bx) * 0.5, (ay + by) * 0.5])
-                k_try = min(32, n_interior)
+                k_try = min(RING_FILL_MAX_INTERIOR_CANDIDATES, n_interior)
                 _, nn = kd.query(mid, k=k_try)
                 nn_arr = np.atleast_1d(nn)
                 for ci in nn_arr:
@@ -7871,7 +8032,7 @@ def _close_interior_boundary_edges(
     present_tris: set[tuple[int, int, int]] = {
         tuple(sorted(int(x) for x in row)) for row in top_faces
     }
-    for _ in range(8):
+    for _ in range(INTERIOR_BOUNDARY_CLOSE_MAX_PASSES):
         current = np.vstack([top_faces] + added_rows) if added_rows else top_faces
         es = _tri_edges_set(current)
         uniq, cnt = np.unique(es, axis=0, return_counts=True)
@@ -8230,14 +8391,14 @@ def _polygon_long_axis(poly) -> "tuple[np.ndarray, float]":
     for coords, sign in rings:
         a, mx, my, xx, yy, xy = _ring_moments(coords, sign)
         A += a; cx += mx; cy += my; ixx += xx; iyy += yy; ixy += xy
-    if abs(A) < 1e-12:
+    if abs(A) < EPS_AREA:
         return np.array([0.0, 1.0]), 1.0
     mx, my = cx / A, cy / A
     cov = np.array([[ixx / A - mx * mx, ixy / A - mx * my],
                     [ixy / A - mx * my, iyy / A - my * my]])
     w, v = np.linalg.eigh(cov)            # ascending
     long_ax = v[:, 1]
-    ratio = float(w[1] / max(w[0], 1e-12))
+    ratio = float(w[1] / max(w[0], EPS_AREA))
     return long_ax / np.linalg.norm(long_ax), ratio
 
 
@@ -8326,7 +8487,7 @@ def apply_sand_texture(
     # 1. Identify top faces and wall/base faces
     # ------------------------------------------------------------------
     z_max    = all_verts[:, 2].max()
-    z_thresh = z_max - 0.1            # within 0.1 mm counts as "top"
+    z_thresh = z_max - TEXTURE_TOP_BAND_MM            # within 0.1 mm counts as "top"
 
     face_v_z      = all_verts[all_faces, 2]              # (F, 3)
     top_face_mask = (face_v_z >= z_thresh).all(axis=1)   # (F,) bool
@@ -8464,7 +8625,7 @@ def apply_sand_texture(
     # ------------------------------------------------------------------
     # 3. Build a regular grid over the bounding box; filter inside polygon
     # ------------------------------------------------------------------
-    grid_step = grain_spacing * 0.2                   # ~0.3 mm → ~5 pts per period
+    grid_step = grain_spacing * SAND_GRID_STEP_FRACTION                   # ~0.3 mm → ~5 pts per period
 
     x_min, x_max = ring_xy[:, 0].min(), ring_xy[:, 0].max()
     y_min, y_max = ring_xy[:, 1].min(), ring_xy[:, 1].max()
@@ -8507,7 +8668,7 @@ def apply_sand_texture(
           f"(boundary inset = {grid_step * SAND_GRID_BOUNDARY_INSET_FACTOR:.3f} mm)")
 
     # Enforce vertex budget: 150 K per trap.
-    MAX_GRID_PTS = 150_000
+    MAX_GRID_PTS = TEXTURE_MAX_GRID_PTS
     if n_grid > MAX_GRID_PTS:
         scale    = math.sqrt(n_grid / MAX_GRID_PTS)
         new_step = grid_step * scale
@@ -8648,7 +8809,7 @@ def apply_sand_texture(
     # + Delaunay-resurrection show up here. Each small chain is closed by
     # ear-clipping its vertex sequence in 2D (XY plane). Iterate up to 5
     # passes so partially-closed chains converge.
-    for _ in range(5):
+    for _ in range(EARCUT_PINHOLE_MAX_PASSES):
         _before = len(top_new_faces)
         top_new_faces = _earcut_interior_pinholes(
             top_new_faces, _ring_edges_set, all_xy, dtype=top_new_faces.dtype
@@ -8891,7 +9052,7 @@ def apply_water_ripple_texture(
     # 1. Identify top faces and wall/base faces (same as sand)
     # ------------------------------------------------------------------
     z_max    = all_verts[:, 2].max()
-    z_thresh = z_max - 0.1
+    z_thresh = z_max - TEXTURE_TOP_BAND_MM
 
     face_v_z      = all_verts[all_faces, 2]
     top_face_mask = (face_v_z >= z_thresh).all(axis=1)
@@ -9027,7 +9188,7 @@ def apply_water_ripple_texture(
           f"θ2={math.degrees(theta2):.1f}°)")
 
     # Vertex budget — same 150 K cap as sand.
-    MAX_GRID_PTS = 150_000
+    MAX_GRID_PTS = TEXTURE_MAX_GRID_PTS
     if n_grid > MAX_GRID_PTS:
         scale_up = math.sqrt(n_grid / MAX_GRID_PTS)
         new_step = grid_step * scale_up
@@ -9145,7 +9306,7 @@ def apply_water_ripple_texture(
 def apply_grass_texture(
     mesh: "trimesh.Trimesh",
     amplitude: float = 0.5,
-    bump_spacing: float = 2.4,
+    bump_spacing: float = DEFAULT_GRASS_SPACING_MM,
     exclude_polyline_xy: np.ndarray | None = None,
     exclude_radius_mm: float = 0.0,
 ) -> "trimesh.Trimesh":
@@ -9202,7 +9363,7 @@ def apply_grass_texture(
     y_min, y_max = top_xy[:, 1].min(), top_xy[:, 1].max()
 
     # --- Jittered grid of bump centers ---
-    rng = np.random.default_rng(seed=42)
+    rng = np.random.default_rng(seed=GRASS_RNG_SEED)
     cols = max(1, int(math.ceil((x_max - x_min) / bump_spacing)) + 1)
     rows = max(1, int(math.ceil((y_max - y_min) / bump_spacing)) + 1)
 
@@ -9340,7 +9501,7 @@ def apply_grass_texture_v2(
     amplitude_jitter: float = 0.5,
     xy_shear_mm: float = 0.15,
     poisson_k: int = 30,
-    rng_seed: int = 42,
+    rng_seed: int = GRASS_RNG_SEED,
 ) -> "trimesh.Trimesh":
     """
     v2 grass displacement. Improvements over v1:
@@ -9513,7 +9674,7 @@ def apply_divot(mesh, center_xy, radius, depth):
 # ---------------------------------------------------------------------------
 
 def build_ball_stand(
-    n_seg: int = 64,
+    n_seg: int = CIRCLE_SEGMENTS_DEFAULT,
     n_taper: int = 24,
     n_cap: int = 32,
     n_tip: int = 8,
@@ -9671,17 +9832,17 @@ def _filament_for_scene_name(name: str) -> int:
     silently land on a high extruder slot the user has nothing loaded into.
     """
     n = (name or "").lower()
-    if n.startswith("boulders"):
-        return 5
-    if n.startswith("water"):
-        return 4
-    if n.startswith("sand_trap") or n.startswith("trap"):
-        return 3
-    if n.startswith("fringe"):
-        return 2
-    if n.startswith("green"):
-        return 1
-    return 1
+    if n.startswith(SCENE_PREFIX_BOULDERS):
+        return FILAMENT_BOULDERS
+    if n.startswith(SCENE_PREFIX_WATER):
+        return FILAMENT_WATER
+    if n.startswith(SCENE_PREFIX_SAND_TRAP) or n.startswith(SCENE_PREFIX_TRAP):
+        return FILAMENT_TRAP
+    if n.startswith(SCENE_PREFIX_FRINGE):
+        return FILAMENT_FRINGE
+    if n.startswith(SCENE_PREFIX_GREEN):
+        return FILAMENT_GREEN
+    return FILAMENT_DEFAULT
 
 
 def _load_bambu_project_settings_template() -> bytes | None:
@@ -9765,7 +9926,7 @@ def _inject_bambu_extruder_metadata(path_3mf: str, scene_names: list) -> None:
     # --- 1. Read 3D/3dmodel.model out of the existing zip ---
     with zipfile.ZipFile(path_3mf, "r") as zin:
         try:
-            model_xml = zin.read("3D/3dmodel.model").decode("utf-8")
+            model_xml = zin.read(THREE_MF_MODEL_PATH).decode(XML_ENCODING)
         except KeyError:
             print(f"  WARNING: 3D/3dmodel.model missing from {path_3mf}; "
                   f"cannot inject extruder metadata.")
@@ -9817,15 +9978,15 @@ def _inject_bambu_extruder_metadata(path_3mf: str, scene_names: list) -> None:
     #   - plate 2: fringe_no_grass_sample only (smooth/grass-less fringe sample)
     # When fringe_no_grass_sample is absent (include_fringe_without_grass=False),
     # we emit a single <plate> block for backward compatibility.
-    _PLATE2_SCENE_NAME = "fringe_no_grass_sample"
+    _PLATE2_SCENE_NAME = SCENE_NAME_FRINGE_NO_GRASS_SAMPLE
     _has_plate2 = _PLATE2_SCENE_NAME in (scene_names or [])
 
     cfg_lines = ['<?xml version="1.0" encoding="UTF-8"?>', '<config>']
     for oid, oname, extruder, _sn in mapping:
         try:
-            part_id = int(oid) + 1000
+            part_id = int(oid) + BAMBU_PART_ID_BASE
         except ValueError:
-            part_id = 1000
+            part_id = BAMBU_PART_ID_BASE
         display_name = oname or f"object_{oid}"
         cfg_lines.append(f'  <object id="{oid}">')
         cfg_lines.append(f'    <metadata key="name" value="{display_name}"/>')
@@ -9977,15 +10138,15 @@ def _inject_bambu_extruder_metadata(path_3mf: str, scene_names: list) -> None:
         project_settings.config template; falls back to (128, 128) (Bambu A1)."""
         try:
             import json as _json
-            pts = _json.loads(settings_bytes.decode("utf-8"))["printable_area"]
+            pts = _json.loads(settings_bytes.decode(XML_ENCODING))["printable_area"]
             xy = [tuple(float(v) for v in str(q).split("x")) for q in pts]
             xs = [q[0] for q in xy]
             ys = [q[1] for q in xy]
             return ((min(xs) + max(xs)) / 2.0, (min(ys) + max(ys)) / 2.0)
         except Exception:
-            return (128.0, 128.0)
+            return BAMBU_BED_CENTER_MM
 
-    def _patch_model_xml_version(xml_str: str, center=(128.0, 128.0),
+    def _patch_model_xml_version(xml_str: str, center=BAMBU_BED_CENTER_MM,
                                  skip_oids=frozenset()) -> str:
         """Idempotently: (1) ensure Application + BambuStudio:3mfVersion metadata
         (Application first - without it Bambu Studio refuses project_settings.config);
@@ -10017,7 +10178,7 @@ def _inject_bambu_extruder_metadata(path_3mf: str, scene_names: list) -> None:
             if len(v) != 12:
                 return tag
             try:
-                if abs(float(v[9])) > 1e-9 or abs(float(v[10])) > 1e-9:
+                if abs(float(v[9])) > EPS_ZERO_LENGTH or abs(float(v[10])) > EPS_ZERO_LENGTH:
                     return tag  # already placed
             except ValueError:
                 return tag
@@ -10027,7 +10188,7 @@ def _inject_bambu_extruder_metadata(path_3mf: str, scene_names: list) -> None:
         return _re2.sub(r"<item\b[^>]*>", _shift, xml_str)
 
     _bed_center = _bed_center_from_settings(project_settings_bytes) \
-        if project_settings_bytes is not None else (128.0, 128.0)
+        if project_settings_bytes is not None else BAMBU_BED_CENTER_MM
     patched_model_xml = _patch_model_xml_version(
         model_xml, _bed_center, frozenset(oid for oid, _n in _plate2_items))
 
@@ -10037,10 +10198,10 @@ def _inject_bambu_extruder_metadata(path_3mf: str, scene_names: list) -> None:
     # accumulate duplicates (idempotency).
     _SKIP_FILES = (
         {
-            "3D/3dmodel.model",
+            THREE_MF_MODEL_PATH,
             "Metadata/model_settings.config",
             "Metadata/project_settings.config",
-            "[Content_Types].xml",
+            THREE_MF_CONTENT_TYPES_PATH,
             "_rels/.rels",
         }
         | set(new_tmpl_bytes.keys())
@@ -10053,11 +10214,11 @@ def _inject_bambu_extruder_metadata(path_3mf: str, scene_names: list) -> None:
         ct_template_path = _os.path.join(_bambu_tmpl_dir, "content_types.xml")
         if _os.path.isfile(ct_template_path):
             with open(ct_template_path, "rb") as _f:
-                ct_xml = _f.read().decode("utf-8")
+                ct_xml = _f.read().decode(XML_ENCODING)
         else:
             # Fallback: read from input zip (trimesh provides rels+model only).
             try:
-                ct_xml = zin.read("[Content_Types].xml").decode("utf-8")
+                ct_xml = zin.read(THREE_MF_CONTENT_TYPES_PATH).decode(XML_ENCODING)
             except KeyError:
                 ct_xml = (
                     '<?xml version=\'1.0\' encoding=\'utf-8\'?>\n'
@@ -10100,11 +10261,11 @@ def _inject_bambu_extruder_metadata(path_3mf: str, scene_names: list) -> None:
             zout.writestr(item, zin.read(item.filename))
 
         # Write patched 3D/3dmodel.model (with BambuStudio:3mfVersion metadata).
-        zout.writestr("3D/3dmodel.model", patched_model_xml.encode("utf-8"))
+        zout.writestr(THREE_MF_MODEL_PATH, patched_model_xml.encode(XML_ENCODING))
         # Write patched [Content_Types].xml.
-        zout.writestr("[Content_Types].xml", ct_xml.encode("utf-8"))
+        zout.writestr(THREE_MF_CONTENT_TYPES_PATH, ct_xml.encode(XML_ENCODING))
         # Write regenerated _rels/.rels with thumbnail relationship declarations.
-        zout.writestr("_rels/.rels", rels_xml.encode("utf-8"))
+        zout.writestr("_rels/.rels", rels_xml.encode(XML_ENCODING))
         # Write extruder assignments.
         zout.writestr("Metadata/model_settings.config", cfg_xml)
         # Write project_settings.config from template (if available).
@@ -10243,30 +10404,30 @@ def run_pipeline(
     Returns the absolute path to the generated .3mf file.
     """
     PIPELINE_WARNINGS.clear()
-    print("=" * 60)
+    print(LOG_RULE)
     print("Gradient Surface Diagnostic")
-    print("=" * 60)
-    print(f"[config] GREEN_BOUNDARY_SPLINE_SMOOTHING_PX = {GREEN_BOUNDARY_SPLINE_SMOOTHING_PX}")
-    print(f"[config] GREEN_BOUNDARY_SPLINE_RESAMPLE_PX  = {GREEN_BOUNDARY_SPLINE_RESAMPLE_PX}")
-    print(f"[config] GREEN_BOUNDARY_SMOOTH_ITERATIONS   = {GREEN_BOUNDARY_SMOOTH_ITERATIONS}")
-    print(f"[config] GREEN_FRINGE_GAP_MM                = {GREEN_FRINGE_GAP_MM}")
-    print(f"[config] TRAP_BOUNDARY_SPLINE_SMOOTHING_PX  = {TRAP_BOUNDARY_SPLINE_SMOOTHING_PX}")
-    print(f"[config] TRAP_BOUNDARY_SPLINE_RESAMPLE_PX   = {TRAP_BOUNDARY_SPLINE_RESAMPLE_PX}")
-    print(f"[config] TRAP_BOUNDARY_SMOOTH_ITERATIONS    = {TRAP_BOUNDARY_SMOOTH_ITERATIONS}")
-    print(f"[config] TRAP_FRINGE_GAP_MM                 = {TRAP_FRINGE_GAP_MM}")
-    print(f"[config] WATER_BOUNDARY_SPLINE_SMOOTHING_PX = {WATER_BOUNDARY_SPLINE_SMOOTHING_PX}")
-    print(f"[config] WATER_BOUNDARY_SPLINE_RESAMPLE_PX  = {WATER_BOUNDARY_SPLINE_RESAMPLE_PX}")
-    print(f"[config] WATER_BOUNDARY_SMOOTH_ITERATIONS   = {WATER_BOUNDARY_SMOOTH_ITERATIONS}")
-    print(f"[config] WATER_FRINGE_GAP_MM                = {WATER_FRINGE_GAP_MM}")
-    print(f"[config] FRINGE_XY_EXPANSION_MM             = {FRINGE_XY_EXPANSION_MM}")
+    print(LOG_RULE)
+    print(f"{LOG_TAG_CONFIG} GREEN_BOUNDARY_SPLINE_SMOOTHING_PX = {GREEN_BOUNDARY_SPLINE_SMOOTHING_PX}")
+    print(f"{LOG_TAG_CONFIG} GREEN_BOUNDARY_SPLINE_RESAMPLE_PX  = {GREEN_BOUNDARY_SPLINE_RESAMPLE_PX}")
+    print(f"{LOG_TAG_CONFIG} GREEN_BOUNDARY_SMOOTH_ITERATIONS   = {GREEN_BOUNDARY_SMOOTH_ITERATIONS}")
+    print(f"{LOG_TAG_CONFIG} GREEN_FRINGE_GAP_MM                = {GREEN_FRINGE_GAP_MM}")
+    print(f"{LOG_TAG_CONFIG} TRAP_BOUNDARY_SPLINE_SMOOTHING_PX  = {TRAP_BOUNDARY_SPLINE_SMOOTHING_PX}")
+    print(f"{LOG_TAG_CONFIG} TRAP_BOUNDARY_SPLINE_RESAMPLE_PX   = {TRAP_BOUNDARY_SPLINE_RESAMPLE_PX}")
+    print(f"{LOG_TAG_CONFIG} TRAP_BOUNDARY_SMOOTH_ITERATIONS    = {TRAP_BOUNDARY_SMOOTH_ITERATIONS}")
+    print(f"{LOG_TAG_CONFIG} TRAP_FRINGE_GAP_MM                 = {TRAP_FRINGE_GAP_MM}")
+    print(f"{LOG_TAG_CONFIG} WATER_BOUNDARY_SPLINE_SMOOTHING_PX = {WATER_BOUNDARY_SPLINE_SMOOTHING_PX}")
+    print(f"{LOG_TAG_CONFIG} WATER_BOUNDARY_SPLINE_RESAMPLE_PX  = {WATER_BOUNDARY_SPLINE_RESAMPLE_PX}")
+    print(f"{LOG_TAG_CONFIG} WATER_BOUNDARY_SMOOTH_ITERATIONS   = {WATER_BOUNDARY_SMOOTH_ITERATIONS}")
+    print(f"{LOG_TAG_CONFIG} WATER_FRINGE_GAP_MM                = {WATER_FRINGE_GAP_MM}")
+    print(f"{LOG_TAG_CONFIG} FRINGE_XY_EXPANSION_MM             = {FRINGE_XY_EXPANSION_MM}")
 
     # ── 1. Load EGM and image ───────────────────────────────────────────────
     egm_path = os.path.abspath(egm_path)
     print(f"\n[1] EGM: {os.path.basename(egm_path)}")
-    print(f"    [generate] EGM absolute path:   {egm_path}")
+    print(f"    {LOG_TAG_GENERATE} EGM absolute path:   {egm_path}")
     _egm_data, image_path, green_boundary_px = load_egm(egm_path)
     print(f"    Image: {os.path.basename(image_path)}")
-    print(f"    [generate] input image:         {image_path}")
+    print(f"    {LOG_TAG_GENERATE} input image:         {image_path}")
     print(f"    Green boundary: {len(green_boundary_px)} spline points")
 
     # Apply per-project base-thickness override from the EGM (Boundary Editor
@@ -10340,7 +10501,7 @@ def run_pipeline(
 
     # ── 2. Detect arrows ────────────────────────────────────────────────────
     print("\n[2] Detecting arrows…")
-    arrows = detect_arrows(img, green_boundary_px, dark_threshold=50, max_arrow_area=600)
+    arrows = detect_arrows(img, green_boundary_px, dark_threshold=ARROW_DARK_V_THRESHOLD, max_arrow_area=ARROW_MAX_AREA_PX_PIPELINE)
     print(f"    Found {len(arrows)} arrows")
 
     # No-arrows fallback (topology rule): if zero arrows are detected, the
@@ -10352,7 +10513,7 @@ def run_pipeline(
     # more water polygons, the flat green sits at FLAT_FALLBACK_Z_WATER_MM
     # (5 mm = 2 mm water slab + 3 mm clearance) so it doesn't intersect
     # the water surface. Otherwise it sits at FLAT_FALLBACK_Z_MM (0 mm).
-    GRID_RES = 200
+    GRID_RES = GRADIENT_GRID_RES
     flat_fallback_triggered = (len(arrows) == 0)
 
     if flat_fallback_triggered:
@@ -10451,7 +10612,7 @@ def run_pipeline(
         print(f"    Height range (raw, pre-soften): {valid.min():.4f} .. {valid.max():.4f}")
 
         # Clamp + soften spurious local peaks/valleys before triangulation.
-        _elev_range_soften = float(_egm_data.get("elevationRange") or ELEVATION_RANGE_MM)
+        _elev_range_soften = float(_egm_data.get(EGM_KEY_ELEVATION_RANGE) or ELEVATION_RANGE_MM)
         Z, _soften_stats = soften_extremes(Z, inside_mask, elevation_range_mm=_elev_range_soften)
     print(
         f"    soften_extremes: peak_limit={_soften_stats['peak_limit_mm']:.2f} mm, "
@@ -10482,7 +10643,7 @@ def run_pipeline(
 
     # ── Build filename slug from course + hole ────────────────────────────────
     import re
-    course = _egm_data.get("course", "unknown")
+    course = _egm_data.get(EGM_KEY_COURSE, "unknown")
     hole = _egm_data.get("hole", "0")
     slug = re.sub(r"[^a-z0-9]+", "_", f"{course}_hole_{hole}".lower()).strip("_")
     print(f"    File slug: {slug}")
@@ -10492,12 +10653,12 @@ def run_pipeline(
     # into the course folder. STLs are not deliverables — only the final 3MF
     # matters. All intermediate meshes stay in memory.
     _cpaths = course_paths(course) if course != "unknown" else None
-    _3mf_dir  = os.path.abspath(_cpaths["3mfs"]   if _cpaths else OWNER_INBOX)
-    _img_dir  = os.path.abspath(_cpaths["images"] if _cpaths else OWNER_INBOX)
+    _3mf_dir  = os.path.abspath(_cpaths[PATH_KEY_3MFS]   if _cpaths else OWNER_INBOX)
+    _img_dir  = os.path.abspath(_cpaths[PATH_KEY_IMAGES] if _cpaths else OWNER_INBOX)
     os.makedirs(_3mf_dir,  exist_ok=True)
     os.makedirs(_img_dir,  exist_ok=True)
-    print(f"    [generate] output 3MF dir:      {_3mf_dir}")
-    print(f"    [generate] output images dir:   {_img_dir}")
+    print(f"    {LOG_TAG_GENERATE} output 3MF dir:      {_3mf_dir}")
+    print(f"    {LOG_TAG_GENERATE} output images dir:   {_img_dir}")
 
     # ── 5. Save diagnostic images → owner_inbox/diagnostics/ (not course Images/) ──
     _diag_paths: list[str] = []
@@ -10534,13 +10695,13 @@ def run_pipeline(
     # and `grass_spacing` are still read from the EGM below so block 7 can
     # apply them to the fringe.
     grass_amplitude = _egm_data.get("grassAmplitude", 0.5)
-    grass_spacing   = _egm_data.get("grassSpacing",   2.4)
+    grass_spacing   = _egm_data.get(EGM_KEY_GRASS_SPACING,   DEFAULT_GRASS_SPACING_MM)
     import copy  # still needed for fringe_mesh_flat deepcopy in block 7
 
     # ── 7. Build fringe mesh ────────────────────────────────────────────────
     print("\n[7] Building fringe mesh…")
     scale_f, centroid_f = _compute_px_to_mm(green_boundary_px, _egm_data)
-    _elevation_range_for_fringe = float(_egm_data.get("elevationRange") or ELEVATION_RANGE_MM)
+    _elevation_range_for_fringe = float(_egm_data.get(EGM_KEY_ELEVATION_RANGE) or ELEVATION_RANGE_MM)
     Z_mm_for_fringe = _height_to_mm(Z, inside_mask, elevation_range_mm=_elevation_range_for_fringe)
     # Apply the same slope limit used inside save_stl_meshes so the fringe
     # seam heights track the (limited) green surface instead of the original
@@ -10581,7 +10742,7 @@ def run_pipeline(
     # trap/water/boulders pipe-subtractions and the fringe carve-list pipe-hole
     # circles all degenerate to no-ops. Re-enable with a one-line flip.
     if ENABLE_MOUNT_BORE:
-        _half_for_bore = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0
+        _half_for_bore = FRINGE_HALF_MM
         _bore_cx = -_half_for_bore + MOUNT_BORE_INSET_MM
         _bore_cy = +_half_for_bore - MOUNT_BORE_INSET_MM
         pipe_circle = _build_pipe_circle(_bore_cx, _bore_cy)
@@ -10627,7 +10788,7 @@ def run_pipeline(
             inside_mask,
             green_boundary_px,
             _egm_data,
-            fringe_grid_res=200,
+            fringe_grid_res=FRINGE_GRID_RES,
             holes=fringe_holes,
         )
         bb = fringe_mesh.bounds
@@ -10660,14 +10821,14 @@ def run_pipeline(
             green_boundary_px.copy(), scale_f, centroid_f
         )
         _cutout_polylines_mm = [_green_bnd_mm_for_grass]
-        for _poly in _egm_data.get("polygons", []):
-            if _poly.get("type") not in ("trap", "water"):
+        for _poly in _egm_data.get(EGM_KEY_POLYGONS, []):
+            if _poly.get(EGM_KEY_TYPE) not in (POLY_TYPE_TRAP, POLY_TYPE_WATER):
                 continue
             try:
                 _pts_px = _poly_to_dense_px(_poly)
             except Exception:
                 _pts_px = np.array(
-                    [[p["x"], p["y"]] for p in _poly.get("points", [])],
+                    [[p["x"], p["y"]] for p in _poly.get(EGM_KEY_POINTS, [])],
                     dtype=np.float64,
                 )
             if _pts_px.size == 0:
@@ -10738,7 +10899,7 @@ def run_pipeline(
                     inside_mask,
                     green_boundary_px,
                     _egm_data,
-                    fringe_grid_res=200,
+                    fringe_grid_res=FRINGE_GRID_RES,
                     holes=fringe_holes,
                 )
                 # Grass is intentionally NOT applied — plate 2 is the smooth sample.
@@ -10771,7 +10932,7 @@ def run_pipeline(
             _dx = _flat_verts[:, 0] - _bore_cx
             _dy = _flat_verts[:, 1] - _bore_cy
             _r = np.sqrt(_dx * _dx + _dy * _dy)
-            _grid_step_mm = (PRINT_SIZE_MM + abs(FRINGE_XY_EXPANSION_MM)) / 200.0
+            _grid_step_mm = (PRINT_SIZE_MM + abs(FRINGE_XY_EXPANSION_MM)) / FRINGE_GRID_RES
             _ring_inner = MOUNT_BORE_OUTER_RADIUS_MM
             _ring_outer = MOUNT_BORE_OUTER_RADIUS_MM + 2.0 * _grid_step_mm
             _ring_mask = (
@@ -10796,7 +10957,7 @@ def run_pipeline(
                 inner_radius=MOUNT_BORE_INNER_RADIUS_MM,
                 outer_radius=MOUNT_BORE_OUTER_RADIUS_MM,
                 z_top=_pipe_top_z,
-                n_seg=64,
+                n_seg=CIRCLE_SEGMENTS_DEFAULT,
             )
             print(f"  Mount pipe: cx={_bore_cx:.2f} cy={_bore_cy:.2f} "
                   f"r_in={MOUNT_BORE_INNER_RADIUS_MM:.4f} "
@@ -10811,7 +10972,7 @@ def run_pipeline(
             # `fringe` scene node achieves that without touching the filament
             # mapping in _filament_for_scene_name.
             fringe_mesh = trimesh.util.concatenate([fringe_mesh, _pipe_mesh])
-            fringe_mesh.merge_vertices(digits_vertex=6)
+            fringe_mesh.merge_vertices(digits_vertex=VERTEX_MERGE_DIGITS)
             fringe_mesh.update_faces(fringe_mesh.nondegenerate_faces())
             fringe_mesh.update_faces(fringe_mesh.unique_faces())
             fringe_mesh.remove_unreferenced_vertices()
@@ -10875,7 +11036,7 @@ def run_pipeline(
             # The cap still protects natural fringe near the frame (vertices
             # with z <= effective cap are never touched by the above_cap gate).
             _user_grid_max_mm = 0.0
-            _user_grid_heights = (_egm_data or {}).get("gridCellHeights") or {}
+            _user_grid_heights = (_egm_data or {}).get(EGM_KEY_GRID_CELL_HEIGHTS) or {}
             if _user_grid_heights:
                 try:
                     _user_grid_max_mm = max(float(v) for v in _user_grid_heights.values())
@@ -10982,7 +11143,7 @@ def run_pipeline(
     else:
         fname_3mf = f"{course} (Hole {hole_label}).3mf"
     path_3mf = os.path.abspath(os.path.join(_3mf_dir, fname_3mf))
-    print(f"    [generate] output 3MF file:     {path_3mf}")
+    print(f"    {LOG_TAG_GENERATE} output 3MF file:     {path_3mf}")
 
     scene = trimesh.Scene()
     scene_names = []
@@ -10993,15 +11154,15 @@ def run_pipeline(
     green_style = _egm_data.get("greenStyle", "smooth")
     print(f"  Using {green_style} green surface")
     if green_style == "terraced":
-        scene.add_geometry(stepped_mesh, node_name="green_surface")
+        scene.add_geometry(stepped_mesh, node_name=SCENE_NAME_GREEN_SURFACE)
     else:
-        scene.add_geometry(smooth_mesh_flat, node_name="green_surface")
-    scene_names.append("green_surface")
+        scene.add_geometry(smooth_mesh_flat, node_name=SCENE_NAME_GREEN_SURFACE)
+    scene_names.append(SCENE_NAME_GREEN_SURFACE)
 
     # Fringe mesh (if built successfully) — includes a 3/16" through-hole at the stand corner
     if isinstance(fringe_mesh, trimesh.Trimesh):
-        scene.add_geometry(fringe_mesh, node_name="fringe")
-        scene_names.append("fringe")
+        scene.add_geometry(fringe_mesh, node_name=SCENE_NAME_FRINGE)
+        scene_names.append(SCENE_NAME_FRINGE)
 
     # Trap meshes — added directly from memory (no disk round-trip)
     for trap_node, trap_mesh in trap_meshes:
@@ -11027,8 +11188,8 @@ def run_pipeline(
     # smooth-surface reference piece, not a serialised plaque).
     # Only present when include_fringe_without_grass=True.
     if isinstance(fringe_no_grass_sample, trimesh.Trimesh):
-        scene.add_geometry(fringe_no_grass_sample, node_name="fringe_no_grass_sample")
-        scene_names.append("fringe_no_grass_sample")
+        scene.add_geometry(fringe_no_grass_sample, node_name=SCENE_NAME_FRINGE_NO_GRASS_SAMPLE)
+        scene_names.append(SCENE_NAME_FRINGE_NO_GRASS_SAMPLE)
         print(f"  Plate-2 smooth fringe sample (no grass) added to scene.")
 
     print(f"\n[10b] Engraving serial s/n: {serial_number} on {len(scene_names)} item(s)…")
@@ -11040,7 +11201,7 @@ def run_pipeline(
     for _node_name, _m in scene.geometry.items():
         if not isinstance(_m, trimesh.Trimesh):
             continue
-        _m.merge_vertices(digits_vertex=6)              # collapse coincident vertices from float ops
+        _m.merge_vertices(digits_vertex=VERTEX_MERGE_DIGITS)              # collapse coincident vertices from float ops
         _m.update_faces(_m.nondegenerate_faces())       # drop zero-area faces
         _m.update_faces(_m.unique_faces())              # de-dupe identical face triplets
         _m.remove_unreferenced_vertices()
@@ -11088,13 +11249,13 @@ def run_pipeline(
         scene,
         label=f"{course}-hole-{hole}",
         # Fringe is intentionally an open-bottom thin shell; topology rework queued (task 311).
-        skip_labels={"fringe", "geometry_1"},
-        tolerate_boundary_edges=30,
-        tolerate_triple_shared=5,
+        skip_labels={SCENE_NAME_FRINGE, SCENE_NAME_UNNAMED_FIRST},
+        tolerate_boundary_edges=MANIFOLD_TOLERATE_BOUNDARY_EDGES,
+        tolerate_triple_shared=MANIFOLD_TOLERATE_TRIPLE_SHARED,
     )
 
     scene.export(path_3mf)
-    print(f"  [generate] output 3MF written:  {path_3mf}")
+    print(f"  {LOG_TAG_GENERATE} output 3MF written:  {path_3mf}")
     print(f"  Objects in 3MF ({len(scene_names)}):")
     for name in scene_names:
         print(f"    - {name}")
@@ -11112,13 +11273,13 @@ def run_pipeline(
     if serial_number is not None:
         print(f"  Serial used: s/n {serial_number} (committed by caller)")
 
-    print("\n" + "=" * 60)
+    print("\n" + LOG_RULE)
     print("Done.")
     for _p in _diag_paths:
         print(f"  Diagnostic PNG:     {_p}")
     print(f"  3MF assembly:       {path_3mf}")
     print(f"  Scene objects:      {len(scene_names)} (green + fringe + {len(trap_meshes)} trap(s) + {len(water_meshes)} water + {len(boulders_meshes)} boulders)")
-    print("=" * 60)
+    print(LOG_RULE)
 
     return path_3mf
 

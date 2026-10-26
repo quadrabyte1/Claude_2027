@@ -81,7 +81,7 @@ def _tps_at_cell(gsd, egm, cell_idx, bnd_z_val=3.0, grid_res=60):
     green_bnd_px = gsd.interpolate_catmull_rom(egm["polygons"][0]["points"])
     green_bnd_mm = gsd._px_to_mm_2d(green_bnd_px.copy(), scale, centroid_px)
 
-    half = gsd.PRINT_SIZE_MM / 2.0 + gsd.FRINGE_XY_EXPANSION_MM / 2.0
+    half = gsd.FRINGE_HALF_MM
     cell_side = 2.0 * half / 20.0
 
     GX, GY = np.meshgrid(

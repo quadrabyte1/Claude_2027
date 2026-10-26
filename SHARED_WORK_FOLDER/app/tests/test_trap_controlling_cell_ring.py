@@ -24,7 +24,7 @@ def _gsd():
 
 
 def _geom(g):
-    half = g.PRINT_SIZE_MM / 2.0 + g.FRINGE_XY_EXPANSION_MM / 2.0
+    half = g.FRINGE_HALF_MM
     return half, 2 * half / 20
 
 

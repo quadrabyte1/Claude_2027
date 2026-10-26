@@ -6,6 +6,7 @@ All file I/O is in pytest tmp dirs; no live DB / EGM is touched.  Tunables are
 imported from heatmap_degrid / app so a change there cannot leave a stale copy here.
 """
 import hashlib
+import re
 import sys
 from pathlib import Path
 
@@ -212,10 +213,25 @@ def test_detection_input_follows_flag(client, monkeypatch):
 
 
 # ---- editor wiring ----------------------------------------------------------
+EDITOR_HEADER_RE = r"\{#\s*Boundary Editor (v\d+(?:\.\d+)+) "
+
+
+def _version_tuple(version: str) -> tuple:
+    """'v5.73' -> (5, 73) so versions compare numerically (v5.9 < v5.10)."""
+    return tuple(int(part) for part in version.lstrip("v").split("."))
+
+
 def test_editor_wiring():
     import app as A
     html = (APP_DIR / "templates" / "editor.html").read_text()
-    assert f"Boundary Editor {A.APP_VERSION} " in html
+    # The editor.html changelog header ("{# Boundary Editor vX.Y ...") carries the editor's own
+    # last-changed version.  APP_VERSION is the unified app-wide footer version, so it can run
+    # ahead of the editor changelog (other pages bump it); read the header instead of
+    # hard-coding a version, and require it to be well-formed and never newer than APP_VERSION.
+    m = re.search(EDITOR_HEADER_RE, html)
+    assert m, "editor.html must start with a '{# Boundary Editor vX.Y ' changelog header"
+    assert _version_tuple(m.group(1)) <= _version_tuple(A.APP_VERSION)
+    assert "{{ app_version }}" in html          # footer renders the unified app version
     assert "degrid-view-switch" in html
     assert "this._pendingDegrid = true;   // v5.69: Create New Project only" in html
     # the degrid fetch is only reachable from the pending flag (Open Project never sets it)

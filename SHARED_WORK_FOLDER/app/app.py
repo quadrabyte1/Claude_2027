@@ -25,7 +25,7 @@ app = Flask(__name__)
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "db", "workspace.db")
 
-APP_VERSION = "v5.71"  # unified version for all main-app pages, shown in every sticky footer
+APP_VERSION = "v5.73"  # unified version for all main-app pages, shown in every sticky footer
 
 # Tier -> concrete model (single source of truth for Team page + Dashboard).
 # Keep in sync with the mapping in team/README.md.
@@ -79,6 +79,7 @@ HTTP_CONFLICT = 409
 HTTP_SERVER_ERROR = 500
 HEADER_CACHE_CONTROL = "Cache-Control"
 CACHE_NO_STORE = "no-store"
+HEADER_CONTENT_TYPE = "Content-Type"
 CONTENT_TYPE_PNG = "image/png"
 GPS_PREVIEW_CACHE_HEADER = "X-GPS-Preview-Cache"
 GPS_PREVIEW_CACHE_HIT = "hit"
@@ -177,7 +178,8 @@ COURSE_SUBDIR_EGMS = "EGMs"
 COURSE_SUBDIR_IMAGES = "Images"
 COURSE_SUBDIRS = (COURSE_SUBDIR_3MFS, COURSE_SUBDIR_EGMS, COURSE_SUBDIR_IMAGES)   # no STLs/
 EXT_EGM = ".egm"
-EXT_3MF = ".3mf"
+FILE_TYPE_3MF = "3mf"
+EXT_3MF = "." + FILE_TYPE_3MF
 EXT_GPS = ".gps"
 EXT_TXT = ".txt"
 GPS_NAME_HINTS = ("gps", "stracka")     # legacy ItWentIn/ files: only these look like GPS data
@@ -188,9 +190,9 @@ EGM_FILENAME_FMT = "{course} (Hole {hole_label})" + EXT_EGM
 THREE_MF_FILENAME_FMT = "{course} (Hole {hole_label})" + EXT_3MF
 EGM_JSON_INDENT = 2
 HIDDEN_PREFIX = "."
-PATH_SEPARATORS = ("/", "\\")
+URL_PATH_SEP = "/"
+PATH_SEPARATORS = (URL_PATH_SEP, "\\")
 PARENT_DIR_TOKEN = ".."
-PIPELINE_RUN_PATH_RELATIVE_TO = os.path.dirname(__file__)   # generate_models "path" is relative to app/
 
 # ── Error / info messages (tests assert on some of these) ──
 MSG_NO_IMAGE = "No image specified"
@@ -324,7 +326,6 @@ GPS_PREVIEW_COLORBAR = {"fraction": 0.046, "pad": 0.04, "label": "mm"}
 GPS_PREVIEW_TITLE_FONTSIZE = 8
 GPS_PREVIEW_TIGHT_PAD = 0.5
 GPS_PREVIEW_BACKEND = "Agg"
-ROUTE_ARG_DEFAULT_EMPTY = ""
 
 # ── Plaque / e-mail ──
 SMTP_DEFAULT_PORT = "587"
@@ -332,6 +333,9 @@ SMTP_DEFAULT_TO = "quadrabyte@pm.me"
 SMTP_TIMEOUT_S = 15
 PLATE_FONT_FAMILY = "Helvetica"
 PLATE_DEFAULT_SLUG = "custom_plate"
+PLATE_SLUG_STRIP_RE = r'[^\w\- ]+'
+PLATE_BOLD = False
+PLATE_ITALIC = False
 PLATE_DOWNLOADS_FMT = "~/Downloads/{name}"
 # ═══ END APP CONSTANTS ════════════════════════════════════════════════════════
 
@@ -1455,7 +1459,7 @@ def load_boundaries():
     """
     import json as _json
     filename = request.args.get(QUERY_FILENAME, "")
-    if not filename or PARENT_DIR_TOKEN in filename or "/" in filename:
+    if not filename or PARENT_DIR_TOKEN in filename or URL_PATH_SEP in filename:
         return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: MSG_INVALID_FILENAME}), HTTP_BAD_REQUEST
 
     # Search course EGMs/ folders first
@@ -1583,24 +1587,24 @@ def detect_boundaries():
     from scipy.ndimage import binary_fill_holes
 
     data = request.get_json()
-    image_name = data.get("image", "")
-    course = data.get("course", "")
-    image_course = data.get("imageCourse", "") or course
+    image_name = data.get(KEY_IMAGE, "")
+    course = data.get(KEY_COURSE, "")
+    image_course = data.get(KEY_IMAGE_COURSE, "") or course
     if not image_name:
-        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: "No image specified"}), HTTP_BAD_REQUEST
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: MSG_NO_IMAGE}), HTTP_BAD_REQUEST
 
     # Resolve image to absolute path, searching all course folders as fallback
     img_path = _find_image_path(image_name, preferred_course=image_course)
     print(f"[detect_boundaries] image lookup: name={image_name!r} preferred_course={image_course!r} -> {img_path!r}")
     if img_path is None:
-        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: f"Image not found: {image_name}"}), HTTP_BAD_REQUEST
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: MSG_IMAGE_NOT_FOUND_FMT.format(name=image_name)}), HTTP_BAD_REQUEST
     if DEGRID_DETECT_ON_CLEANED:
         _cleaned_path = heatmap_degrid.degridded_path(img_path)
         if os.path.isfile(_cleaned_path):
             img_path = _cleaned_path
     img = cv2.imread(img_path)
     if img is None:
-        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: f"Cannot read image: {img_path}"}), HTTP_BAD_REQUEST
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: MSG_CANNOT_READ_IMAGE_FMT.format(path=img_path)}), HTTP_BAD_REQUEST
 
     h, w = img.shape[:2]
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
@@ -1611,15 +1615,17 @@ def detect_boundaries():
     # --- Detect putting green: high-saturation colorful contour bands ---
     # Non-green hues (orange, red, yellow, blue, cyan) with high saturation
     contour_bands = (
-        ((hue < 30) | (hue > 90)) & (sat > 80) & (val > 80)
+        ((hue < DETECT_GREEN_HUE_SPLIT_LO) | (hue > DETECT_GREEN_HUE_SPLIT_HI))
+        & (sat > DETECT_GREEN_NONGREEN_MIN_SAT) & (val > DETECT_GREEN_MIN_VAL)
     ) | (
-        (hue >= 30) & (hue <= 90) & (sat > 120) & (val > 80)
+        (hue >= DETECT_GREEN_HUE_SPLIT_LO) & (hue <= DETECT_GREEN_HUE_SPLIT_HI)
+        & (sat > DETECT_GREEN_GREENHUE_MIN_SAT) & (val > DETECT_GREEN_MIN_VAL)
     )
-    contour_u8 = (contour_bands.astype(np.uint8)) * 255
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
-    contour_u8 = cv2.morphologyEx(contour_u8, cv2.MORPH_CLOSE, kernel, iterations=5)
+    contour_u8 = (contour_bands.astype(np.uint8)) * DETECT_MASK_ON
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (DETECT_GREEN_CLOSE_KERNEL, DETECT_GREEN_CLOSE_KERNEL))
+    contour_u8 = cv2.morphologyEx(contour_u8, cv2.MORPH_CLOSE, kernel, iterations=DETECT_GREEN_CLOSE_ITERATIONS)
     contour_filled = binary_fill_holes(contour_u8 > 0)
-    contour_u8 = (contour_filled.astype(np.uint8)) * 255
+    contour_u8 = (contour_filled.astype(np.uint8)) * DETECT_MASK_ON
 
     # Largest component = putting green
     n_cc, cc_labels, cc_stats, _ = cv2.connectedComponentsWithStats(contour_u8)
@@ -1627,11 +1633,11 @@ def detect_boundaries():
     if n_cc > 1:
         areas = cc_stats[1:, cv2.CC_STAT_AREA]
         largest = 1 + np.argmax(areas)
-        green_mask = ((cc_labels == largest) * 255).astype(np.uint8)
+        green_mask = ((cc_labels == largest) * DETECT_MASK_ON).astype(np.uint8)
 
     # Smooth green boundary
-    green_mask = cv2.GaussianBlur(green_mask, (21, 21), 0)
-    _, green_mask = cv2.threshold(green_mask, 127, 255, cv2.THRESH_BINARY)
+    green_mask = cv2.GaussianBlur(green_mask, (DETECT_GREEN_BLUR_KERNEL, DETECT_GREEN_BLUR_KERNEL), 0)
+    _, green_mask = cv2.threshold(green_mask, DETECT_MASK_THRESHOLD, DETECT_MASK_ON, cv2.THRESH_BINARY)
 
     # --- Green-interior exclusion mask ---
     # When MASK_GREEN_INTERIOR_FROM_HAZARDS is True the green polygon interior
@@ -1644,33 +1650,33 @@ def detect_boundaries():
     if MASK_GREEN_INTERIOR_FROM_HAZARDS:
         _hazard_search_area = cv2.bitwise_not(green_mask)  # 255 = outside green
     else:
-        _hazard_search_area = np.full((h, w), 255, dtype=np.uint8)  # unrestricted
+        _hazard_search_area = np.full((h, w), DETECT_MASK_ON, dtype=np.uint8)  # unrestricted
 
     # --- Detect sand traps: pale cream/beige/tan ---
     # H range widened from [15,34] to [10,40] to catch light beige (H≈13) such
     # as the Stanford H8 lower-left trap.  Saturation and value bounds unchanged.
     # Pixels inside the green are excluded by _hazard_search_area.
     trap_mask = (
-        (hue >= 10) & (hue <= 40) &
-        (sat >= 15) & (sat <= 60) &
-        (val >= 200)
-    ).astype(np.uint8) * 255
+        (hue >= DETECT_TRAP_HUE[0]) & (hue <= DETECT_TRAP_HUE[1]) &
+        (sat >= DETECT_TRAP_SAT[0]) & (sat <= DETECT_TRAP_SAT[1]) &
+        (val >= DETECT_TRAP_MIN_VAL)
+    ).astype(np.uint8) * DETECT_MASK_ON
     trap_mask = cv2.bitwise_and(trap_mask, _hazard_search_area)
-    kernel_t = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))
-    trap_mask = cv2.morphologyEx(trap_mask, cv2.MORPH_CLOSE, kernel_t, iterations=3)
-    trap_mask = cv2.morphologyEx(trap_mask, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)), iterations=2)
+    kernel_t = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (DETECT_HAZARD_CLOSE_KERNEL, DETECT_HAZARD_CLOSE_KERNEL))
+    trap_mask = cv2.morphologyEx(trap_mask, cv2.MORPH_CLOSE, kernel_t, iterations=DETECT_HAZARD_CLOSE_ITERATIONS)
+    trap_mask = cv2.morphologyEx(trap_mask, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (DETECT_HAZARD_OPEN_KERNEL, DETECT_HAZARD_OPEN_KERNEL)), iterations=DETECT_HAZARD_OPEN_ITERATIONS)
     trap_filled = binary_fill_holes(trap_mask > 0)
-    trap_mask = (trap_filled.astype(np.uint8)) * 255
+    trap_mask = (trap_filled.astype(np.uint8)) * DETECT_MASK_ON
 
     # Find individual traps
     n_t, t_labels, t_stats, t_centroids = cv2.connectedComponentsWithStats(trap_mask)
     traps = []
     for i in range(1, n_t):
         area = t_stats[i, cv2.CC_STAT_AREA]
-        if area >= 500:
+        if area >= DETECT_MIN_BLOB_AREA_PX:
             traps.append((i, area))
     traps.sort(key=lambda x: x[1], reverse=True)
-    traps = traps[:5]  # max 5 traps
+    traps = traps[:DETECT_MAX_TRAPS]
 
     # --- Detect water hazards: deep blue/cyan regions ---
     # Two complementary filters are OR-combined so both saturated blue water
@@ -1690,32 +1696,32 @@ def detect_boundaries():
     #
     # Pixels inside the green are excluded by _hazard_search_area.
     _water_high_sat = (
-        (hue >= 100) & (hue <= 130) &
-        (sat >= 130) &
-        (val >= 130) & (val <= 220)
-    ).astype(np.uint8) * 255
+        (hue >= DETECT_WATER_BLUE_HUE[0]) & (hue <= DETECT_WATER_BLUE_HUE[1]) &
+        (sat >= DETECT_WATER_BLUE_MIN_SAT) &
+        (val >= DETECT_WATER_BLUE_VAL[0]) & (val <= DETECT_WATER_BLUE_VAL[1])
+    ).astype(np.uint8) * DETECT_MASK_ON
     _water_pale_cyan = (
-        (hue >= 80) & (hue <= 105) &
-        (sat >= 15) & (sat <= 50) &
-        (val >= 200)
-    ).astype(np.uint8) * 255
+        (hue >= DETECT_WATER_PALE_HUE[0]) & (hue <= DETECT_WATER_PALE_HUE[1]) &
+        (sat >= DETECT_WATER_PALE_SAT[0]) & (sat <= DETECT_WATER_PALE_SAT[1]) &
+        (val >= DETECT_WATER_PALE_MIN_VAL)
+    ).astype(np.uint8) * DETECT_MASK_ON
     water_mask = cv2.bitwise_or(_water_high_sat, _water_pale_cyan)
     water_mask = cv2.bitwise_and(water_mask, _hazard_search_area)
-    kernel_w = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))
-    water_mask = cv2.morphologyEx(water_mask, cv2.MORPH_CLOSE, kernel_w, iterations=3)
-    water_mask = cv2.morphologyEx(water_mask, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)), iterations=2)
+    kernel_w = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (DETECT_HAZARD_CLOSE_KERNEL, DETECT_HAZARD_CLOSE_KERNEL))
+    water_mask = cv2.morphologyEx(water_mask, cv2.MORPH_CLOSE, kernel_w, iterations=DETECT_HAZARD_CLOSE_ITERATIONS)
+    water_mask = cv2.morphologyEx(water_mask, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (DETECT_HAZARD_OPEN_KERNEL, DETECT_HAZARD_OPEN_KERNEL)), iterations=DETECT_HAZARD_OPEN_ITERATIONS)
     water_filled = binary_fill_holes(water_mask > 0)
-    water_mask = (water_filled.astype(np.uint8)) * 255
+    water_mask = (water_filled.astype(np.uint8)) * DETECT_MASK_ON
 
     # Find individual water bodies
     n_w, w_labels, w_stats, w_centroids = cv2.connectedComponentsWithStats(water_mask)
     waters = []
     for i in range(1, n_w):
         area = w_stats[i, cv2.CC_STAT_AREA]
-        if area >= 500:
+        if area >= DETECT_MIN_BLOB_AREA_PX:
             waters.append((i, area))
     waters.sort(key=lambda x: x[1], reverse=True)
-    waters = waters[:5]  # max 5 water polygons (same cap as traps)
+    waters = waters[:DETECT_MAX_WATERS]
 
     def mask_to_polygon(mask, num_points):
         """Extract the largest contour from a mask and resample to num_points."""
@@ -1742,12 +1748,12 @@ def detect_boundaries():
             seg = 0
             while seg < n and cum[seg+1] < target:
                 seg += 1
-            t = (target - cum[seg]) / max(cum[seg+1] - cum[seg], 1e-9)
+            t = (target - cum[seg]) / max(cum[seg+1] - cum[seg], DETECT_ARC_EPSILON)
             a = cnt[seg % n]
             b = cnt[(seg+1) % n]
             px = int(a[0] + t * (b[0] - a[0]))
             py = int(a[1] + t * (b[1] - a[1]))
-            pts.append({"x": px, "y": py})
+            pts.append({KEY_X: px, KEY_Y: py})
         return pts
 
     # --- Detect contour lines inside the putting green ---
@@ -1764,18 +1770,10 @@ def detect_boundaries():
     #   4 = Orange       (hue 15-24)
     #   5 = Red-orange   (hue 5-14)
     #   6 = Dark red     (hue 0-4 + 175-180)
-    BAND_RANGES = [
-        (85, 100),   # 0: blue/cyan
-        (65, 84),    # 1: teal
-        (45, 64),    # 2: green
-        (25, 44),    # 3: yellow-green / yellow
-        (15, 24),    # 4: orange
-        (5, 14),     # 5: red-orange
-        (0, 4),      # 6: dark red (low end)
-    ]
+    BAND_RANGES = DETECT_BAND_RANGES
     NUM_BANDS = len(BAND_RANGES)
-    MIN_BAND_SAT = 40
-    MIN_BAND_VAL = 60
+    MIN_BAND_SAT = DETECT_BAND_MIN_SAT
+    MIN_BAND_VAL = DETECT_BAND_MIN_VAL
 
     green_interior = (green_mask > 0)
     label_map = np.full((h, w), -1, dtype=np.int8)
@@ -1790,17 +1788,17 @@ def detect_boundaries():
 
     # Red wrap-around (hue 175-180) → band 6
     red_wrap = (
-        (hue >= 175) & (hue <= 180) &
+        (hue >= DETECT_BAND_RED_WRAP_HUE[0]) & (hue <= DETECT_BAND_RED_WRAP_HUE[1]) &
         (sat >= MIN_BAND_SAT) & (val >= MIN_BAND_VAL) &
         green_interior
     )
-    label_map[red_wrap] = 6
+    label_map[red_wrap] = DETECT_BAND_RED_WRAP_INDEX
 
     # Morphological cleanup per band
-    clean_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+    clean_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (DETECT_BAND_CLEAN_KERNEL, DETECT_BAND_CLEAN_KERNEL))
     for band_idx in range(NUM_BANDS):
-        band_u8 = ((label_map == band_idx).astype(np.uint8)) * 255
-        band_u8 = cv2.morphologyEx(band_u8, cv2.MORPH_CLOSE, clean_kernel, iterations=2)
+        band_u8 = ((label_map == band_idx).astype(np.uint8)) * DETECT_MASK_ON
+        band_u8 = cv2.morphologyEx(band_u8, cv2.MORPH_CLOSE, clean_kernel, iterations=DETECT_BAND_CLOSE_ITERATIONS)
         band_u8 = cv2.morphologyEx(band_u8, cv2.MORPH_OPEN,  clean_kernel, iterations=1)
         label_map[green_interior & (label_map == band_idx)] = -1
         label_map[green_interior & (band_u8 > 0)] = band_idx
@@ -1821,7 +1819,7 @@ def detect_boundaries():
         idx = int(np.argmin(dists))
         return int(_green_perimeter_pts[idx, 0]), int(_green_perimeter_pts[idx, 1])
 
-    def extract_single_isoline(boundary_mask, num_pts=10):
+    def extract_single_isoline(boundary_mask, num_pts=DETECT_ISOLINE_POINTS):
         """
         Extract ONE ordered polyline from a boundary mask, with endpoints
         snapped to the green perimeter so shapely.ops.split can divide the
@@ -1833,19 +1831,19 @@ def detect_boundaries():
         """
         from skimage.morphology import skeletonize
 
-        if np.count_nonzero(boundary_mask) < 20:
+        if np.count_nonzero(boundary_mask) < DETECT_ISOLINE_MIN_PIXELS:
             return []
 
         # Merge fragments: close gaps in the boundary caused by crosshatch
-        merge_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))
-        merged = cv2.morphologyEx(boundary_mask, cv2.MORPH_CLOSE, merge_kernel, iterations=3)
+        merge_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (DETECT_ISOLINE_MERGE_KERNEL, DETECT_ISOLINE_MERGE_KERNEL))
+        merged = cv2.morphologyEx(boundary_mask, cv2.MORPH_CLOSE, merge_kernel, iterations=DETECT_ISOLINE_MERGE_ITERATIONS)
 
         # Skeletonize the merged boundary into a thin line
         thin = skeletonize(merged > 0)
         pts_yx = np.column_stack(np.where(thin))
-        if len(pts_yx) < 4:
+        if len(pts_yx) < DETECT_ISOLINE_MIN_POINTS:
             pts_yx = np.column_stack(np.where(merged > 0))
-        if len(pts_yx) < 4:
+        if len(pts_yx) < DETECT_ISOLINE_MIN_POINTS:
             return []
 
         # Order points along the principal axis (PCA)
@@ -1862,15 +1860,15 @@ def detect_boundaries():
         # Subsample to num_pts evenly spaced interior points
         indices = np.linspace(0, len(ordered) - 1, num_pts, dtype=int)
         sampled = ordered[indices]
-        interior = [{"x": int(p[1]), "y": int(p[0])} for p in sampled]
+        interior = [{KEY_X: int(p[1]), KEY_Y: int(p[0])} for p in sampled]
 
         # Snap first and last points to the nearest green perimeter point so
         # the isoline spans cleanly from one edge of the green to the other.
         # This is required for shapely.ops.split to work correctly.
-        sx0, sy0 = _snap_to_green_perimeter(interior[0]["x"], interior[0]["y"])
-        sx1, sy1 = _snap_to_green_perimeter(interior[-1]["x"], interior[-1]["y"])
-        interior[0]  = {"x": sx0, "y": sy0}
-        interior[-1] = {"x": sx1, "y": sy1}
+        sx0, sy0 = _snap_to_green_perimeter(interior[0][KEY_X], interior[0][KEY_Y])
+        sx1, sy1 = _snap_to_green_perimeter(interior[-1][KEY_X], interior[-1][KEY_Y])
+        interior[0]  = {KEY_X: sx0, KEY_Y: sy0}
+        interior[-1] = {KEY_X: sx1, KEY_Y: sy1}
 
         # Guard: if both endpoints snapped to the same perimeter point the line
         # is degenerate — drop it.
@@ -1882,24 +1880,24 @@ def detect_boundaries():
     def band_side(polyline_pts, higher_band_mask):
         """Determine which side of the polyline the higher band is on."""
         if len(polyline_pts) < 2:
-            return 'left'
-        dx = polyline_pts[-1]["x"] - polyline_pts[0]["x"]
-        dy = polyline_pts[-1]["y"] - polyline_pts[0]["y"]
+            return CONTOUR_DIRECTION_LEFT
+        dx = polyline_pts[-1][KEY_X] - polyline_pts[0][KEY_X]
+        dy = polyline_pts[-1][KEY_Y] - polyline_pts[0][KEY_Y]
         if dx == 0 and dy == 0:
-            return 'left'
+            return CONTOUR_DIRECTION_LEFT
         ys, xs = np.where(higher_band_mask > 0)
         if len(xs) == 0:
-            return 'left'
+            return CONTOUR_DIRECTION_LEFT
         cx, cy = float(xs.mean()), float(ys.mean())
-        mid_x = polyline_pts[len(polyline_pts)//2]["x"]
-        mid_y = polyline_pts[len(polyline_pts)//2]["y"]
+        mid_x = polyline_pts[len(polyline_pts)//2][KEY_X]
+        mid_y = polyline_pts[len(polyline_pts)//2][KEY_Y]
         cross = dx * (cy - mid_y) - dy * (cx - mid_x)
-        return 'right' if cross > 0 else 'left'
+        return CONTOUR_DIRECTION_RIGHT if cross > 0 else CONTOUR_DIRECTION_LEFT
 
     contour_lines = []
     contour_counter = 1
     band_present = [
-        np.count_nonzero(label_map == b) > 200 for b in range(NUM_BANDS)
+        np.count_nonzero(label_map == b) > DETECT_BAND_PRESENT_MIN_PX for b in range(NUM_BANDS)
     ]
 
     # Each adjacent band pair produces exactly ONE isoline
@@ -1910,33 +1908,33 @@ def detect_boundaries():
         if not band_present[lo_band] or not band_present[hi_band]:
             continue
 
-        lo_mask = ((label_map == lo_band).astype(np.uint8)) * 255
-        hi_mask = ((label_map == hi_band).astype(np.uint8)) * 255
+        lo_mask = ((label_map == lo_band).astype(np.uint8)) * DETECT_MASK_ON
+        hi_mask = ((label_map == hi_band).astype(np.uint8)) * DETECT_MASK_ON
 
         # Dilate each band slightly and intersect to find the boundary zone
-        dil_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-        lo_dil = cv2.dilate(lo_mask, dil_kernel, iterations=2)
-        hi_dil = cv2.dilate(hi_mask, dil_kernel, iterations=2)
+        dil_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (DETECT_BAND_DILATE_KERNEL, DETECT_BAND_DILATE_KERNEL))
+        lo_dil = cv2.dilate(lo_mask, dil_kernel, iterations=DETECT_BAND_DILATE_ITERATIONS)
+        hi_dil = cv2.dilate(hi_mask, dil_kernel, iterations=DETECT_BAND_DILATE_ITERATIONS)
         boundary = cv2.bitwise_and(lo_dil, hi_dil)
 
         # Keep only pixels inside the green
         boundary = cv2.bitwise_and(boundary, green_mask)
 
-        if np.count_nonzero(boundary) < 50:
+        if np.count_nonzero(boundary) < DETECT_ISOLINE_MIN_BOUNDARY_PX:
             continue
 
         # Extract one isoline from ALL boundary pixels for this band pair
-        pts = extract_single_isoline(boundary, num_pts=10)
+        pts = extract_single_isoline(boundary, num_pts=DETECT_ISOLINE_POINTS)
         if len(pts) < 2:
             continue
 
         direction = band_side(pts, hi_mask)
         contour_lines.append({
-            "name": f"Contour {contour_counter}",
-            "type": "contour",
-            "closed": False,
-            "direction": direction,
-            "points": pts,
+            KEY_NAME: POLY_NAME_CONTOUR_FMT.format(n=contour_counter),
+            KEY_TYPE: POLY_TYPE_CONTOUR,
+            KEY_CLOSED: False,
+            KEY_DIRECTION: direction,
+            KEY_POINTS: pts,
         })
         contour_counter += 1
         break  # DEBUG: stop after first contour line found
@@ -1945,29 +1943,29 @@ def detect_boundaries():
     polygons = []
 
     # Green polygon (8 points)
-    green_pts = mask_to_polygon(green_mask, 8)
+    green_pts = mask_to_polygon(green_mask, DETECT_GREEN_POINTS)
     if green_pts:
-        polygons.append({"name": "Green", "type": "green", "points": green_pts})
+        polygons.append({KEY_NAME: POLY_NAME_GREEN, KEY_TYPE: POLY_TYPE_GREEN, KEY_POINTS: green_pts})
 
     # Trap polygons (16 points each)
     for idx, (label_id, area) in enumerate(traps):
-        t_mask = ((t_labels == label_id) * 255).astype(np.uint8)
+        t_mask = ((t_labels == label_id) * DETECT_MASK_ON).astype(np.uint8)
         # Smooth
-        t_mask = cv2.GaussianBlur(t_mask, (15, 15), 0)
-        _, t_mask = cv2.threshold(t_mask, 127, 255, cv2.THRESH_BINARY)
-        trap_pts = mask_to_polygon(t_mask, 16)
+        t_mask = cv2.GaussianBlur(t_mask, (DETECT_POLY_SMOOTH_KERNEL, DETECT_POLY_SMOOTH_KERNEL), 0)
+        _, t_mask = cv2.threshold(t_mask, DETECT_MASK_THRESHOLD, DETECT_MASK_ON, cv2.THRESH_BINARY)
+        trap_pts = mask_to_polygon(t_mask, DETECT_HAZARD_POINTS)
         if trap_pts:
-            polygons.append({"name": f"Trap {idx+1}", "type": "trap", "points": trap_pts})
+            polygons.append({KEY_NAME: POLY_NAME_TRAP_FMT.format(n=idx+1), KEY_TYPE: POLY_TYPE_TRAP, KEY_POINTS: trap_pts})
 
     # Water polygons (16 points each — same as traps)
     for idx, (label_id, area) in enumerate(waters):
-        w_mask = ((w_labels == label_id) * 255).astype(np.uint8)
+        w_mask = ((w_labels == label_id) * DETECT_MASK_ON).astype(np.uint8)
         # Smooth
-        w_mask = cv2.GaussianBlur(w_mask, (15, 15), 0)
-        _, w_mask = cv2.threshold(w_mask, 127, 255, cv2.THRESH_BINARY)
-        water_pts = mask_to_polygon(w_mask, 16)
+        w_mask = cv2.GaussianBlur(w_mask, (DETECT_POLY_SMOOTH_KERNEL, DETECT_POLY_SMOOTH_KERNEL), 0)
+        _, w_mask = cv2.threshold(w_mask, DETECT_MASK_THRESHOLD, DETECT_MASK_ON, cv2.THRESH_BINARY)
+        water_pts = mask_to_polygon(w_mask, DETECT_HAZARD_POINTS)
         if water_pts:
-            polygons.append({"name": f"Water {idx+1}", "type": "water", "points": water_pts})
+            polygons.append({KEY_NAME: POLY_NAME_WATER_FMT.format(n=idx+1), KEY_TYPE: POLY_TYPE_WATER, KEY_POINTS: water_pts})
 
     # Contour detection disabled — using arrow-gradient Poisson surface instead
     # polygons.extend(contour_lines)
@@ -1980,8 +1978,8 @@ def detect_boundaries():
     # snapping to the same edge are deduplicated by _clamp_polygon_points.
     total_clamped = 0
     for poly in polygons:
-        clamped_pts, n = _clamp_polygon_points(poly["points"], w, h)
-        poly["points"] = clamped_pts
+        clamped_pts, n = _clamp_polygon_points(poly[KEY_POINTS], w, h)
+        poly[KEY_POINTS] = clamped_pts
         total_clamped += n
     if total_clamped:
         print(f"[detect_boundaries] Clamped {total_clamped} point(s) to image frame "
@@ -1989,9 +1987,9 @@ def detect_boundaries():
 
     return jsonify({
         KEY_STATUS: STATUS_OK,
-        "imageSize": {"width": w, "height": h},
-        "polygons": polygons,
-        "contourStep": 0.5,
+        KEY_IMAGE_SIZE: {KEY_WIDTH: w, KEY_HEIGHT: h},
+        KEY_POLYGONS: polygons,
+        KEY_CONTOUR_STEP: DETECT_DEFAULT_CONTOUR_STEP_MM,
     })
 
 
@@ -2015,24 +2013,24 @@ def find_contours():
     )
 
     data = request.get_json()
-    image_name = data.get("image", "")
-    course = data.get("course", "")
-    image_course = data.get("imageCourse", "") or course
-    green_points = data.get("green_points", [])
+    image_name = data.get(KEY_IMAGE, "")
+    course = data.get(KEY_COURSE, "")
+    image_course = data.get(KEY_IMAGE_COURSE, "") or course
+    green_points = data.get(KEY_GREEN_POINTS, [])
 
     if not image_name or not green_points:
-        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: "Need image and green_points"}), HTTP_BAD_REQUEST
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: MSG_NEED_IMAGE_AND_GREEN}), HTTP_BAD_REQUEST
 
     # Resolve image to absolute path, searching all course folders as fallback
     img_path = _find_image_path(image_name, preferred_course=image_course)
     print(f"[find_contours] image lookup: name={image_name!r} preferred_course={image_course!r} -> {img_path!r}")
     if img_path is None:
-        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: f"Image not found: {image_name}"}), HTTP_BAD_REQUEST
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: MSG_IMAGE_NOT_FOUND_FMT.format(name=image_name)}), HTTP_BAD_REQUEST
 
     # The editor sends dense spline-sampled points — use them directly as the
     # green boundary polygon (Nx2 float64 array of (x, y) pixel coords).
     green_boundary_px = np.array(
-        [[p["x"], p["y"]] for p in green_points], dtype=np.float64
+        [[p[KEY_X], p[KEY_Y]] for p in green_points], dtype=np.float64
     )
 
     # Step 1: Remove slope arrows, isolate contour blobs.
@@ -2054,18 +2052,18 @@ def find_contours():
     contour_lines = []
     for i, polyline in enumerate(polylines):
         contour_lines.append({
-            "name": f"Contour {i + 1}",
-            "type": "contour",
-            "closed": False,
-            "direction": "left",
-            "points": [{"x": int(pt[0]), "y": int(pt[1])} for pt in polyline],
+            KEY_NAME: POLY_NAME_CONTOUR_FMT.format(n=i + 1),
+            KEY_TYPE: POLY_TYPE_CONTOUR,
+            KEY_CLOSED: False,
+            KEY_DIRECTION: CONTOUR_DIRECTION_LEFT,
+            KEY_POINTS: [{KEY_X: int(pt[0]), KEY_Y: int(pt[1])} for pt in polyline],
         })
 
     print(f"[find_contours] Returning {len(contour_lines)} contour(s) for {image_name}")
 
     return jsonify({
         KEY_STATUS: STATUS_OK,
-        "contours": contour_lines,
+        KEY_CONTOURS: contour_lines,
     })
 
 
@@ -2083,49 +2081,49 @@ def generate_models():
 
     data = request.get_json(force=True)
     if not data:
-        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: "No JSON payload"}), HTTP_BAD_REQUEST
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: MSG_NO_JSON}), HTTP_BAD_REQUEST
 
-    course = data.get("course", "").strip()
-    hole = data.get("hole", "").strip()
+    course = data.get(KEY_COURSE, "").strip()
+    hole = data.get(KEY_HOLE, "").strip()
     if not course or not hole:
-        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: "Missing course or hole"}), HTTP_BAD_REQUEST
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: MSG_MISSING_COURSE_OR_HOLE}), HTTP_BAD_REQUEST
 
     # Auto-derive a 5 mm boulders ring around each water polygon when checked
     # (replaces any manual boulders polygons in the EGM). The editor persists
     # this flag to the EGM via autoSave before calling /api/generate_models,
     # but we also forward the request-time value here so the route can override
     # the persisted value if the client ever wants to.
-    include_boundary_region = bool(data.get("includeBoundaryRegion", False))
+    include_boundary_region = bool(data.get(KEY_INCLUDE_BOUNDARY_REGION, False))
     # Fringe-frame cap toggle (task 669): default True preserves legacy behavior.
     # When False, the water-hole rule at gradient_surface_diagnostic line ~5854
     # skips the per-vertex boundary cap for the fringe mesh, letting the fringe
     # rise to its natural height even where it exceeds the plaque frame.
     # Missing key → True (legacy .egm files never persisted this flag).
-    apply_fringe_frame_cap = bool(data.get("applyFringeFrameCap", True))
+    apply_fringe_frame_cap = bool(data.get(KEY_APPLY_FRINGE_FRAME_CAP, True))
     # Include fringe without grass (task 724): when True, a second plate is
     # generated holding a smooth (grass-less) fringe sample. Plate 1 always
     # gets grass unconditionally. Default False (single plate, no sample).
     # Old field from task 714 is intentionally ignored (semantics inverted).
-    include_fringe_without_grass = bool(data.get("includeFringeWithoutGrass", False))
-    open_in_slicer = bool(data.get("open_in_slicer", False))
+    include_fringe_without_grass = bool(data.get(KEY_INCLUDE_FRINGE_WITHOUT_GRASS, False))
+    open_in_slicer = bool(data.get(KEY_OPEN_IN_SLICER, False))
 
-    hole_label = hole.zfill(2) if hole.isdigit() else hole
-    egm_fname = f"{course} (Hole {hole_label}).egm"
+    hole_label = hole.zfill(HOLE_LABEL_WIDTH) if hole.isdigit() else hole
+    egm_fname = EGM_FILENAME_FMT.format(course=course, hole_label=hole_label)
     # Look for EGM in course EGMs/ folder first, then owner_inbox fallback
     egm_path = None
     if os.path.isdir(_EGM_BASE):
-        candidate = os.path.abspath(os.path.join(_EGM_BASE, course, "EGMs", egm_fname))
+        candidate = os.path.abspath(os.path.join(_EGM_BASE, course, COURSE_SUBDIR_EGMS, egm_fname))
         if os.path.exists(candidate):
             egm_path = candidate
     if egm_path is None:
-        _owner_inbox = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "owner_inbox"))
+        _owner_inbox = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", DIR_OWNER_INBOX))
         candidate = os.path.join(_owner_inbox, egm_fname)
         if os.path.exists(candidate):
             egm_path = candidate
     if egm_path is None:
         return jsonify({
             KEY_STATUS: STATUS_ERROR,
-            KEY_MSG: f"EGM file not found: {egm_fname}"
+            KEY_MSG: MSG_EGM_NOT_FOUND_FMT.format(name=egm_fname)
         }), HTTP_NOT_FOUND
 
     print(f"[generate_models] EGM path:        {egm_path}")
@@ -2138,7 +2136,7 @@ def generate_models():
         with open(egm_path) as _egm_fh:
             _egm_for_gps_check = _json.load(_egm_fh)
     except (OSError, ValueError) as _e:
-        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: f"Cannot read EGM: {_e}"}), HTTP_SERVER_ERROR
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: MSG_CANNOT_READ_EGM_FMT.format(err=_e)}), HTTP_SERVER_ERROR
 
     _gps_ok, _gps_err = _validate_gps_prereqs(_egm_for_gps_check)
     if not _gps_ok:
@@ -2170,21 +2168,21 @@ def generate_models():
         three_mf_name = os.path.basename(three_mf_path)
     else:
         # Fallback: old-style name without serial (file may not exist yet)
-        three_mf_name = f"{course} (Hole {hole_label}).3mf"
-        three_mf_dir = os.path.abspath(os.path.join(_EGM_BASE, course, "3MFs"))
+        three_mf_name = THREE_MF_FILENAME_FMT.format(course=course, hole_label=hole_label)
+        three_mf_dir = os.path.abspath(os.path.join(_EGM_BASE, course, COURSE_SUBDIR_3MFS))
         three_mf_path = os.path.join(three_mf_dir, three_mf_name)
         if not os.path.exists(three_mf_path):
             _owner_inbox = os.path.abspath(
-                os.path.join(os.path.dirname(__file__), "..", "owner_inbox")
+                os.path.join(os.path.dirname(__file__), "..", DIR_OWNER_INBOX)
             )
             three_mf_path = os.path.join(_owner_inbox, three_mf_name)
 
     print(f"[generate_models] output 3MF path: {os.path.abspath(three_mf_path)}")
 
     result = {
-        "name": three_mf_name,
-        "path": os.path.relpath(three_mf_path, os.path.dirname(__file__)),
-        "type": "3mf",
+        KEY_NAME: three_mf_name,
+        KEY_PATH: os.path.relpath(three_mf_path, os.path.dirname(__file__)),
+        KEY_TYPE: FILE_TYPE_3MF,
     }
 
     # ── Open in default slicer (macOS file-association) ──────────────────────
@@ -2197,9 +2195,9 @@ def generate_models():
         import subprocess
         try:
             proc = subprocess.run(
-                ["open", three_mf_path],
+                [SLICER_OPEN_COMMAND, three_mf_path],
                 capture_output=True,
-                timeout=10,
+                timeout=SLICER_OPEN_TIMEOUT_S,
             )
             if proc.returncode == 0:
                 slicer_opened = True
@@ -2208,23 +2206,19 @@ def generate_models():
                 stderr_text = (proc.stderr or b"").decode(errors="replace").strip()
                 slicer_error = (
                     stderr_text
-                    or f"`open` exited with code {proc.returncode}. "
-                    "Try opening the file manually in Finder."
+                    or MSG_SLICER_EXIT_FMT.format(code=proc.returncode)
                 )
         except subprocess.TimeoutExpired:
             slicer_opened = False
-            slicer_error  = (
-                "Timed out waiting for `open` to hand the file to the slicer. "
-                "Try opening it manually in Finder."
-            )
+            slicer_error  = MSG_SLICER_TIMEOUT
         except Exception as exc:
             slicer_opened = False
             slicer_error  = str(exc)
 
     import gradient_surface_diagnostic as _gsd
-    return jsonify({KEY_STATUS: STATUS_OK, "file": result,
-                    "slicer_opened": slicer_opened, "slicer_error": slicer_error,
-                    "warnings": list(_gsd.PIPELINE_WARNINGS)})
+    return jsonify({KEY_STATUS: STATUS_OK, KEY_FILE: result,
+                    KEY_SLICER_OPENED: slicer_opened, KEY_SLICER_ERROR: slicer_error,
+                    KEY_WARNINGS: list(_gsd.PIPELINE_WARNINGS)})
 
 
 # ── GPS Heightmap Preview ─────────────────────────────────────────────────────
@@ -2245,54 +2239,49 @@ def gps_heightmap_preview():
     import json as _json
     import io
 
-    gps_file = request.args.get("gps_file", "").strip()
-    bbox_raw = request.args.get("bbox", "").strip()
+    gps_file = request.args.get(QUERY_GPS_FILE, "").strip()
+    bbox_raw = request.args.get(QUERY_BBOX, "").strip()
 
     if not gps_file:
-        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: "gps_file param required"}), HTTP_BAD_REQUEST
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: MSG_GPS_FILE_REQUIRED}), HTTP_BAD_REQUEST
     if not bbox_raw:
-        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: "bbox param required"}), HTTP_BAD_REQUEST
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: MSG_BBOX_REQUIRED}), HTTP_BAD_REQUEST
 
     if not os.path.isfile(gps_file):
-        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: f"GPS file not found: {gps_file}"}), HTTP_NOT_FOUND
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: MSG_GPS_FILE_NOT_FOUND_FMT.format(path=gps_file)}), HTTP_NOT_FOUND
 
     try:
         bbox_dict = _json.loads(bbox_raw)
-        bbox = (
-            float(bbox_dict["lat_min"]),
-            float(bbox_dict["lng_min"]),
-            float(bbox_dict["lat_max"]),
-            float(bbox_dict["lng_max"]),
-        )
+        bbox = tuple(float(bbox_dict[k]) for k in BBOX_KEYS)
     except (KeyError, TypeError, ValueError) as e:
-        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: f"Invalid bbox JSON: {e}"}), HTTP_BAD_REQUEST
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: MSG_INVALID_BBOX_FMT.format(err=e)}), HTTP_BAD_REQUEST
 
     try:
-        approach_m = float(request.args.get("approach_m", 8.0))
+        approach_m = float(request.args.get(QUERY_APPROACH_M, GPS_PREVIEW_DEFAULT_APPROACH_M))
     except ValueError:
-        approach_m = 8.0
+        approach_m = GPS_PREVIEW_DEFAULT_APPROACH_M
     try:
-        grid_size = int(request.args.get("grid_size", 100))
+        grid_size = int(request.args.get(QUERY_GRID_SIZE, GPS_PREVIEW_DEFAULT_GRID_SIZE))
     except ValueError:
-        grid_size = 100
-    grid_size = max(50, min(300, grid_size))
+        grid_size = GPS_PREVIEW_DEFAULT_GRID_SIZE
+    grid_size = max(GPS_PREVIEW_GRID_MIN, min(GPS_PREVIEW_GRID_MAX, grid_size))
 
     # ── Cache check ────────────────────────────────────────────────────────────
     cache_key = _gps_preview_cache_key(gps_file, bbox_raw, approach_m, grid_size)
     cached = _gps_preview_cache_get(cache_key)
     if cached is not None:
-        return cached, 200, {"Content-Type": "image/png", "X-GPS-Preview-Cache": "hit"}
+        return cached, HTTP_OK, {HEADER_CONTENT_TYPE: CONTENT_TYPE_PNG, GPS_PREVIEW_CACHE_HEADER: GPS_PREVIEW_CACHE_HIT}
 
     # ── Build heightmap ────────────────────────────────────────────────────────
     try:
         from gps_heightmap import build_heightmap_from_gps
         import numpy as np
         import matplotlib
-        matplotlib.use("Agg")
+        matplotlib.use(GPS_PREVIEW_BACKEND)
         import matplotlib.pyplot as plt
         import matplotlib.colors as mcolors
     except ImportError as e:
-        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: f"Missing dependency: {e}"}), HTTP_SERVER_ERROR
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: MSG_MISSING_DEPENDENCY_FMT.format(err=e)}), HTTP_SERVER_ERROR
 
     try:
         result = build_heightmap_from_gps(
@@ -2301,14 +2290,14 @@ def gps_heightmap_preview():
             green_polygon_latlng=[],   # no green mask for preview — show full bbox
             approach_m=approach_m,
             grid_size=(grid_size, grid_size),
-            vert_exag=1.0,             # no exaggeration in preview
+            vert_exag=GPS_PREVIEW_VERT_EXAG,   # no exaggeration in preview
         )
     except Exception as exc:
-        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: f"GPS heightmap error: {exc}"}), HTTP_SERVER_ERROR
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: MSG_GPS_HEIGHTMAP_ERROR_FMT.format(err=exc)}), HTTP_SERVER_ERROR
 
     # ── Render to PNG ──────────────────────────────────────────────────────────
     try:
-        fig, ax = plt.subplots(figsize=(3, 3), dpi=100)
+        fig, ax = plt.subplots(figsize=GPS_PREVIEW_FIGSIZE, dpi=GPS_PREVIEW_DPI)
         h = result.heights_mm.copy()
         # Replace NaN with min for display (NaN appears outside mask)
         h_min = float(np.nanmin(h)) if np.any(~np.isnan(h)) else 0.0
@@ -2316,22 +2305,22 @@ def gps_heightmap_preview():
         im = ax.imshow(
             h_display,
             origin="lower",
-            cmap="terrain",
+            cmap=GPS_PREVIEW_CMAP,
             aspect="equal",
         )
-        ax.set_title(f"{result.raw_points_used} GPS pts", fontsize=8)
+        ax.set_title(f"{result.raw_points_used} GPS pts", fontsize=GPS_PREVIEW_TITLE_FONTSIZE)
         ax.axis("off")
-        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="mm")
-        fig.tight_layout(pad=0.5)
+        fig.colorbar(im, ax=ax, **GPS_PREVIEW_COLORBAR)
+        fig.tight_layout(pad=GPS_PREVIEW_TIGHT_PAD)
         buf = io.BytesIO()
-        fig.savefig(buf, format="png", dpi=100)
+        fig.savefig(buf, format="png", dpi=GPS_PREVIEW_DPI)
         plt.close(fig)
         png_bytes = buf.getvalue()
     except Exception as exc:
-        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: f"Render error: {exc}"}), HTTP_SERVER_ERROR
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: MSG_RENDER_ERROR_FMT.format(err=exc)}), HTTP_SERVER_ERROR
 
     _gps_preview_cache_set(cache_key, png_bytes)
-    return png_bytes, 200, {"Content-Type": "image/png", "X-GPS-Preview-Cache": "miss"}
+    return png_bytes, HTTP_OK, {HEADER_CONTENT_TYPE: CONTENT_TYPE_PNG, GPS_PREVIEW_CACHE_HEADER: GPS_PREVIEW_CACHE_MISS}
 
 
 @app.route(ROUTE_API_GPS_FILES)
@@ -2344,29 +2333,29 @@ def list_gps_files():
 
     Returns {KEY_STATUS: STATUS_OK, "files": [{"name": ..., "path": ...}, ...]}
     """
-    course = request.args.get("course", "").strip()
+    course = request.args.get(QUERY_COURSE, "").strip()
     files = []
     if course and os.path.isdir(_EGM_BASE):
         course_dir = os.path.join(_EGM_BASE, course)
         if os.path.isdir(course_dir):
             for fname in sorted(os.listdir(course_dir), key=str.casefold):
-                if fname.lower().endswith(".gps"):
+                if fname.lower().endswith(EXT_GPS):
                     files.append({
-                        "name": fname,
-                        "path": os.path.abspath(os.path.join(course_dir, fname)),
+                        KEY_NAME: fname,
+                        KEY_PATH: os.path.abspath(os.path.join(course_dir, fname)),
                     })
     # Also scan repo root ItWentIn/ for .gps files (legacy / Stracka exports)
-    it_went_in = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "ItWentIn"))
+    it_went_in = _GOLF_COURSES_PARENT
     if os.path.isdir(it_went_in):
         for fname in sorted(os.listdir(it_went_in), key=str.casefold):
-            if fname.lower().endswith(".gps") or fname.lower().endswith(".txt"):
+            if fname.lower().endswith(EXT_GPS) or fname.lower().endswith(EXT_TXT):
                 # Only include if it looks like GPS data (contains "stracka" or "gps")
                 lower = fname.lower()
-                if "gps" in lower or "stracka" in lower:
+                if any(hint in lower for hint in GPS_NAME_HINTS):
                     abs_path = os.path.abspath(os.path.join(it_went_in, fname))
-                    if not any(f["path"] == abs_path for f in files):
-                        files.append({"name": fname, "path": abs_path})
-    return jsonify({KEY_STATUS: STATUS_OK, "files": files})
+                    if not any(f[KEY_PATH] == abs_path for f in files):
+                        files.append({KEY_NAME: fname, KEY_PATH: abs_path})
+    return jsonify({KEY_STATUS: STATUS_OK, KEY_FILES: files})
 
 
 # ── Arrow Diagnostic ─────────────────────────────────────────────────────────
@@ -2455,7 +2444,7 @@ def diagnostic_arrows():
 
         # ── Build green boundary polygon ─────────────────────────────────────
         green_boundary_px = _np.array(
-            [[p["x"], p["y"]] for p in green_points], dtype=_np.float64
+            [[p[KEY_X], p[KEY_Y]] for p in green_points], dtype=_np.float64
         )
 
         # ── Build water boundary polygons (for false-positive filtering) ─────
@@ -2926,7 +2915,7 @@ def api_fonts():
 
 
 def _slug_from_lines(line1: str, line2: str) -> str:
-    return re.sub(r'[^\w\- ]+', '', (line1 or line2)).strip().replace(' ', '_') or 'custom_plate'
+    return re.sub(PLATE_SLUG_STRIP_RE, '', (line1 or line2)).strip().replace(' ', '_') or PLATE_DEFAULT_SLUG
 
 
 def _normalize_course_key(s: str) -> str:
@@ -2991,9 +2980,9 @@ def _smtp_config():
         name for name, val in [("SMTP_HOST", smtp_host), ("SMTP_USER", smtp_user), ("SMTP_PASS", smtp_pass)]
         if not val
     ]
-    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+    smtp_port = int(os.environ.get("SMTP_PORT", SMTP_DEFAULT_PORT))
     smtp_from = os.environ.get("SMTP_FROM", smtp_user).strip() or smtp_user
-    smtp_to   = os.environ.get("SMTP_TO", "quadrabyte@pm.me").strip()
+    smtp_to   = os.environ.get("SMTP_TO", SMTP_DEFAULT_TO).strip()
     return smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from, smtp_to, missing_vars
 
 
@@ -3032,7 +3021,7 @@ def api_generate_plate():
         with tempfile.NamedTemporaryFile(suffix=".3mf", delete=False) as tf:
             tmp_path = tf.name
         generate_plate_3mf(line1, line2, line3, tmp_path,
-                           font_family="Helvetica", bold=False, italic=False)
+                           font_family=PLATE_FONT_FAMILY, bold=PLATE_BOLD, italic=PLATE_ITALIC)
         with open(tmp_path, "rb") as fh:
             attachment_bytes = fh.read()
     except Exception as exc:
@@ -3047,7 +3036,7 @@ def api_generate_plate():
     # ── Write local file when: SMTP is off, OR open_in_slicer requested ──────
     stable_path = None
     if (not email_mode) or open_in_slicer:
-        stable_path = os.path.expanduser(f"~/Downloads/{attachment_name}")
+        stable_path = os.path.expanduser(PLATE_DOWNLOADS_FMT.format(name=attachment_name))
         with open(stable_path, "wb") as fh:
             fh.write(attachment_bytes)
 
@@ -3072,7 +3061,7 @@ def api_generate_plate():
 
         # ── Send via STARTTLS ─────────────────────────────────────────────────
         try:
-            with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=SMTP_TIMEOUT_S) as server:
                 server.ehlo()
                 server.starttls()
                 server.ehlo()
@@ -3171,4 +3160,4 @@ if __name__ == "__main__":
     # debug=False avoids Werkzeug's DebuggedApplication wrapper, which creates a
     # multiprocessing.Value POSIX semaphore that leaked after ~16h and deadlocked
     # the worker on _PySemaphore_Wait (see owner_inbox/dashboard_deadlock_rca_2026-10-13.md).
-    app.run(debug=False, host="0.0.0.0", port=5051, use_reloader=True)
+    app.run(debug=False, host=SERVER_HOST, port=SERVER_PORT, use_reloader=SERVER_USE_RELOADER)

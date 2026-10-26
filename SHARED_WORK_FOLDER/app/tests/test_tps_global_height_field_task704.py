@@ -152,7 +152,7 @@ class TestCellCentresInMM:
     def test_cell_0_0_centre(self):
         """TG2: cell (row=0, col=0) centre at (0.5*cell_w, 0.5*cell_h) mm."""
         gsd = _load_gsd()
-        half = gsd.PRINT_SIZE_MM / 2.0 + gsd.FRINGE_XY_EXPANSION_MM / 2.0
+        half = gsd.FRINGE_HALF_MM
         frame_w = 2.0 * half
         frame_h = 2.0 * half
         cell_w = frame_w / 20.0
@@ -170,7 +170,7 @@ class TestCellCentresInMM:
     def test_cell_19_19_centre(self):
         """TG2: cell (row=19, col=19) centre at (19.5*cell_w, 19.5*cell_h) from lower-left."""
         gsd = _load_gsd()
-        half = gsd.PRINT_SIZE_MM / 2.0 + gsd.FRINGE_XY_EXPANSION_MM / 2.0
+        half = gsd.FRINGE_HALF_MM
         frame_w = 2.0 * half
         cell_w = frame_w / 20.0
 
@@ -186,7 +186,7 @@ class TestCellCentresInMM:
     def test_400_cell_centres_cover_full_frame(self):
         """TG2: all 400 cell centres tile the frame without overlap or gaps."""
         gsd = _load_gsd()
-        half = gsd.PRINT_SIZE_MM / 2.0 + gsd.FRINGE_XY_EXPANSION_MM / 2.0
+        half = gsd.FRINGE_HALF_MM
         frame_side = 2.0 * half
         cell_w = frame_side / 20.0
         cell_h = frame_side / 20.0
@@ -324,7 +324,7 @@ class TestSingleCellOverride:
             "400-cell TPS surface builder for testing"
         )
 
-        half = gsd.PRINT_SIZE_MM / 2.0 + gsd.FRINGE_XY_EXPANSION_MM / 2.0
+        half = gsd.FRINGE_HALF_MM
         cell_side = 2.0 * half / 20.0
         # Cell 210: row=10, col=10 → centre at (-half + 10.5*cell_side, -half + 10.5*cell_side)
         cell_cx = -half + 10.5 * cell_side
@@ -393,7 +393,7 @@ class TestBlockCellsFlat:
         green_bnd_px = gsd.interpolate_catmull_rom(egm["polygons"][0]["points"])
         green_bnd_mm = gsd._px_to_mm_2d(green_bnd_px.copy(), scale, centroid_px)
 
-        half = gsd.PRINT_SIZE_MM / 2.0 + gsd.FRINGE_XY_EXPANSION_MM / 2.0
+        half = gsd.FRINGE_HALF_MM
         grid_res = 60
         GX, GY = np.meshgrid(
             np.linspace(-half, half, grid_res),
@@ -452,7 +452,7 @@ class TestCellBoundarySmooth:
         green_bnd_px = gsd.interpolate_catmull_rom(egm["polygons"][0]["points"])
         green_bnd_mm = gsd._px_to_mm_2d(green_bnd_px.copy(), scale, centroid_px)
 
-        half = gsd.PRINT_SIZE_MM / 2.0 + gsd.FRINGE_XY_EXPANSION_MM / 2.0
+        half = gsd.FRINGE_HALF_MM
         cell_side = 2.0 * half / 20.0
 
         # Dense 1D sample through cell 210 centre along x-axis
@@ -620,7 +620,7 @@ class TestTpsGridHelperExists:
         green_bnd_px = gsd.interpolate_catmull_rom(egm["polygons"][0]["points"])
         green_bnd_mm = gsd._px_to_mm_2d(green_bnd_px.copy(), scale, centroid_px)
 
-        half = gsd.PRINT_SIZE_MM / 2.0 + gsd.FRINGE_XY_EXPANSION_MM / 2.0
+        half = gsd.FRINGE_HALF_MM
         GX, GY = np.meshgrid(
             np.linspace(-half, half, 20),
             np.linspace(-half, half, 20),
