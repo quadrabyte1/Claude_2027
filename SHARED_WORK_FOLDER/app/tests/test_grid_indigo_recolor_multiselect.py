@@ -42,6 +42,13 @@ import pytest
 # ---------------------------------------------------------------------------
 APP_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(APP_DIR))
+sys.path.insert(0, str(Path(__file__).parent))
+import editor_constants as C
+
+
+def _const(name):
+    return str(C.value(name))
+
 
 EDITOR_HTML = APP_DIR / "templates" / "editor.html"
 APP_PY = APP_DIR / "app.py"
@@ -123,7 +130,8 @@ class TestGridLineIsIndigo:
     def test_grid_stroke_is_indigo(self):
         html = _html()
         section = _draw_grid_section(html)
-        assert re.search(r'rgba\s*\(\s*99\s*,\s*102\s*,\s*241', section), (
+        assert "COLOR_GRID_LINE" in section
+        assert re.search(r'rgba\s*\(\s*99\s*,\s*102\s*,\s*241', _const("COLOR_GRID_LINE")), (
             "Grid line strokeStyle does not use rgba(99,102,241,...) — "
             "expected indigo recolor (task 726)"
         )
@@ -170,7 +178,7 @@ class TestGridMultiSelectInit:
         html = _html()
         start = html.find("clearEditorState()")
         assert start != -1, "clearEditorState() not found"
-        body = html[start: start + 2000]
+        body = html[start: start + 3000]  # window widened: named constants lengthen the source
         assert "_gridMultiSelect" in body, (
             "_gridMultiSelect not initialised in clearEditorState() — "
             "state leaks across project loads"

@@ -385,7 +385,7 @@ class TestClearEditorStateResetsGrid:
         html = _html()
         clear_start = html.find("    clearEditorState()")
         assert clear_start != -1, "clearEditorState() not found"
-        clear_body = html[clear_start:clear_start + 2000]
+        clear_body = html[clear_start:clear_start + 3000]  # window widened: named constants lengthen the source
         assert re.search(r'gridCellHeights\s*=\s*\{\}', clear_body), (
             "clearEditorState() does not reset gridCellHeights to {}"
         )

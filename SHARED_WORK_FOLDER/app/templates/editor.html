@@ -1,8 +1,21 @@
 {% extends "base.html" %}
-{# Boundary Editor v5.69 — Create New Project: the heat-map PNG's baked-in background grid is erased for display (server-side heatmap_degrid.py; cleaned copy saved next to the original, original untouched) with an Original/Degridded view toggle; boundary detection still runs on the original; Open Project is unaffected. v5.68 — Grid resolution switch (20x20 default / 40x40) next to the Grid mode switch; confirm dialog then erases all cell values; saved as EGM `gridResolution` (absent = 20); drawing, hit-testing, overlays and the server TPS/controlling-cell code honour it. v5.21 — Default tee-hole position moved to (40, 40) mm (was 30, 30); saved positions untouched. v5.20 — Grid cell value labels are plain black (delta) with no white outline; absolute keeps orange. v5.19 — Ctrl+Option(Alt)+drag selects cells along the drag path (visit order); popup has first/last boxes, Tab/Enter from the last box spreads first->last linearly (0.1 mm precision). v5.18 — Grid cell value labels/tooltip no longer show a leading '+' on positives (negatives keep '-'). v5.17 — Geo-ref setup dialog removed (orphaned after the GPS panel ⚙ opener was removed); courseGeoRef data still loads/saves untouched. v5.16 — GPS controls removed from the UI (JS state/load/save kept so any EGM gpsBackend block still round-trips). v5.15 — Mouse wheel steps the open grid value box (0.1 mm, Shift = 1.0; no clamp; commit still Enter/Tab). v5.14 — Grid cells colored by value (matplotlib 'terrain', auto-scaled; view-only toggle in localStorage). v5.13 — Only cells FULLY inside a bunker can control it (partial cells ignored). v5.12 — Ring now in delta AND absolute (not off); delta = default + highest cell (was mean). v5.11 — Absolute mode: red ring around the grid cell(s) that control each trap's height (server-computed, mirrors generator). v5.10 — Grid value 0 = empty cell (deleted on commit, dropped on load). Grid lines recolored to indigo; Cmd+drag multi-cell selection with shared-value edit (task 726) #}
+{# Boundary Editor v5.70 — Named-constants refactor (CLAUDE.md Coding Standard), no behavior change: every tunable, color, size, threshold, API URL, storage key, mode name and repeated UI string now lives in one EDITOR CONSTANTS block at the top of the script (CSS custom properties for markup-only values); tests read the constants via tests/editor_constants.py. v5.69 — Create New Project: the heat-map PNG's baked-in background grid is erased for display (server-side heatmap_degrid.py; cleaned copy saved next to the original, original untouched) with an Original/Degridded view toggle; boundary detection still runs on the original; Open Project is unaffected. v5.68 — Grid resolution switch (20x20 default / 40x40) next to the Grid mode switch; confirm dialog then erases all cell values; saved as EGM `gridResolution` (absent = 20); drawing, hit-testing, overlays and the server TPS/controlling-cell code honour it. v5.21 — Default tee-hole position moved to (40, 40) mm (was 30, 30); saved positions untouched. v5.20 — Grid cell value labels are plain black (delta) with no white outline; absolute keeps orange. v5.19 — Ctrl+Option(Alt)+drag selects cells along the drag path (visit order); popup has first/last boxes, Tab/Enter from the last box spreads first->last linearly (0.1 mm precision). v5.18 — Grid cell value labels/tooltip no longer show a leading '+' on positives (negatives keep '-'). v5.17 — Geo-ref setup dialog removed (orphaned after the GPS panel ⚙ opener was removed); courseGeoRef data still loads/saves untouched. v5.16 — GPS controls removed from the UI (JS state/load/save kept so any EGM gpsBackend block still round-trips). v5.15 — Mouse wheel steps the open grid value box (0.1 mm, Shift = 1.0; no clamp; commit still Enter/Tab). v5.14 — Grid cells colored by value (matplotlib 'terrain', auto-scaled; view-only toggle in localStorage). v5.13 — Only cells FULLY inside a bunker can control it (partial cells ignored). v5.12 — Ring now in delta AND absolute (not off); delta = default + highest cell (was mean). v5.11 — Absolute mode: red ring around the grid cell(s) that control each trap's height (server-computed, mirrors generator). v5.10 — Grid value 0 = empty cell (deleted on commit, dropped on load). Grid lines recolored to indigo; Cmd+drag multi-cell selection with shared-value edit (task 726) #}
 {% block title %}Boundary Editor — AI Team Workspace{% endblock %}
 {% block content_width %}max-w-6xl{% endblock %}
 {% block content %}
+
+{# v5.70 — markup-only values (colors / z-index / min sizes) as CSS custom properties; JS-side values live in the EDITOR CONSTANTS block in the script below. #}
+<style>
+  :root {
+    --editor-z-modal: 9999;
+    --editor-z-teehole: 22;
+    --editor-z-grid-overlay: 30;
+    --editor-z-grid-popup: 31;
+    --editor-canvas-min-height: 400px;
+    --editor-teehole-color: #D94F1F;
+    --editor-teehole-fill: rgba(255,255,255,0.55);
+  }
+</style>
 
 <div x-data="polygonEditor()" x-init="init()" class="space-y-4 pb-16" @keydown.window="handleKey($event)">
 
@@ -57,7 +70,7 @@
            title="Elevation increment between contour bands when Green style = Terraced. Smaller values give finer stepping.">
         <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Contour step (mm)</label>
         <input type="number" x-model.number="contourStep" @change="autoSave()"
-               step="0.1" min="0.1"
+               :step="FIELD_LIMITS.contourStep.step" :min="FIELD_LIMITS.contourStep.min"
                class="text-sm border border-notion-border rounded-md px-2.5 py-1.5 bg-white w-full focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent">
       </div>
 
@@ -66,7 +79,7 @@
            title="Height of the grass-texture bumps on the green surface. 0 = flat (no grass texture).">
         <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Grass amplitude (mm)</label>
         <input type="number" x-model.number="grassAmplitude" @change="autoSave()"
-               step="0.1" min="0"
+               :step="FIELD_LIMITS.grassAmplitude.step" :min="FIELD_LIMITS.grassAmplitude.min"
                class="text-sm border border-notion-border rounded-md px-2.5 py-1.5 bg-white w-full focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent">
       </div>
 
@@ -75,7 +88,7 @@
            title="Center-to-center distance between grass bumps on the green. Smaller = denser texture.">
         <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Grass spacing (mm)</label>
         <input type="number" x-model.number="grassSpacing" @change="autoSave()"
-               step="0.1" min="0.5"
+               :step="FIELD_LIMITS.grassSpacing.step" :min="FIELD_LIMITS.grassSpacing.min"
                class="text-sm border border-notion-border rounded-md px-2.5 py-1.5 bg-white w-full focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent">
       </div>
 
@@ -84,7 +97,7 @@
            title="Total Z variation across the green (highest point minus lowest point).">
         <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Elevation range (mm)</label>
         <input type="number" x-model.number="elevationRange" @change="autoSave()"
-               step="0.1" min="0.1"
+               :step="FIELD_LIMITS.elevationRange.step" :min="FIELD_LIMITS.elevationRange.min"
                class="text-sm border border-notion-border rounded-md px-2.5 py-1.5 bg-white w-full focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent">
       </div>
 
@@ -93,16 +106,16 @@
            title="Vertical amplitude multiplier applied to green and fringe relief above the base plate. 1.0 = no change (default), 1.5 = 50% taller, 2.0 = twice as tall. Does not affect the base plate thickness or XY dimensions.">
         <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Z scale ×</label>
         <input type="number" x-model.number="zScale" @change="autoSave()"
-               step="0.1" min="0.5" max="5.0"
+               :step="FIELD_LIMITS.zScale.step" :min="FIELD_LIMITS.zScale.min" :max="FIELD_LIMITS.zScale.max"
                class="text-sm border border-notion-border rounded-md px-2.5 py-1.5 bg-white w-full focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent">
       </div>
 
       {# Green scale — XY-only multiplier applied to the green polygon (1.0065 = default, ~0.65% larger) #}
       <div class="flex flex-col gap-1 min-w-[120px]"
-           title="XY-only multiplier applied to the green polygon around its center (default 1.0065 = ~0.65% larger; 1.0 = no change; 1.05 = 5% larger). Fringe, traps, water, and boulders are unaffected.">
+           :title="'XY-only multiplier applied to the green polygon around its center (default ' + DEFAULT_GREEN_SCALE + ' = ~0.65% larger; 1.0 = no change; 1.05 = 5% larger). Fringe, traps, water, and boulders are unaffected.'">
         <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Green scale</label>
         <input type="number" x-model.number="greenScale" @change="autoSave()"
-               step="0.001" min="0.5"
+               :step="FIELD_LIMITS.greenScale.step" :min="FIELD_LIMITS.greenScale.min"
                class="text-sm border border-notion-border rounded-md px-2.5 py-1.5 bg-white w-full focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent">
       </div>
 
@@ -111,7 +124,7 @@
            title="Height of the fringe's outer wall around the printed piece.">
         <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Fringe edge height (mm)</label>
         <input type="number" x-model.number="fringeEdgeHeight" @change="autoSave()"
-               step="0.5" min="0.5"
+               :step="FIELD_LIMITS.fringeEdgeHeight.step" :min="FIELD_LIMITS.fringeEdgeHeight.min"
                class="text-sm border border-notion-border rounded-md px-2.5 py-1.5 bg-white w-full focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent">
       </div>
 
@@ -120,7 +133,7 @@
            title="Thickness of the flat filament base slab that sits under the surface topology.">
         <label class="text-xs font-medium text-notion-muted uppercase tracking-wide">Base thickness (mm)</label>
         <input type="number" x-model.number="baseThicknessMm" @change="autoSave()"
-               step="0.1" min="0.1"
+               :step="FIELD_LIMITS.baseThicknessMm.step" :min="FIELD_LIMITS.baseThicknessMm.min"
                class="text-sm border border-notion-border rounded-md px-2.5 py-1.5 bg-white w-full focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent">
       </div>
 
@@ -174,14 +187,14 @@
           <div class="flex flex-col gap-0.5 min-w-[110px]">
             <label class="text-xs text-notion-muted">X offset (mm)</label>
             <input type="number" x-model.number="flagOffsetXMm" @change="autoSave()"
-                   step="0.5"
+                   :step="FIELD_LIMITS.flagOffset.step"
                    title="Horizontal flag offset (mm). Positive = right, negative = left."
                    class="text-sm border border-notion-border rounded-md px-2.5 py-1.5 bg-white w-full focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent">
           </div>
           <div class="flex flex-col gap-0.5 min-w-[110px]">
             <label class="text-xs text-notion-muted">Y offset (mm)</label>
             <input type="number" x-model.number="flagOffsetYMm" @change="autoSave()"
-                   step="0.5"
+                   :step="FIELD_LIMITS.flagOffset.step"
                    title="Vertical flag offset (mm). Positive = up, negative = down."
                    class="text-sm border border-notion-border rounded-md px-2.5 py-1.5 bg-white w-full focus:outline-none focus:ring-2 focus:ring-notion-accent/30 focus:border-notion-accent">
           </div>
@@ -193,7 +206,7 @@
 
   {# ── New Project dialog ────────────────────────────────── #}
   <div x-show="showNewDialog" x-cloak
-       class="fixed inset-0 flex items-center justify-center" style="z-index:9999" @keydown.escape.window="showNewDialog = false">
+       class="fixed inset-0 flex items-center justify-center" style="z-index:var(--editor-z-modal)" @keydown.escape.window="showNewDialog = false">
       <div class="absolute inset-0 bg-black/30" @click="showNewDialog = false"></div>
       <div class="relative bg-white rounded-xl shadow-xl border border-notion-border p-6 w-full max-w-md space-y-5">
 
@@ -317,7 +330,7 @@
 
   {# ── Open Project dialog ───────────────────────────────── #}
   <div x-show="showOpenDialog" x-cloak
-       class="fixed inset-0 flex items-center justify-center" style="z-index:9999" @keydown.escape.window="showOpenDialog = false">
+       class="fixed inset-0 flex items-center justify-center" style="z-index:var(--editor-z-modal)" @keydown.escape.window="showOpenDialog = false">
     <div class="absolute inset-0 bg-black/30" @click="showOpenDialog = false"></div>
     <div class="relative bg-white rounded-xl shadow-xl border border-notion-border p-6 w-full max-w-md space-y-5">
       <h2 class="text-lg font-semibold text-notion-text">Open Project</h2>
@@ -347,7 +360,7 @@
   {# /open dialog #}
 
   {# ── Canvas ─────────────────────────────────────────────── #}
-  <div class="border border-notion-border rounded-lg overflow-hidden bg-gray-100 relative" style="min-height:400px;">
+  <div class="border border-notion-border rounded-lg overflow-hidden bg-gray-100 relative" style="min-height:var(--editor-canvas-min-height);">
     <canvas x-ref="canvas"
             @mousedown="onMouseDown($event)"
             @mousemove="onMouseMove($event)"
@@ -368,17 +381,17 @@
        computed from mm on the fly (see teeHoleImgPx()). #}
     <template x-if="teeHole && imgLoaded">
       <div class="absolute select-grab active:cursor-grabbing"
-           :style="(() => { const p = teeHoleImgPx(); const sz = (TEE_HOLE_MARKER_MM * (imgW && printSizeMm ? Math.max(imgW, imgH) / printSizeMm : 1)) * scale; return `left:${p.x * scale + offsetX}px; top:${p.y * scale + offsetY}px; width:${sz}px; height:${sz}px; transform:translate(-50%,-50%); z-index:22;`; })()"
+           :style="(() => { const p = teeHoleImgPx(); const sz = (TEE_HOLE_MARKER_MM * (imgW && printSizeMm ? Math.max(imgW, imgH) / printSizeMm : 1)) * scale; return `left:${p.x * scale + offsetX}px; top:${p.y * scale + offsetY}px; width:${sz}px; height:${sz}px; transform:translate(-50%,-50%); z-index:var(--editor-z-teehole);`; })()"
            @pointerdown="teeHolePointerDown($event)"
            title="Tee hole — drag to reposition. Stored in mm from print top-left.">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
              style="width:100%; height:100%; display:block; cursor:grab; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.35));">
-          <circle cx="12" cy="12" r="10" fill="rgba(255,255,255,0.55)" stroke="#D94F1F" stroke-width="2"/>
-          <line x1="12" y1="2"  x2="12" y2="8"  stroke="#D94F1F" stroke-width="1.75" stroke-linecap="round"/>
-          <line x1="12" y1="16" x2="12" y2="22" stroke="#D94F1F" stroke-width="1.75" stroke-linecap="round"/>
-          <line x1="2"  y1="12" x2="8"  y2="12" stroke="#D94F1F" stroke-width="1.75" stroke-linecap="round"/>
-          <line x1="16" y1="12" x2="22" y2="12" stroke="#D94F1F" stroke-width="1.75" stroke-linecap="round"/>
-          <circle cx="12" cy="12" r="1.6" fill="#D94F1F"/>
+          <circle cx="12" cy="12" r="10" style="fill:var(--editor-teehole-fill); stroke:var(--editor-teehole-color)" stroke-width="2"/>
+          <line x1="12" y1="2"  x2="12" y2="8"  style="stroke:var(--editor-teehole-color)" stroke-width="1.75" stroke-linecap="round"/>
+          <line x1="12" y1="16" x2="12" y2="22" style="stroke:var(--editor-teehole-color)" stroke-width="1.75" stroke-linecap="round"/>
+          <line x1="2"  y1="12" x2="8"  y2="12" style="stroke:var(--editor-teehole-color)" stroke-width="1.75" stroke-linecap="round"/>
+          <line x1="16" y1="12" x2="22" y2="12" style="stroke:var(--editor-teehole-color)" stroke-width="1.75" stroke-linecap="round"/>
+          <circle cx="12" cy="12" r="1.6" style="fill:var(--editor-teehole-color)"/>
         </svg>
       </div>
     </template>
@@ -389,20 +402,20 @@
        the cell's canvas position computed in _gridCellCanvasPx(). #}
     <template x-if="_gridActiveCell !== null && !_gridRampMode">
       <div class="absolute pointer-events-none"
-           :style="`left:0;top:0;width:100%;height:100%;z-index:30;`">
+           :style="`left:0;top:0;width:100%;height:100%;z-index:var(--editor-z-grid-overlay);`">
         <div class="absolute pointer-events-auto"
              :style="`left:${_gridActiveCell.canvasPx.x}px;
                       top:${_gridActiveCell.canvasPx.y}px;
-                      width:${Math.max(80, _gridActiveCell.canvasPx.w)}px;
+                      width:${Math.max(GRID_INPUT_MIN_WIDTH_PX, _gridActiveCell.canvasPx.w)}px;
                       transform: translateY(-100%);
-                      z-index:31;`">
+                      z-index:var(--editor-z-grid-popup);`">
           <input
             x-ref="gridCellInput"
             type="number"
-            style="min-width:80px;"
-            :min="gridMode === 'absolute' ? 0 : -20"
-            :max="gridMode === 'absolute' ? 30 : 20"
-            step="any"
+            :style="'min-width:' + GRID_INPUT_MIN_WIDTH_PX + 'px;'"
+            :min="gridValueLimits(gridMode).min"
+            :max="gridValueLimits(gridMode).max"
+            :step="GRID_INPUT_STEP"
             x-model="_gridInputValue"
             @wheel.prevent="gridWheel($event)"
             @keydown.enter.prevent="commitGridCell()"
@@ -412,9 +425,9 @@
             @blur="commitGridCell()"
             autofocus
             class="w-full text-xs font-mono text-center rounded bg-white shadow-md px-2 py-0.5 focus:outline-none focus:ring-1"
-            :class="gridMode === 'absolute' ? 'border border-orange-400 focus:ring-orange-500' : 'border border-indigo-400 focus:ring-indigo-500'"
-            placeholder="mm (wheel: 0.1, Shift: 1)"
-            :title="gridMode === 'absolute' ? 'Enter absolute fringe height in mm (0 to 30). Mouse wheel: +/-0.1 mm per notch (Shift: 1.0). Enter to commit, Esc to cancel, Delete to clear.' : 'Enter offset from algorithm in mm (±20). Mouse wheel: +/-0.1 mm per notch (Shift: 1.0). Enter to commit, Esc to cancel, Delete to clear.'"
+            :class="gridMode === GRID_MODE_ABSOLUTE ? 'border border-orange-400 focus:ring-orange-500' : 'border border-indigo-400 focus:ring-indigo-500'"
+            :placeholder="GRID_INPUT_PLACEHOLDER"
+            :title="gridMode === GRID_MODE_ABSOLUTE ? GRID_TIP_INPUT_ABSOLUTE : GRID_TIP_INPUT_DELTA"
           />
         </div>
       </div>
@@ -423,19 +436,19 @@
     {# ── Ctrl+Option ramp popup (v5.19): first / last value boxes.  Tab or Enter out of
        the second box applies the linear ramp; Esc cancels.  Cells are in drag (visit) order. #}
     <template x-if="_gridActiveCell !== null && _gridRampMode">
-      <div class="absolute pointer-events-none" style="left:0;top:0;width:100%;height:100%;z-index:30;">
+      <div class="absolute pointer-events-none" style="left:0;top:0;width:100%;height:100%;z-index:var(--editor-z-grid-overlay);">
         <div class="absolute pointer-events-auto flex items-center gap-1"
              data-testid="grid-ramp-popup"
              @focusout="gridRampFocusOut($event)"
-             :style="`left:${_gridActiveCell.canvasPx.x}px; top:${_gridActiveCell.canvasPx.y}px; transform: translateY(-100%); z-index:31;`">
-          <input x-ref="gridRampFirst" type="number" step="any" style="width:80px;"
+             :style="`left:${_gridActiveCell.canvasPx.x}px; top:${_gridActiveCell.canvasPx.y}px; transform: translateY(-100%); z-index:var(--editor-z-grid-popup);`">
+          <input x-ref="gridRampFirst" type="number" :step="GRID_INPUT_STEP" :style="'width:' + GRID_INPUT_MIN_WIDTH_PX + 'px;'"
                  x-model="_gridRampFirst" placeholder="first"
                  @keydown.escape.prevent="cancelGridRamp()"
                  @keydown.enter.prevent="$refs.gridRampLast.focus()"
                  title="First value (drag start cell). Tab to the last value; Ctrl+Option+drag ramp."
                  class="text-xs font-mono text-center rounded bg-white shadow-md px-2 py-0.5 border border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-500">
           <span class="text-xs text-gray-500">&rarr;</span>
-          <input x-ref="gridRampLast" type="number" step="any" style="width:80px;"
+          <input x-ref="gridRampLast" type="number" :step="GRID_INPUT_STEP" :style="'width:' + GRID_INPUT_MIN_WIDTH_PX + 'px;'"
                  x-model="_gridRampLast" placeholder="last"
                  @keydown.tab.prevent="commitGridRamp()"
                  @keydown.enter.prevent="commitGridRamp()"
@@ -450,12 +463,12 @@
        Floats above the canvas near a set-cell dot when the mouse hovers over it.
        Hidden while the cell input is open (_gridActiveCell is set).
        Positioned at the dot's canvas coordinates; shifts up+right via transform. #}
-    <div x-show="_gridHoveredCell !== null && _gridActiveCell === null && gridMode !== 'off'"
+    <div x-show="_gridHoveredCell !== null && _gridActiveCell === null && gridMode !== GRID_MODE_OFF"
          x-cloak
          class="absolute pointer-events-none z-40 px-2 py-0.5 rounded text-white text-xs font-mono shadow-lg whitespace-nowrap"
-         :class="gridMode === 'absolute' ? 'bg-orange-600' : 'bg-gray-800'"
+         :class="gridMode === GRID_MODE_ABSOLUTE ? 'bg-orange-600' : 'bg-gray-800'"
          :style="_gridHoveredCell ? `left:${_gridHoveredCell.canvasPx.x + _gridHoveredCell.canvasPx.w * 0.5}px; top:${_gridHoveredCell.canvasPx.y}px; transform:translate(-50%, -110%);` : ''"
-         x-text="_gridHoveredCell ? (gridMode === 'absolute' ? (gridCellHeights[_gridHoveredCell.idx] + ' mm absolute') : (gridCellHeights[_gridHoveredCell.idx] + ' mm offset')) : ''">
+         x-text="_gridHoveredCell ? (gridCellHeights[_gridHoveredCell.idx] + (gridMode === GRID_MODE_ABSOLUTE ? GRID_HOVER_SUFFIX_ABSOLUTE : GRID_HOVER_SUFFIX_DELTA)) : ''">
     </div>
   </div>
 
@@ -465,7 +478,7 @@
             :disabled="!(polygons.length > 0 && courseName && holeName) || generating"
             :class="(polygons.length > 0 && courseName && holeName) && !generating ? 'bg-teal-600 hover:bg-teal-700' : 'bg-teal-600/40 cursor-not-allowed'"
             class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md text-white transition-default"
-            title="Run the render pipeline for this hole and produce a 3MF (and STL) output file. Typically takes 1–3 minutes.">
+            :title="'Run the render pipeline for this hole and produce a 3MF (and STL) output file. Typically takes ' + GENERATE_ETA_TEXT + '.'">
       <svg x-show="generating" xmlns="http://www.w3.org/2000/svg" class="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
         <path d="M12 3a9 9 0 1 0 9 9" />
       </svg>
@@ -497,7 +510,7 @@
             :disabled="!imgLoaded"
             :class="!imgLoaded ? 'bg-rose-600/40 cursor-not-allowed' : (teeHole ? 'bg-rose-700 hover:bg-rose-800' : 'bg-rose-600 hover:bg-rose-700')"
             class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md text-white transition-default"
-            :title="teeHole ? 'Remove the tee-hole marker from this hole.' : 'Add a tee-hole marker (default 40 mm in from the top-left of the print bounds). Drag to reposition.'">
+            :title="teeHole ? 'Remove the tee-hole marker from this hole.' : 'Add a tee-hole marker (default ' + TEE_HOLE_DEFAULT_X_MM + ' mm in from the top-left of the print bounds). Drag to reposition.'">
       <span x-text="teeHole ? 'Remove T Hole' : 'Add T Hole'"></span>
     </button>
 
@@ -509,15 +522,15 @@
       <span class="text-xs text-notion-muted font-medium tracking-wide uppercase">Side</span>
       <label class="inline-flex items-center gap-1 text-sm text-notion-text cursor-pointer select-none">
         <input type="radio" name="tee-hole-side" value="left"
-               :checked="teeHoleSide === 'left'"
-               @change="setTeeHoleSide('left')"
+               :checked="teeHoleSide === TEE_SIDE_LEFT"
+               @change="setTeeHoleSide(TEE_SIDE_LEFT)"
                class="h-3.5 w-3.5 text-rose-600 border-notion-border focus:ring-rose-500 focus:ring-offset-0">
         <span>Left</span>
       </label>
       <label class="inline-flex items-center gap-1 text-sm text-notion-text cursor-pointer select-none">
         <input type="radio" name="tee-hole-side" value="right"
-               :checked="teeHoleSide === 'right'"
-               @change="setTeeHoleSide('right')"
+               :checked="teeHoleSide === TEE_SIDE_RIGHT"
+               @change="setTeeHoleSide(TEE_SIDE_RIGHT)"
                class="h-3.5 w-3.5 text-rose-600 border-notion-border focus:ring-rose-500 focus:ring-offset-0">
         <span>Right</span>
       </label>
@@ -537,12 +550,12 @@
     <span x-show="Object.keys(gridCellHeights).length > 0"
           x-text="Object.keys(gridCellHeights).length + ' cell' + (Object.keys(gridCellHeights).length === 1 ? '' : 's') + ' set'"
           class="text-[11px] font-medium px-1.5 py-0.5 rounded border"
-          :class="gridMode === 'absolute' ? 'text-orange-700 bg-orange-50 border-orange-200'
-                 : gridMode === 'off'      ? 'text-gray-600 bg-gray-100 border-gray-300'
+          :class="gridMode === GRID_MODE_ABSOLUTE ? 'text-orange-700 bg-orange-50 border-orange-200'
+                 : gridMode === GRID_MODE_OFF      ? 'text-gray-600 bg-gray-100 border-gray-300'
                  :                           'text-indigo-700 bg-indigo-50 border-indigo-200'"
-          :title="gridMode === 'absolute' ? 'Grid cell values stored in this EGM. In Absolute mode each value REPLACES the Poisson-nearest default (0–30 mm).'
-                 : gridMode === 'off'      ? 'Grid cell values stored in this EGM. In Off mode overrides are not applied; values are preserved so you can toggle back on.'
-                 :                           'Grid cell offsets stored in this EGM. Values are additive deltas (±20 mm) over the algorithm\'s natural surface.'">
+          :title="gridMode === GRID_MODE_ABSOLUTE ? GRID_TIP_STRIP_ABSOLUTE
+                 : gridMode === GRID_MODE_OFF      ? GRID_TIP_STRIP_OFF
+                 :                                   GRID_TIP_STRIP_DELTA">
     </span>
 
     {# ── Grid-mode 3-position switch (v5.34, task 774) ───────────────────────
@@ -550,23 +563,23 @@
        Absolute = value REPLACES Poisson default (0–30 mm; orange UI).
        Off    = overlays hidden, overrides not applied; stored values preserved. #}
     <div class="inline-flex items-center gap-1 pl-1.5 pr-1 py-0.5 rounded-md border border-notion-border bg-stone-50/70"
-         title="How grid cell values are interpreted. Delta=additive offset (default). Absolute=replace Poisson default. Off=hide and ignore (values preserved).">
+         :title="GRID_TIP_SWITCH">
       <span class="text-[10px] text-notion-muted font-semibold tracking-wide uppercase pr-0.5">Grid</span>
       <button type="button"
-              @click="gridMode = 'delta'; autoSave(); draw();"
-              :class="gridMode === 'delta' ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white text-notion-text border-notion-border hover:bg-indigo-50'"
+              @click="gridMode = GRID_MODE_DELTA; autoSave(); draw();"
+              :class="gridMode === GRID_MODE_DELTA ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white text-notion-text border-notion-border hover:bg-indigo-50'"
               class="text-[11px] font-medium px-1.5 py-0.5 rounded border transition-default"
-              title="Delta: value is added to the algorithm's natural surface (±20 mm).">Delta</button>
+              :title="GRID_TIP_BTN_DELTA">Delta</button>
       <button type="button"
-              @click="gridMode = 'absolute'; autoSave(); draw();"
-              :class="gridMode === 'absolute' ? 'bg-orange-500 text-white border-orange-500 shadow-sm' : 'bg-white text-notion-text border-notion-border hover:bg-orange-50'"
+              @click="gridMode = GRID_MODE_ABSOLUTE; autoSave(); draw();"
+              :class="gridMode === GRID_MODE_ABSOLUTE ? 'bg-orange-500 text-white border-orange-500 shadow-sm' : 'bg-white text-notion-text border-notion-border hover:bg-orange-50'"
               class="text-[11px] font-medium px-1.5 py-0.5 rounded border transition-default"
-              title="Absolute: value REPLACES the algorithm's value at that cell (0 to 30 mm).">Absolute</button>
+              :title="GRID_TIP_BTN_ABSOLUTE">Absolute</button>
       <button type="button"
-              @click="gridMode = 'off'; autoSave(); draw();"
-              :class="gridMode === 'off' ? 'bg-gray-600 text-white border-gray-600 shadow-sm' : 'bg-white text-notion-text border-notion-border hover:bg-gray-100'"
+              @click="gridMode = GRID_MODE_OFF; autoSave(); draw();"
+              :class="gridMode === GRID_MODE_OFF ? 'bg-gray-600 text-white border-gray-600 shadow-sm' : 'bg-white text-notion-text border-notion-border hover:bg-gray-100'"
               class="text-[11px] font-medium px-1.5 py-0.5 rounded border transition-default"
-              title="Off: hide cell overlays and ignore all values. Stored values are preserved.">Off</button>
+              :title="GRID_TIP_BTN_OFF">Off</button>
     </div>
 
     {# ── Heat-map view toggle (v5.69) — only after Create New Project found a baked-in grid ── #}
@@ -592,15 +605,15 @@
          title="Grid resolution (cells per side). Switching resolutions erases all grid cell values.">
       <span class="text-[10px] text-notion-muted font-semibold tracking-wide uppercase pr-0.5">Res</span>
       <button type="button" data-testid="grid-res-20"
-              @click="setGridResolution(20)"
-              :class="gridN === 20 ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white text-notion-text border-notion-border hover:bg-indigo-50'"
+              @click="setGridResolution(GRID_N_DEFAULT)"
+              :class="gridN === GRID_N_DEFAULT ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white text-notion-text border-notion-border hover:bg-indigo-50'"
               class="text-[11px] font-medium px-1.5 py-0.5 rounded border transition-default"
-              title="20 x 20 grid (default)">20&times;20</button>
+              :title="GRID_TIP_RES_DEFAULT" x-text="GRID_LABEL_RES_DEFAULT"></button>
       <button type="button" data-testid="grid-res-40"
-              @click="setGridResolution(40)"
-              :class="gridN === 40 ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white text-notion-text border-notion-border hover:bg-indigo-50'"
+              @click="setGridResolution(GRID_N_FINE)"
+              :class="gridN === GRID_N_FINE ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white text-notion-text border-notion-border hover:bg-indigo-50'"
               class="text-[11px] font-medium px-1.5 py-0.5 rounded border transition-default"
-              title="40 x 40 grid (finer)">40&times;40</button>
+              :title="GRID_TIP_RES_FINE" x-text="GRID_LABEL_RES_FINE"></button>
     </div>
 
     {# ── Cell-color toggle + legend (v5.14) — view preference only (localStorage), never saved to the EGM ── #}
@@ -609,7 +622,7 @@
       <input type="checkbox" x-model="colorCellsByHeight" @change="setColorCells()" data-testid="color-cells-toggle">
       Color cells by height
     </label>
-    <span x-show="colorCellsByHeight && gridMode !== 'off' && gridRange()" class="inline-flex items-center gap-1 text-[10px] text-notion-muted whitespace-nowrap" data-testid="cell-color-legend">
+    <span x-show="colorCellsByHeight && gridMode !== GRID_MODE_OFF && gridRange()" class="inline-flex items-center gap-1 text-[10px] text-notion-muted whitespace-nowrap" data-testid="cell-color-legend">
       <span x-text="gridRange() ? gridRange().min : ''"></span>
       <span class="inline-block w-10 h-2 rounded border border-notion-border" :style="'background:' + terrainLegendGradient()"></span>
       <span x-text="gridRange() ? gridRange().max : ''"></span>
@@ -630,14 +643,278 @@
 </div>
 
 <script>
+// ═══ EDITOR CONSTANTS — BEGIN ═══════════════════════════════════════════════
+// v5.70 — Coding Standard "Named Constants, No Literals" (CLAUDE.md): every tunable value,
+// repeated string, color, size, threshold, API URL, storage key and mode name used by this
+// editor is defined ONCE in this block; the rest of the file (script AND markup) refers to
+// the name.  Tests read this block (tests/editor_constants.py) instead of re-typing values.
+// Older named members of the polygonEditor() object (DEGRID_*, POINT_RADIUS, EDGE_HIT_DIST,
+// GRID_DRAG_THRESHOLD_PX, TEE_HOLE_*, TERRAIN_STOPS, maxUndo) were already constants and stay there.
+// Top-level `const`s are visible to Alpine markup expressions (global lexical scope).
+
+// ── API endpoints (server routes in app.py) ──
+const API_DETECT_BOUNDARIES = '/api/detect_boundaries';
+const API_TRAP_CONTROLLING_CELLS = '/api/trap_controlling_cells';
+const API_BOUNDARIES = '/api/boundaries';                      // POST = autosave
+const API_BOUNDARIES_LIST = '/api/boundaries/list';
+const API_BOUNDARIES_LOAD = '/api/boundaries/load';
+const API_IMAGES = '/api/images';
+const API_COURSES = '/api/courses';
+const API_PRINT_CONSTANTS = '/api/print_constants';
+const API_FIND_CONTOURS = '/api/find_contours';
+const API_GPS_FILES = '/api/gps_files';
+const API_GPS_HEIGHTMAP_PREVIEW = '/api/gps_heightmap_preview';
+const API_GENERATE_MODELS = '/api/generate_models';
+const API_RUNNING_TASKS_COUNT = '/api/tasks/running_count';    // footer badge
+const IMAGE_URL_TEAM_INBOX = '/team_inbox/';
+const IMAGE_URL_EGM_IMAGES = '/egm/images/';
+const QUERY_FILENAME = '?filename=';
+const QUERY_COURSE = '?course=';
+const QUERY_CACHE_BUST = '?t=';                                // forces the browser to re-request
+const HTTP_METHOD_POST = 'POST';
+const HTTP_HEADERS_JSON = { 'Content-Type': 'application/json' };
+
+// ── Browser storage ──
+const STORAGE_KEY_COLOR_CELLS = 'editorColorCells';            // view pref, never saved in the EGM
+const STORAGE_VALUE_ON = '1';
+const STORAGE_VALUE_OFF = '0';
+
+// ── Grid cell elevation: modes, limits, resolution ──
+const GRID_MODE_DELTA = 'delta';        // additive offsets to the Poisson default; indigo UI
+const GRID_MODE_ABSOLUTE = 'absolute';  // values REPLACE the Poisson default; orange UI
+const GRID_MODE_OFF = 'off';            // overlays hidden, nothing applied, values preserved
+const GRID_MODES = [GRID_MODE_DELTA, GRID_MODE_ABSOLUTE, GRID_MODE_OFF];
+const DEFAULT_GRID_MODE = GRID_MODE_DELTA;
+const GRID_DELTA_MIN_MM = -20;          // server clamps the same range (stage 2: app.py)
+const GRID_DELTA_MAX_MM = 20;
+const GRID_ABSOLUTE_MIN_MM = 0;
+const GRID_ABSOLUTE_MAX_MM = 30;
+const GRID_N_DEFAULT = 20;              // cells per axis, legacy default; EGM omits gridResolution
+const GRID_N_FINE = 40;
+const GRID_RANGE_FULL_CELL_COUNT = 400; // v5.14 "all 400 cells" threshold (NOT scaled by gridN; behavior kept as-is)
+const GRID_INPUT_STEP = 'any';
+const GRID_INPUT_MIN_WIDTH_PX = 80;     // value box / ramp boxes width floor (CSS px)
+const GRID_DOT_HIT_MIN_PX = 5;          // hover / right-click hit radius clamp (CSS px)
+const GRID_DOT_HIT_MAX_PX = 10;
+const GRID_LABEL_DECIMALS = 1;          // v5.59 value labels: N.N
+const MM_ROUND_FACTOR = 10;             // values are rounded to 0.1 mm
+const WHEEL_STEP_MM = 0.1;              // value-box wheel step per notch
+const WHEEL_STEP_SHIFT_MM = 1.0;        // with Shift held
+const WHEEL_NOTCH_PX = 100;             // 100 px of wheel travel = 1 notch
+const WHEEL_LINES_PER_NOTCH = 3;
+const WHEEL_PAGE_PX = 1000;
+const DOM_DELTA_LINE = 1;               // WheelEvent.deltaMode values
+const DOM_DELTA_PAGE = 2;
+const GRID_HOVER_SUFFIX_ABSOLUTE = ' mm absolute';
+const GRID_HOVER_SUFFIX_DELTA = ' mm offset';
+const GRID_WHEEL_TIP = `Mouse wheel: +/-${WHEEL_STEP_MM} mm per notch (Shift: ${WHEEL_STEP_SHIFT_MM.toFixed(1)}). Enter to commit, Esc to cancel, Delete to clear.`;
+const GRID_INPUT_PLACEHOLDER = `mm (wheel: ${WHEEL_STEP_MM}, Shift: ${WHEEL_STEP_SHIFT_MM})`;
+const GRID_TIP_INPUT_ABSOLUTE = `Enter absolute fringe height in mm (${GRID_ABSOLUTE_MIN_MM} to ${GRID_ABSOLUTE_MAX_MM}). ${GRID_WHEEL_TIP}`;
+const GRID_TIP_INPUT_DELTA = `Enter offset from algorithm in mm (±${GRID_DELTA_MAX_MM}). ${GRID_WHEEL_TIP}`;
+const GRID_TIP_STRIP_ABSOLUTE = `Grid cell values stored in this EGM. In Absolute mode each value REPLACES the Poisson-nearest default (${GRID_ABSOLUTE_MIN_MM}–${GRID_ABSOLUTE_MAX_MM} mm).`;
+const GRID_TIP_STRIP_OFF = 'Grid cell values stored in this EGM. In Off mode overrides are not applied; values are preserved so you can toggle back on.';
+const GRID_TIP_STRIP_DELTA = `Grid cell offsets stored in this EGM. Values are additive deltas (±${GRID_DELTA_MAX_MM} mm) over the algorithm's natural surface.`;
+const GRID_TIP_SWITCH = 'How grid cell values are interpreted. Delta=additive offset (default). Absolute=replace Poisson default. Off=hide and ignore (values preserved).';
+const GRID_TIP_BTN_DELTA = `Delta: value is added to the algorithm's natural surface (±${GRID_DELTA_MAX_MM} mm).`;
+const GRID_TIP_BTN_ABSOLUTE = `Absolute: value REPLACES the algorithm's value at that cell (${GRID_ABSOLUTE_MIN_MM} to ${GRID_ABSOLUTE_MAX_MM} mm).`;
+const GRID_TIP_BTN_OFF = 'Off: hide cell overlays and ignore all values. Stored values are preserved.';
+const GRID_TIP_RES_DEFAULT = `${GRID_N_DEFAULT} x ${GRID_N_DEFAULT} grid (default)`;
+const GRID_TIP_RES_FINE = `${GRID_N_FINE} x ${GRID_N_FINE} grid (finer)`;
+const GRID_LABEL_RES_DEFAULT = `${GRID_N_DEFAULT}×${GRID_N_DEFAULT}`;
+const GRID_LABEL_RES_FINE = `${GRID_N_FINE}×${GRID_N_FINE}`;
+const MSG_GRID_MODE_OFF = 'Grid mode is Off — switch to Delta or Absolute to edit cells';
+const MSG_GRID_RESOLUTION_ERASE = 'Switching resolutions will cause all grid settings to be erased.';
+
+// ── Grid canvas drawing ──
+const GRID_LINE_WIDTH = 0.75;
+const GRID_VALUE_FONT_PX = 11;
+const GRID_VALUE_FONT_PX_FINE = 8;      // used when gridN > GRID_N_DEFAULT
+const FONT_STACK_UI = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+const COLOR_GRID_LINE = 'rgba(99,102,241,0.40)';            // indigo, softer than value text
+const COLOR_GRID_VALUE_DELTA = '#000';
+const COLOR_GRID_VALUE_ABSOLUTE = 'rgba(249,115,22,0.95)';  // tailwind orange-500
+const COLOR_GRID_ACTIVE_FILL = 'rgba(99,102,241,0.12)';
+const COLOR_GRID_ACTIVE_STROKE = 'rgba(99,102,241,0.70)';
+const GRID_ACTIVE_LINE_WIDTH = 2;
+const COLOR_GRID_MULTI_FILL = 'rgba(99,102,241,0.10)';
+const COLOR_GRID_MULTI_STROKE = 'rgba(99,102,241,0.90)';
+const GRID_MULTI_LINE_WIDTH = 3.5;
+const CELL_COLOR_ALPHA = 0.5;           // terrain tint over each cell
+const COLOR_TRAP_CTL_RING = '#dc2626';
+const TRAP_CTL_RING_WIDTH = 2.5;
+const TRAP_CTL_RING_RADIUS_FRAC = 0.42; // of a cell width
+const TRAP_CTL_DEBOUNCE_MS = 250;
+
+// ── Polygon / contour model ──
+const POLY_TYPE_GREEN = 'green';
+const POLY_TYPE_TRAP = 'trap';
+const POLY_TYPE_WATER = 'water';
+const POLY_TYPE_BOULDERS = 'boulders';
+const POLY_TYPE_CONTOUR = 'contour';
+const REMOVABLE_POLY_TYPES = [POLY_TYPE_TRAP, POLY_TYPE_WATER, POLY_TYPE_BOULDERS];  // user may delete these
+const NAME_GREEN = 'Green';
+const NAME_PREFIX_TRAP = 'Trap ';
+const NAME_PREFIX_WATER = 'Water ';
+const NAME_PREFIX_BOULDERS = 'Boulders ';
+const NAME_PREFIX_CONTOUR = 'Contour ';
+const CONTOUR_DIR_LEFT = 'left';
+const CONTOUR_DIR_RIGHT = 'right';
+const MIN_POLYGON_VERTICES = 3;
+const MIN_CONTOUR_POINTS = 2;
+const CONTOUR_DBLCLICK_DEDUP_MIN_POINTS = 4;  // double-click adds a duplicate last point
+const CONTOUR_DBLCLICK_DEDUP_DIST_PX = 3;
+const RESAMPLE_DEFAULT_POINTS = 20;
+const RESAMPLE_MIN_POINTS = 3;
+const RESAMPLE_MAX_POINTS = 200;
+const DEFAULT_GREEN_POINT_COUNT = 8;          // fallback rectangle resample
+const DEFAULT_OBSTACLE_POINT_COUNT = 16;
+const DEFAULT_GREEN_RECT_HALF_FRAC = 0.15;    // of image width / height
+const NEW_SHAPE_SIDES = 8;                    // Add Trap / Add Water octagon
+const NEW_SHAPE_RADIUS_FRAC = 0.08;           // of the shorter image side
+const SPLINE_SEGMENTS_PER_EDGE = 16;
+const SPLINE_TENSION = 0.5;                   // 0.5 = standard Catmull-Rom
+const HIT_SLACK_PX = 2;                       // added to vertex / edge hit radius
+const CONTOUR_ARROW_HIT_RADIUS_PX = 12;
+const TEE_SIDE_LEFT = 'left';                   // tee-hole side picker (print half the marker sits in)
+const TEE_SIDE_RIGHT = 'right';
+const CURSOR_DEFAULT = 'default';
+const CURSOR_GRAB = 'grab';
+const CURSOR_GRABBING = 'grabbing';
+const CURSOR_CROSSHAIR = 'crosshair';
+
+// ── Canvas colors & sizes ──
+const COLOR_WHITE = '#FFFFFF';
+const COLOR_RED = '#EF4444';
+const COLOR_POLY_GREEN = '#22C55E';
+const COLOR_POLY_WATER = '#EAB308';
+const COLOR_POLY_BOULDERS = '#EC4899';
+const COLOR_POLY_TRAP = COLOR_RED;            // also the fallback for unknown types
+const POLY_FILL_ALPHA_SELECTED = '26';        // hex alpha appended to the polygon color
+const POLY_FILL_ALPHA = '1A';
+const POLY_LINE_WIDTH_SELECTED = 3;
+const POLY_LINE_WIDTH = 2;
+const VERTEX_RADIUS = 4;                      // unselected polygon (selected uses POINT_RADIUS)
+const VERTEX_SELECTED_RADIUS_BONUS = 3;
+const VERTEX_LINE_WIDTH_SELECTED_POLY = 2;
+const VERTEX_LINE_WIDTH = 1.5;
+const VERTEX_SELECTED_LINE_WIDTH = 3;
+const COLOR_CONTOUR = '#FFE600';
+const COLOR_CONTOUR_SELECTED = '#FFD000';
+const CONTOUR_LINE_WIDTH = 2.5;
+const CONTOUR_LINE_WIDTH_SELECTED = 3.5;
+const CONTOUR_VERTEX_RADIUS = 4;
+const CONTOUR_VERTEX_RADIUS_SELECTED = 7;
+const CONTOUR_VERTEX_LINE_WIDTH = 1.5;
+const CONTOUR_DRAFT_LINE_WIDTH = 2;
+const CONTOUR_DRAFT_VERTEX_RADIUS = 4;
+const COLOR_CONTOUR_ARROW = COLOR_RED;
+const COLOR_CONTOUR_ARROW_BTN_FILL = 'rgba(239,68,68,0.18)';
+const CONTOUR_ARROW_LENGTH_PX = 18;
+const CONTOUR_ARROW_LINE_WIDTH = 2;
+const CONTOUR_ARROWHEAD_LENGTH_PX = 7;
+const CONTOUR_ARROWHEAD_ANGLE = Math.PI / 6;
+const CONTOUR_ARROW_BTN_RADIUS_PX = 9;
+const CONTOUR_ARROW_BTN_LINE_WIDTH = 1.5;
+const COLOR_CANVAS_FRINGE_BG = '#E8E8E8';
+const COLOR_CANVAS_HATCH = 'rgba(180,180,180,0.45)';
+const CANVAS_HATCH_STEP_PX = 12;
+const COLOR_CANVAS_IMAGE_BORDER = 'rgba(100,100,100,0.5)';
+const COLOR_RUBBER_BAND = '#2383E2';
+const COLOR_RUBBER_BAND_FILL = 'rgba(35, 131, 226, 0.08)';
+const RUBBER_BAND_LINE_WIDTH = 1.5;
+const DASH_ON_PX = 6;
+const DASH_OFF_PX = 4;
+const CANVAS_MAX_HEIGHT_FRAC = 0.7;           // of window.innerHeight
+
+// ── Print geometry (client fallbacks until the server value arrives) ──
+// STAGE 2 (app.py): must equal PRINT_SIZE_MM / FRINGE_XY_EXPANSION_MM served by /api/print_constants.
+const DEFAULT_PRINT_SIZE_MM = 171.45;
+const DEFAULT_FRINGE_XY_EXPANSION_MM = -1.057;
+
+// ── Per-hole setting defaults (mirror the server defaults in app.py; stage 2) ──
+const DEFAULT_CONTOUR_STEP_MM = 0.5;
+const DEFAULT_GRASS_AMPLITUDE_MM = 0.5;
+const DEFAULT_GRASS_SPACING_MM = 0.05;
+const DEFAULT_GREEN_STYLE = 'terraced';
+const DEFAULT_ELEVATION_RANGE_MM = 14.5;
+const DEFAULT_Z_SCALE = 1.0;
+const DEFAULT_GREEN_SCALE = 1.0065;
+const DEFAULT_FRINGE_EDGE_HEIGHT_MM = 10.0;
+const DEFAULT_BASE_THICKNESS_MM = 1.5;
+const DEFAULT_FLAG_OFFSET_MM = 0.0;
+// Number-input step / min / max (HTML attributes bound in the markup)
+const FIELD_LIMITS = {
+  contourStep:      { step: 0.1,   min: 0.1 },
+  grassAmplitude:   { step: 0.1,   min: 0 },
+  grassSpacing:     { step: 0.1,   min: 0.5 },
+  elevationRange:   { step: 0.1,   min: 0.1 },
+  zScale:           { step: 0.1,   min: 0.5, max: 5.0 },
+  greenScale:       { step: 0.001, min: 0.5 },
+  fringeEdgeHeight: { step: 0.5,   min: 0.5 },
+  baseThicknessMm:  { step: 0.1,   min: 0.1 },
+  flagOffset:       { step: 0.5 },
+};
+
+// ── GPS backend ──
+const DEFAULT_GPS_VERT_EXAG = 3.0;
+const DEFAULT_GPS_APPROACH_M = 8.0;
+const DEFAULT_GPS_GRID_SIZE = 200;
+const GPS_GRID_SIZE_OPTIONS = [100, 150, 200, 300];
+const GPS_PREVIEW_MAX_GRID = 150;             // smaller grid for preview speed
+const GPS_PREVIEW_DEBOUNCE_MS = 500;
+const GPS_BBOX_EXTRA_PAD_M = 5;
+const METERS_PER_DEG_LAT = 111000;
+const LATLNG_ROUND_FACTOR = 1e7;
+const GPS_MAP_SIZE_PX = 300;                  // map canvas is square
+const GPS_MAP_MIN_DRAG_PX = 5;
+const GPS_MAP_POINT_RADIUS_PX = 2;
+const GPS_MAP_IMAGE_ALPHA = 0.35;
+const COLOR_GPS_MAP_BG = '#e5e7eb';
+const COLOR_GPS_BBOX_FILL = 'rgba(59,130,246,0.12)';
+const COLOR_GPS_BBOX_STROKE = 'rgba(59,130,246,0.8)';
+const COLOR_GPS_DRAG_FILL = 'rgba(245,158,11,0.15)';
+const COLOR_GPS_DRAG_STROKE = '#F59E0B';
+const GPS_MAP_LINE_WIDTH = 1.5;
+const GPS_MAP_DRAG_DASH = [4, 3];
+
+// ── Timing / status messages ──
+const MS_PER_SECOND = 1000;
+const TIMER_TICK_MS = 1000;                   // Generate elapsed counter / footer poll
+const RESIZE_DEBOUNCE_MS = 100;
+const FLASH_OK_MS = 4500;                     // auto-dismiss for info/success
+const FLASH_DEFERRED_SAVE_MS = 4000;
+const FLASH_GENERATE_START_MS = 3500;
+const FLASH_GENERATE_DONE_MS = 8000;
+const FLASH_LONG_ERROR_MS = 15000;
+const HTTP_ERROR_BODY_SNIPPET_CHARS = 400;
+const GENERATE_ETA_TEXT = '1–3 minutes';
+const MSG_MIN_VERTICES = `Minimum ${MIN_POLYGON_VERTICES} vertices required`;
+const MSG_POLYGON_REMOVED = 'Polygon removed';
+
+// ── Shared helpers (pure; tests prepend this block when running extracted functions) ──
+function roundMm(v) { return Math.round(v * MM_ROUND_FACTOR) / MM_ROUND_FACTOR; }
+function gridValueLimits(mode) {
+  return mode === GRID_MODE_ABSOLUTE
+    ? { min: GRID_ABSOLUTE_MIN_MM, max: GRID_ABSOLUTE_MAX_MM }
+    : { min: GRID_DELTA_MIN_MM, max: GRID_DELTA_MAX_MM };
+}
+function polyColorForType(type) {
+  return type === POLY_TYPE_GREEN ? COLOR_POLY_GREEN
+       : type === POLY_TYPE_WATER ? COLOR_POLY_WATER
+       : type === POLY_TYPE_BOULDERS ? COLOR_POLY_BOULDERS
+       : COLOR_POLY_TRAP;
+}
+function isRemovablePolyType(type) { return REMOVABLE_POLY_TYPES.includes(type); }
+// ═══ EDITOR CONSTANTS — END ═════════════════════════════════════════════════
+
 // v5.19 — Ctrl+Option ramp: spread first->last linearly over cells in the given (visit) order.
 // Returns [[cellIdx, value], ...]; value rounded to 0.1 mm and clamped by grid mode.
 function gridRampAssign(order, first, last, mode) {
-  const lo = mode === 'absolute' ? 0 : -20, hi = mode === 'absolute' ? 30 : 20;
+  const { min: lo, max: hi } = gridValueLimits(mode);
   const n = order.length;
   return order.map((idx, i) => {
     const v = n > 1 ? first + (last - first) * i / (n - 1) : first;
-    const r = Math.round(v * 10) / 10;
+    const r = roundMm(v);
     return [idx, Math.max(lo, Math.min(hi, r)) + 0];
   });
 }
@@ -715,7 +992,7 @@ function polygonEditor() {
     gridCellHeights: {},
     // v5.22: grid resolution (cells per axis): 20 (legacy default) or 40. Saved in the EGM as
     // `gridResolution` (only when != 20). Changing it erases all cell values (see setGridResolution).
-    gridN: 20,
+    gridN: GRID_N_DEFAULT,
     // v5.69: heat-map degrid view (Create New Project only).  degridUrls = {original, degridded}
     // or null; imageView picks which one the canvas shows.  Never saved in the EGM.
     DEGRID_API_URL: '/api/degrid_image',
@@ -732,7 +1009,7 @@ function polygonEditor() {
     //   'delta'    — values are additive offsets to Poisson default (±20 mm). Blue/indigo UI.
     //   'absolute' — values REPLACE the Poisson default (0 to 30 mm). Orange UI.
     //   'off'      — overlays hidden, no overrides applied; stored values are preserved for A/B toggling.
-    gridMode: 'delta',
+    gridMode: DEFAULT_GRID_MODE,
     colorCellsByHeight: true,  // v5.14 view pref (localStorage 'editorColorCells'); not part of the EGM
     _trapCtlCells: [],       // cell indices circled red = controlling cell(s) per trap (v5.11)
     _trapCtlSig: '',
@@ -760,8 +1037,8 @@ function polygonEditor() {
     GRID_DRAG_THRESHOLD_PX: 5,  // px moved before a grid mousedown is treated as a drag, not a click (v5.05)
 
     // Fringe-expansion constants (fetched from server; set after load)
-    printSizeMm: 171.45,
-    fringeXyExpansionMm: -1.057,
+    printSizeMm: DEFAULT_PRINT_SIZE_MM,
+    fringeXyExpansionMm: DEFAULT_FRINGE_XY_EXPANSION_MM,
     // Derived: extra padding on each side in image-pixel units (set by resizeCanvas)
     fringePadPx: 0,     // max(fringePadX, fringePadY) — used for polygon-vertex clamping
     fringePadXpx: 0,    // per-axis X pad — used for spike spawn / drag clamp
@@ -782,30 +1059,30 @@ function polygonEditor() {
     contours: [],          // [{name, direction, points:[{x,y}]}]
     contourMode: false,    // whether we are currently drawing a contour
     contourDraft: [],      // points being drawn in the current session
-    contourStep: 0.5,         // mm elevation increment per contour line
-    grassAmplitude: 0.5,      // grass bump height in mm
-    grassSpacing: 0.05,       // distance between bump centers in mm
-    greenStyle: 'terraced',   // 'smooth' or 'terraced'
-    elevationRange: 14.5,     // total Z amplitude of the green's slope (mm)
-    zScale: 1.0,              // vertical amplitude multiplier for green and fringe relief (1.0 = no change)
+    contourStep: DEFAULT_CONTOUR_STEP_MM,         // mm elevation increment per contour line
+    grassAmplitude: DEFAULT_GRASS_AMPLITUDE_MM,      // grass bump height in mm
+    grassSpacing: DEFAULT_GRASS_SPACING_MM,       // distance between bump centers in mm
+    greenStyle: DEFAULT_GREEN_STYLE,   // 'smooth' or 'terraced'
+    elevationRange: DEFAULT_ELEVATION_RANGE_MM,     // total Z amplitude of the green's slope (mm)
+    zScale: DEFAULT_Z_SCALE,              // vertical amplitude multiplier for green and fringe relief (1.0 = no change)
     openInSlicer: true,       // open generated 3MF in the default slicer after generation
-    greenScale: 1.0065,       // XY multiplier applied to the green polygon only (fringe/traps/water unaffected)
-    fringeEdgeHeight: 10.0,   // outer wall height of the fringe (mm)
-    baseThicknessMm: 1.5,     // flat filament base below the surface topology (mm)
+    greenScale: DEFAULT_GREEN_SCALE,       // XY multiplier applied to the green polygon only (fringe/traps/water unaffected)
+    fringeEdgeHeight: DEFAULT_FRINGE_EDGE_HEIGHT_MM,   // outer wall height of the fringe (mm)
+    baseThicknessMm: DEFAULT_BASE_THICKNESS_MM,     // flat filament base below the surface topology (mm)
     includeBoundaryRegion: false,  // auto-derive a 5 mm boulders ring from each water polygon
     applyFringeFrameCap: true,     // clip fringe top vertices near the frame perimeter (water-hole rule); default ON preserves legacy behavior
     includeFringeWithoutGrass: false, // when true, generate a second plate with a smooth (grass-less) fringe sample; plate 1 always has grass
-    flagOffsetXMm: 0.0,    // mm: move flag right (+) or left (-)
-    flagOffsetYMm: 0.0,    // mm: move flag up (+) or down (-)
+    flagOffsetXMm: DEFAULT_FLAG_OFFSET_MM,    // mm: move flag right (+) or left (-)
+    flagOffsetYMm: DEFAULT_FLAG_OFFSET_MM,    // mm: move flag up (+) or down (-)
 
     // ── GPS backend state ─────────────────────────────────────────────────────
     // Persisted to EGM as gpsBackend + courseGeoRef blocks.
     gpsEnabled: false,           // gpsBackend.enabled
     gpsFile: '',                 // gpsBackend.gpsFile (absolute path)
     gpsBbox: null,               // {lat_min, lng_min, lat_max, lng_max} or null
-    gpsVertExag: 3.0,            // gpsBackend.vertExag
-    gpsApproachM: 8.0,           // gpsBackend.approachM
-    gpsGridSize: 200,            // gpsBackend.gridSize (single int → [n, n])
+    gpsVertExag: DEFAULT_GPS_VERT_EXAG,            // gpsBackend.vertExag
+    gpsApproachM: DEFAULT_GPS_APPROACH_M,           // gpsBackend.approachM
+    gpsGridSize: DEFAULT_GPS_GRID_SIZE,            // gpsBackend.gridSize (single int → [n, n])
     courseGeoRef: null,          // courseGeoRef block: {imageWidth, imageHeight, swCornerLatLng, neCornerLatLng}
 
     // GPS map view state
@@ -853,7 +1130,7 @@ function polygonEditor() {
     },
 
     init() {
-      try { const c = localStorage.getItem('editorColorCells'); if (c === '0') this.colorCellsByHeight = false; } catch (e) {}
+      try { const c = localStorage.getItem(STORAGE_KEY_COLOR_CELLS); if (c === STORAGE_VALUE_OFF) this.colorCellsByHeight = false; } catch (e) {}
       if (this.selectedImage) {
         this.loadImage();
       }
@@ -867,8 +1144,8 @@ function polygonEditor() {
       this._pendingDegrid = false;
       this.imgLoaded = false;
       fetch(this.DEGRID_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: HTTP_METHOD_POST,
+        headers: HTTP_HEADERS_JSON,
         body: JSON.stringify({ image: this.selectedImage, imageCourse: this.selectedImageCourse }),
       })
       .then(resp => resp.json())
@@ -882,7 +1159,7 @@ function polygonEditor() {
 
     _displayImageUrl() {
       if (this.degridUrls && this.imageView === this.DEGRID_VIEW_CLEAN) return this.degridUrls.degridded;
-      return this.selectedImageUrl || '/team_inbox/' + encodeURIComponent(this.selectedImage);
+      return this.selectedImageUrl || IMAGE_URL_TEAM_INBOX + encodeURIComponent(this.selectedImage);
     },
 
     // Swap the displayed image without touching polygons / detection (same pixel size).
@@ -891,7 +1168,7 @@ function polygonEditor() {
       this.imageView = view;
       const next = new Image();
       next.onload = () => { this.img = next; this.draw(); };
-      next.src = this._displayImageUrl() + '?t=' + Date.now();
+      next.src = this._displayImageUrl() + QUERY_CACHE_BUST + Date.now();
     },
 
     _loadImageNow() {
@@ -907,13 +1184,13 @@ function polygonEditor() {
           this.polygons = restored.filter(p => p.type !== 'contour').map(p => ({
             name: p.name,
             type: p.type,
-            color: p.type === 'green' ? '#22C55E' : p.type === 'water' ? '#EAB308' : p.type === 'boulders' ? '#EC4899' : '#EF4444',
+            color: polyColorForType(p.type),
             points: p.points.map(pt => ({ x: pt.x, y: pt.y })),
           }));
           this.contours = restored.filter(p => p.type === 'contour').map(p => ({
             name: p.name,
-            direction: p.direction || 'left',
-            color: '#FFE600',
+            direction: p.direction || CONTOUR_DIR_LEFT,
+            color: COLOR_CONTOUR,
             points: p.points.map(pt => ({ x: pt.x, y: pt.y })),
           }));
           this.selectedPoly = 0;
@@ -940,14 +1217,14 @@ function polygonEditor() {
       };
       // Cache-buster query param forces the browser to re-request the image,
       // ensuring onload always fires even if the underlying file is cached.
-      this.img.src = this._displayImageUrl() + '?t=' + Date.now();
+      this.img.src = this._displayImageUrl() + QUERY_CACHE_BUST + Date.now();
     },
 
     runDetection() {
       this.flash('Detecting boundaries...', true);
-      fetch('/api/detect_boundaries', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      fetch(API_DETECT_BOUNDARIES, {
+        method: HTTP_METHOD_POST,
+        headers: HTTP_HEADERS_JSON,
         body: JSON.stringify({ image: this.selectedImage, course: this.courseName }),
       })
       .then(resp => resp.json())
@@ -960,14 +1237,14 @@ function polygonEditor() {
           this.polygons = regularPolygons.map(p => ({
             name: p.name,
             type: p.type,
-            color: p.type === 'green' ? '#22C55E' : p.type === 'water' ? '#EAB308' : p.type === 'boulders' ? '#EC4899' : '#EF4444',
+            color: polyColorForType(p.type),
             points: p.points,
           }));
 
           this.contours = detectedContours.map(c => ({
             name: c.name,
-            direction: c.direction || 'left',
-            color: '#FFE600',
+            direction: c.direction || CONTOUR_DIR_LEFT,
+            color: COLOR_CONTOUR,
             points: c.points.map(pt => ({ x: pt.x, y: pt.y })),
           }));
 
@@ -1005,15 +1282,15 @@ function polygonEditor() {
       const w = this.imgW, h = this.imgH;
       const cx = w / 2, cy = h / 2;
       this.polygons = [
-        { name: 'Green', type: 'green', color: '#22C55E', points: [
-          {x: cx-w*0.15, y: cy-h*0.15}, {x: cx+w*0.15, y: cy-h*0.15},
-          {x: cx+w*0.15, y: cy+h*0.15}, {x: cx-w*0.15, y: cy+h*0.15}
+        { name: NAME_GREEN, type: POLY_TYPE_GREEN, color: COLOR_POLY_GREEN, points: [
+          {x: cx-w*DEFAULT_GREEN_RECT_HALF_FRAC, y: cy-h*DEFAULT_GREEN_RECT_HALF_FRAC}, {x: cx+w*DEFAULT_GREEN_RECT_HALF_FRAC, y: cy-h*DEFAULT_GREEN_RECT_HALF_FRAC},
+          {x: cx+w*DEFAULT_GREEN_RECT_HALF_FRAC, y: cy+h*DEFAULT_GREEN_RECT_HALF_FRAC}, {x: cx-w*DEFAULT_GREEN_RECT_HALF_FRAC, y: cy+h*DEFAULT_GREEN_RECT_HALF_FRAC}
         ]},
       ];
       this.selectedPoly = 0;
       // Resample: green gets 8 points, obstacles get 16
       for (const poly of this.polygons) {
-        const n = poly.type === 'green' ? 8 : 16;
+        const n = poly.type === POLY_TYPE_GREEN ? DEFAULT_GREEN_POINT_COUNT : DEFAULT_OBSTACLE_POINT_COUNT;
         poly.points = this.resamplePoly(poly.points, n);
       }
     },
@@ -1023,7 +1300,7 @@ function polygonEditor() {
       if (!canvas || !this.imgLoaded) return;
       const container = canvas.parentElement;
       const maxW = container.clientWidth;
-      const maxH = window.innerHeight * 0.7;
+      const maxH = window.innerHeight * CANVAS_MAX_HEIGHT_FRAC;
 
       // Compute the fringe-zone padding in image-pixel space.
       //
@@ -1110,8 +1387,8 @@ function polygonEditor() {
       const n = cpts.length;
       if (n < 2) return;
       ctx.beginPath();
-      const segsPerEdge = 16;
-      const tension = 0.5; // 0.5 = standard Catmull-Rom
+      const segsPerEdge = SPLINE_SEGMENTS_PER_EDGE;
+      const tension = SPLINE_TENSION; // 0.5 = standard Catmull-Rom
 
       for (let i = 0; i < n; i++) {
         const p0 = cpts[(i - 1 + n) % n];
@@ -1160,14 +1437,14 @@ function polygonEditor() {
       // Then draw the image centered inside it.
       if (this.imgLoaded && this.img) {
         // Fringe ring: fill whole canvas with a light neutral tone
-        ctx.fillStyle = '#E8E8E8';
+        ctx.fillStyle = COLOR_CANVAS_FRINGE_BG;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         // Subtle hatching to indicate "fringe-only, no image data here"
         ctx.save();
-        ctx.strokeStyle = 'rgba(180,180,180,0.45)';
+        ctx.strokeStyle = COLOR_CANVAS_HATCH;
         ctx.lineWidth = 1;
-        const step = 12 * dpr;
+        const step = CANVAS_HATCH_STEP_PX * dpr;
         for (let hx = -canvas.height; hx < canvas.width + canvas.height; hx += step) {
           ctx.beginPath();
           ctx.moveTo(hx, 0);
@@ -1184,7 +1461,7 @@ function polygonEditor() {
         ctx.drawImage(this.img, ix, iy, iw, ih);
 
         // Thin border around the image to mark the image boundary
-        ctx.strokeStyle = 'rgba(100,100,100,0.5)';
+        ctx.strokeStyle = COLOR_CANVAS_IMAGE_BORDER;
         ctx.lineWidth = 1;
         ctx.strokeRect(ix, iy, iw, ih);
       }
@@ -1202,28 +1479,28 @@ function polygonEditor() {
 
         // Build closed Catmull-Rom spline path
         this.traceSplinePath(ctx, cpts);
-        ctx.fillStyle = poly.color + (isSelected ? '26' : '1A');
+        ctx.fillStyle = poly.color + (isSelected ? POLY_FILL_ALPHA_SELECTED : POLY_FILL_ALPHA);
         ctx.fill();
 
         this.traceSplinePath(ctx, cpts);
         ctx.strokeStyle = poly.color;
-        ctx.lineWidth = (isSelected ? 3 : 2) * dpr;
+        ctx.lineWidth = (isSelected ? POLY_LINE_WIDTH_SELECTED : POLY_LINE_WIDTH) * dpr;
         ctx.stroke();
 
         // Vertices
-        const baseR = isSelected ? this.POINT_RADIUS : 4;
-        const baseLW = isSelected ? 2 : 1.5;
+        const baseR = isSelected ? this.POINT_RADIUS : VERTEX_RADIUS;
+        const baseLW = isSelected ? VERTEX_LINE_WIDTH_SELECTED_POLY : VERTEX_LINE_WIDTH;
         for (let i = 0; i < pts.length; i++) {
           const p = this.imgToCanvas(pts[i].x, pts[i].y);
           const isSelVert = this.isVertSelected(pi, i);
-          const r = (isSelVert ? baseR + 3 : baseR) * dpr;
+          const r = (isSelVert ? baseR + VERTEX_SELECTED_RADIUS_BONUS : baseR) * dpr;
 
           ctx.beginPath();
           ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-          ctx.fillStyle = isSelVert ? '#FFFFFF' : poly.color;
+          ctx.fillStyle = isSelVert ? COLOR_WHITE : poly.color;
           ctx.fill();
-          ctx.strokeStyle = isSelVert ? poly.color : '#FFFFFF';
-          ctx.lineWidth = (isSelVert ? 3 : baseLW) * dpr;
+          ctx.strokeStyle = isSelVert ? poly.color : COLOR_WHITE;
+          ctx.lineWidth = (isSelVert ? VERTEX_SELECTED_LINE_WIDTH : baseLW) * dpr;
           ctx.stroke();
         }
       }
@@ -1240,8 +1517,8 @@ function polygonEditor() {
 
         // Draw solid contour line
         ctx.beginPath();
-        ctx.strokeStyle = isSelC ? '#FFD000' : '#FFE600';
-        ctx.lineWidth = (isSelC ? 3.5 : 2.5) * dpr;
+        ctx.strokeStyle = isSelC ? COLOR_CONTOUR_SELECTED : COLOR_CONTOUR;
+        ctx.lineWidth = (isSelC ? CONTOUR_LINE_WIDTH_SELECTED : CONTOUR_LINE_WIDTH) * dpr;
         ctx.moveTo(cpts[0].x, cpts[0].y);
         for (let i = 1; i < cpts.length; i++) ctx.lineTo(cpts[i].x, cpts[i].y);
         ctx.stroke();
@@ -1250,13 +1527,13 @@ function polygonEditor() {
         for (let i = 0; i < cpts.length; i++) {
           const p = cpts[i];
           const isSelV = (this.selectedContour === ci && this.selectedVerts.some(v => v.poly === -1 - ci && v.idx === i));
-          const r = (isSelV ? 7 : 4) * dpr;
+          const r = (isSelV ? CONTOUR_VERTEX_RADIUS_SELECTED : CONTOUR_VERTEX_RADIUS) * dpr;
           ctx.beginPath();
           ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-          ctx.fillStyle = isSelV ? '#FFFFFF' : '#FFE600';
+          ctx.fillStyle = isSelV ? COLOR_WHITE : COLOR_CONTOUR;
           ctx.fill();
-          ctx.strokeStyle = isSelV ? '#FFD000' : '#FFFFFF';
-          ctx.lineWidth = 1.5 * dpr;
+          ctx.strokeStyle = isSelV ? COLOR_CONTOUR_SELECTED : COLOR_WHITE;
+          ctx.lineWidth = CONTOUR_VERTEX_LINE_WIDTH * dpr;
           ctx.stroke();
         }
 
@@ -1273,27 +1550,27 @@ function polygonEditor() {
           // Normal (left side of line direction = perpendicular CCW)
           const nnx = -lny, nny = lnx;
           // "up" side: direction='left' → up is to the left of travel direction
-          const sign = (c.direction === 'left') ? 1 : -1;
-          const arrowLen = 18 * dpr;
+          const sign = (c.direction === CONTOUR_DIR_LEFT) ? 1 : -1;
+          const arrowLen = CONTOUR_ARROW_LENGTH_PX * dpr;
           const ex = mx + sign * nnx * arrowLen;
           const ey = my + sign * nny * arrowLen;
 
           // Draw arrow shaft
           ctx.beginPath();
-          ctx.strokeStyle = '#EF4444';
-          ctx.lineWidth = 2 * dpr;
+          ctx.strokeStyle = COLOR_CONTOUR_ARROW;
+          ctx.lineWidth = CONTOUR_ARROW_LINE_WIDTH * dpr;
           ctx.moveTo(mx, my);
           ctx.lineTo(ex, ey);
           ctx.stroke();
 
           // Arrowhead
-          const hlen = 7 * dpr;
-          const hangle = Math.PI / 6;
+          const hlen = CONTOUR_ARROWHEAD_LENGTH_PX * dpr;
+          const hangle = CONTOUR_ARROWHEAD_ANGLE;
           const adx = ex - mx, ady = ey - my;
           const alen = Math.hypot(adx, ady) || 1;
           const ax = adx / alen, ay = ady / alen;
           ctx.beginPath();
-          ctx.fillStyle = '#EF4444';
+          ctx.fillStyle = COLOR_CONTOUR_ARROW;
           ctx.moveTo(ex, ey);
           ctx.lineTo(ex - hlen * (ax - ay * Math.tan(hangle)), ey - hlen * (ay + ax * Math.tan(hangle)));
           ctx.lineTo(ex - hlen * (ax + ay * Math.tan(hangle)), ey - hlen * (ay - ax * Math.tan(hangle)));
@@ -1301,13 +1578,13 @@ function polygonEditor() {
           ctx.fill();
 
           // Direction toggle button — small circle at arrow tip
-          const btnR = 9 * dpr;
+          const btnR = CONTOUR_ARROW_BTN_RADIUS_PX * dpr;
           ctx.beginPath();
           ctx.arc(ex, ey, btnR, 0, Math.PI * 2);
-          ctx.fillStyle = 'rgba(239,68,68,0.18)';
+          ctx.fillStyle = COLOR_CONTOUR_ARROW_BTN_FILL;
           ctx.fill();
-          ctx.strokeStyle = '#EF4444';
-          ctx.lineWidth = 1.5 * dpr;
+          ctx.strokeStyle = COLOR_CONTOUR_ARROW;
+          ctx.lineWidth = CONTOUR_ARROW_BTN_LINE_WIDTH * dpr;
           ctx.stroke();
           // Store button hit area in logical pixels (divide out dpr)
           this._contourArrowBtns.push({ cx: ex / dpr, cy: ey / dpr, idx: ci });
@@ -1318,17 +1595,17 @@ function polygonEditor() {
       if (this.contourMode && this.contourDraft.length > 0) {
         const dpts = this.contourDraft.map(p => this.imgToCanvas(p.x, p.y));
         ctx.beginPath();
-        ctx.setLineDash([6 * dpr, 4 * dpr]);
-        ctx.strokeStyle = '#FFE600';
-        ctx.lineWidth = 2 * dpr;
+        ctx.setLineDash([DASH_ON_PX * dpr, DASH_OFF_PX * dpr]);
+        ctx.strokeStyle = COLOR_CONTOUR;
+        ctx.lineWidth = CONTOUR_DRAFT_LINE_WIDTH * dpr;
         ctx.moveTo(dpts[0].x, dpts[0].y);
         for (let i = 1; i < dpts.length; i++) ctx.lineTo(dpts[i].x, dpts[i].y);
         ctx.stroke();
         ctx.setLineDash([]);
         for (const p of dpts) {
           ctx.beginPath();
-          ctx.arc(p.x, p.y, 4 * dpr, 0, Math.PI * 2);
-          ctx.fillStyle = '#FFE600';
+          ctx.arc(p.x, p.y, CONTOUR_DRAFT_VERTEX_RADIUS * dpr, 0, Math.PI * 2);
+          ctx.fillStyle = COLOR_CONTOUR;
           ctx.fill();
         }
       }
@@ -1341,11 +1618,11 @@ function polygonEditor() {
         const ry = Math.min(r0.y, r1.y);
         const rw = Math.abs(r1.x - r0.x);
         const rh = Math.abs(r1.y - r0.y);
-        ctx.setLineDash([6 * dpr, 4 * dpr]);
-        ctx.strokeStyle = '#2383E2';
-        ctx.lineWidth = 1.5 * dpr;
+        ctx.setLineDash([DASH_ON_PX * dpr, DASH_OFF_PX * dpr]);
+        ctx.strokeStyle = COLOR_RUBBER_BAND;
+        ctx.lineWidth = RUBBER_BAND_LINE_WIDTH * dpr;
         ctx.strokeRect(rx, ry, rw, rh);
-        ctx.fillStyle = 'rgba(35, 131, 226, 0.08)';
+        ctx.fillStyle = COLOR_RUBBER_BAND_FILL;
         ctx.fillRect(rx, ry, rw, rh);
         ctx.setLineDash([]);
       }
@@ -1359,15 +1636,15 @@ function polygonEditor() {
         const GRID_ROWS = this.gridN;
         const tl = this._printTopLeftPx();
         const k  = this._pxPerMm();
-        const psm = this.printSizeMm || 171.45;
+        const psm = this.printSizeMm || DEFAULT_PRINT_SIZE_MM;
         const cellWpx = (psm / GRID_COLS) * k;
         const cellHpx = (psm / GRID_ROWS) * k;
 
         ctx.save();
 
         // Faint cell boundary lines — indigo accent, matching value text (v5.09)
-        ctx.strokeStyle = 'rgba(99,102,241,0.40)';  // indigo @ 0.40 alpha (softer than value text @ 0.92)
-        ctx.lineWidth = 0.75 * dpr;
+        ctx.strokeStyle = COLOR_GRID_LINE;  // indigo @ 0.40 alpha (softer than value text @ 0.92)
+        ctx.lineWidth = GRID_LINE_WIDTH * dpr;
         ctx.setLineDash([]);
 
         // Vertical lines (col boundaries)
@@ -1397,7 +1674,7 @@ function polygonEditor() {
         }
 
         // ── Cell fill by value (v5.14) — under numbers and rings (see _drawCellColors) ──
-        const _colorOn = this.colorCellsByHeight && this.gridMode !== 'off';
+        const _colorOn = this.colorCellsByHeight && this.gridMode !== GRID_MODE_OFF;
         if (_colorOn) this._drawCellColors(ctx, tl, cellWpx, cellHpx);
 
         // Numeric value text for set cells (task 720: replaced blue dot)
@@ -1405,13 +1682,13 @@ function polygonEditor() {
         //   delta    → indigo text, 'N.N' / '-N.N' label (v5.59: no '+')
         //   absolute → orange text, 'N.N' label (no leading '+')
         //   off      → skip rendering entirely (values preserved on disk)
-        if (this.gridMode !== 'off') {
+        if (this.gridMode !== GRID_MODE_OFF) {
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.font = `${(this.gridN > 20 ? 8 : 11) * dpr}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
-          ctx.fillStyle = (this.gridMode === 'absolute')
-            ? 'rgba(249,115,22,0.95)'   // tailwind orange-500
-            : '#000';  // v5.20: plain black (delta), no outline
+          ctx.font = `${(this.gridN > GRID_N_DEFAULT ? GRID_VALUE_FONT_PX_FINE : GRID_VALUE_FONT_PX) * dpr}px ${FONT_STACK_UI}`;
+          ctx.fillStyle = (this.gridMode === GRID_MODE_ABSOLUTE)
+            ? COLOR_GRID_VALUE_ABSOLUTE   // tailwind orange-500
+            : COLOR_GRID_VALUE_DELTA;  // v5.20: plain black (delta), no outline
           for (const [idxStr, mm] of Object.entries(this.gridCellHeights)) {
             if (mm === 0) continue;  // zero = empty cell
             const idx = Number(idxStr);
@@ -1422,7 +1699,7 @@ function polygonEditor() {
             const cyImg = tl.y + (GRID_ROWS - 1 - row + 0.5) * cellHpx;
             const cp = this.imgToCanvas(cxImg, cyImg);
             const mmVal = Number(mm);
-            const mmLabel = mmVal.toFixed(1);  // v5.59: no leading '+' on positives; negatives keep '-'
+            const mmLabel = mmVal.toFixed(GRID_LABEL_DECIMALS);  // v5.59: no leading '+' on positives; negatives keep '-'
             ctx.fillText(mmLabel, cp.x, cp.y);
           }
         }
@@ -1430,16 +1707,16 @@ function polygonEditor() {
         // ── Trap-controlling cell ring (v5.11) ───────────────────────────────
         // Red ring around the cell whose value sets each trap's height
         // (delta and absolute; none in off; list computed server-side by the generator's own test).
-        if (this.gridMode !== 'off' && this._trapCtlCells.length) {
+        if (this.gridMode !== GRID_MODE_OFF && this._trapCtlCells.length) {
           ctx.save();
-          ctx.strokeStyle = '#dc2626';
-          ctx.lineWidth = 2.5 * dpr;
+          ctx.strokeStyle = COLOR_TRAP_CTL_RING;
+          ctx.lineWidth = TRAP_CTL_RING_WIDTH * dpr;
           ctx.setLineDash([]);
           for (const idx of this._trapCtlCells) {
             if (this.gridCellHeights[idx] === undefined || Number(this.gridCellHeights[idx]) === 0) continue;
             const col = idx % GRID_COLS, row = Math.floor(idx / GRID_COLS);
             const cp = this.imgToCanvas(tl.x + (col + 0.5) * cellWpx, tl.y + (GRID_ROWS - 1 - row + 0.5) * cellHpx);
-            const edge = this.imgToCanvas(tl.x + (col + 0.5) * cellWpx + cellWpx * 0.42, tl.y + (GRID_ROWS - 1 - row + 0.5) * cellHpx);
+            const edge = this.imgToCanvas(tl.x + (col + 0.5) * cellWpx + cellWpx * TRAP_CTL_RING_RADIUS_FRAC, tl.y + (GRID_ROWS - 1 - row + 0.5) * cellHpx);
             const rr = Math.abs(edge.x - cp.x);
             ctx.beginPath();
             ctx.arc(cp.x, cp.y, rr, 0, Math.PI * 2);
@@ -1455,19 +1732,19 @@ function polygonEditor() {
           const cyImg = tl.y + (GRID_ROWS - 1 - row) * cellHpx;
           const p0 = this.imgToCanvas(cxImg, cyImg);
           const p1 = this.imgToCanvas(cxImg + cellWpx, cyImg + cellHpx);
-          ctx.fillStyle = 'rgba(99,102,241,0.12)';
+          ctx.fillStyle = COLOR_GRID_ACTIVE_FILL;
           ctx.fillRect(p0.x, p0.y, p1.x - p0.x, p1.y - p0.y);
-          ctx.strokeStyle = 'rgba(99,102,241,0.70)';
-          ctx.lineWidth = 2 * dpr;
+          ctx.strokeStyle = COLOR_GRID_ACTIVE_STROKE;
+          ctx.lineWidth = GRID_ACTIVE_LINE_WIDTH * dpr;
           ctx.strokeRect(p0.x, p0.y, p1.x - p0.x, p1.y - p0.y);
         }
 
         // ── Multi-select highlight (v5.09) — Cmd/Ctrl+drag selection ─────────
         // Draw thicker indigo borders around cells in _gridMultiSelect.
         if (this._gridMultiSelect && this._gridMultiSelect.size > 0) {
-          ctx.strokeStyle = 'rgba(99,102,241,0.90)';  // strong indigo for selected border
-          ctx.lineWidth = 3.5 * dpr;                   // thicker than normal 0.75px grid lines
-          ctx.fillStyle = 'rgba(99,102,241,0.10)';     // subtle fill tint
+          ctx.strokeStyle = COLOR_GRID_MULTI_STROKE;  // strong indigo for selected border
+          ctx.lineWidth = GRID_MULTI_LINE_WIDTH * dpr;                   // thicker than normal 0.75px grid lines
+          ctx.fillStyle = COLOR_GRID_MULTI_FILL;     // subtle fill tint
           for (const idx of this._gridMultiSelect) {
             const col = idx % GRID_COLS;
             const row = Math.floor(idx / GRID_COLS);
@@ -1486,7 +1763,7 @@ function polygonEditor() {
 
     // Find which point (if any) is under the mouse
     hitTestPoint(imgX, imgY) {
-      const hitR = this.POINT_RADIUS / this.scale + 2;
+      const hitR = this.POINT_RADIUS / this.scale + HIT_SLACK_PX;
       // Check selected polygon first for priority
       const order = [this.selectedPoly, ...this.polygons.map((_, i) => i).filter(i => i !== this.selectedPoly)];
       for (const pi of order) {
@@ -1507,10 +1784,10 @@ function polygonEditor() {
     // Returns an array of {x, y, edgeIdx} where edgeIdx is the control-point
     // edge index that each sample belongs to, so callers can map back to the
     // original edge after finding the nearest sample.
-    sampleSplinePoints(pts, segsPerEdge = 16) {
+    sampleSplinePoints(pts, segsPerEdge = SPLINE_SEGMENTS_PER_EDGE) {
       const n = pts.length;
       if (n < 2) return [];
-      const tension = 0.5;
+      const tension = SPLINE_TENSION;
       const samples = [];
       for (let i = 0; i < n; i++) {
         const p0 = pts[(i - 1 + n) % n];
@@ -1545,7 +1822,7 @@ function polygonEditor() {
     // are sparse.  The returned edgeIdx always refers to the control-point edge
     // index so that onRightClick can splice the new point at the right position.
     hitTestEdge(imgX, imgY) {
-      const hitD = this.EDGE_HIT_DIST / this.scale + 2;
+      const hitD = this.EDGE_HIT_DIST / this.scale + HIT_SLACK_PX;
       const order = [this.selectedPoly, ...this.polygons.map((_, i) => i).filter(i => i !== this.selectedPoly)];
       let bestDist = Infinity;
       let bestPoly = -1;
@@ -1553,7 +1830,7 @@ function polygonEditor() {
       for (const pi of order) {
         if (pi < 0 || pi >= this.polygons.length) continue;
         const pts = this.polygons[pi].points;
-        const samples = this.sampleSplinePoints(pts, 16);
+        const samples = this.sampleSplinePoints(pts, SPLINE_SEGMENTS_PER_EDGE);
         // Walk consecutive sample pairs as short straight segments
         for (let s = 0; s < samples.length - 1; s++) {
           const a = samples[s];
@@ -1621,8 +1898,8 @@ function polygonEditor() {
       const lx = e.clientX - rect.left;
       const ly = e.clientY - rect.top;
       for (const btn of this._contourArrowBtns) {
-        if (Math.hypot(lx - btn.cx, ly - btn.cy) < 12) {
-          this.contours[btn.idx].direction = (this.contours[btn.idx].direction === 'left') ? 'right' : 'left';
+        if (Math.hypot(lx - btn.cx, ly - btn.cy) < CONTOUR_ARROW_HIT_RADIUS_PX) {
+          this.contours[btn.idx].direction = (this.contours[btn.idx].direction === CONTOUR_DIR_LEFT) ? CONTOUR_DIR_RIGHT : CONTOUR_DIR_LEFT;
           this.draw();
           this.autoSave();
           return;
@@ -1640,7 +1917,7 @@ function polygonEditor() {
         this.dragContourPtIdx = chit.pointIdx;
         this.dragStartX = x;
         this.dragStartY = y;
-        this.$refs.canvas.style.cursor = 'grabbing';
+        this.$refs.canvas.style.cursor = CURSOR_GRABBING;
         this.draw();
         return;
       }
@@ -1661,7 +1938,7 @@ function polygonEditor() {
         this.dragPointIdx = hit.pointIdx;
         this.dragStartX = x;
         this.dragStartY = y;
-        this.$refs.canvas.style.cursor = 'grabbing';
+        this.$refs.canvas.style.cursor = CURSOR_GRABBING;
         this.draw();
       } else {
         // ── Cmd/Ctrl+click on grid cell → enter multi-select mode (v5.09) ────
@@ -1678,7 +1955,7 @@ function polygonEditor() {
           this._gridMultiSelect = new Set([gridCell.idx]);
           this._gridMultiSelectAnchor = { col: gridCell.col, row: gridCell.row, idx: gridCell.idx };
           this._gridHoveredCell = null;
-          this.$refs.canvas.style.cursor = 'crosshair';
+          this.$refs.canvas.style.cursor = CURSOR_CROSSHAIR;
           this.draw();
           // Attach global mouseup listener — will be added below for all paths
         } else {
@@ -1710,7 +1987,7 @@ function polygonEditor() {
           if (!e.shiftKey) {
             this.selectedVerts = [];
           }
-          this.$refs.canvas.style.cursor = 'crosshair';
+          this.$refs.canvas.style.cursor = CURSOR_CROSSHAIR;
           this.draw();
         }
       }
@@ -1821,13 +2098,13 @@ function polygonEditor() {
 
       // Cursor hint — no visual highlight until clicked
       const hit = this.hitTestPoint(x, y);
-      this.$refs.canvas.style.cursor = hit ? 'grab' : 'default';
+      this.$refs.canvas.style.cursor = hit ? CURSOR_GRAB : CURSOR_DEFAULT;
 
       // ── Grid dot hover detection (v5.04) ─────────────────────────────────
       // Check whether the mouse is over a set-cell dot so we can show a tooltip.
       // Done only when no cell input is currently open.
       // Task 774: in 'off' mode, overlays are hidden — don't register hovers either.
-      if (!this._gridActiveCell && this.gridMode !== 'off' && Object.keys(this.gridCellHeights).length > 0) {
+      if (!this._gridActiveCell && this.gridMode !== GRID_MODE_OFF && Object.keys(this.gridCellHeights).length > 0) {
         const GRID_COLS = this.gridN;
         const GRID_ROWS = this.gridN;
         const canvas = this.$refs.canvas;
@@ -1844,7 +2121,7 @@ function polygonEditor() {
           // Centre of the dot in CSS px (top-left of cell + half width/height)
           const dotCx = pos.x + pos.w * 0.5;
           const dotCy = pos.y + pos.h * 0.5;
-          const dotR = Math.max(5, Math.min(pos.w, 10));  // hit radius in CSS px
+          const dotR = Math.max(GRID_DOT_HIT_MIN_PX, Math.min(pos.w, GRID_DOT_HIT_MAX_PX));  // hit radius in CSS px
           const dx = mx - dotCx;
           const dy = my - dotCy;
           if (dx * dx + dy * dy <= dotR * dotR) {
@@ -1866,17 +2143,17 @@ function polygonEditor() {
       }
       if (this.draggingContour) {
         this.draggingContour = false;
-        this.$refs.canvas.style.cursor = 'default';
+        this.$refs.canvas.style.cursor = CURSOR_DEFAULT;
         this.autoSave();
       }
       if (this.dragging) {
         this.dragging = false;
-        this.$refs.canvas.style.cursor = 'default';
+        this.$refs.canvas.style.cursor = CURSOR_DEFAULT;
         this.autoSave();
       }
       if (this.rubberBand) {
         this.rubberBand = false;
-        this.$refs.canvas.style.cursor = 'default';
+        this.$refs.canvas.style.cursor = CURSOR_DEFAULT;
         this.draw();
       }
 
@@ -1885,11 +2162,11 @@ function polygonEditor() {
       if (this._gridMultiSelect !== null && e.button === 0) {
         // If it's a right-click release or multi-select was cancelled, skip.
         // Open the single shared input to commit one value to all selected cells.
-        this.$refs.canvas.style.cursor = 'default';
+        this.$refs.canvas.style.cursor = CURSOR_DEFAULT;
         const anchor = this._gridMultiSelectAnchor;
         if (anchor && this._gridRampMode) {
           // v5.19: ramp popup — two boxes, focus the first.
-          if (this.gridMode === 'off') { this.cancelGridRamp(); this.flash('Grid mode is Off — switch to Delta or Absolute to edit cells', false); return; }
+          if (this.gridMode === GRID_MODE_OFF) { this.cancelGridRamp(); this.flash(MSG_GRID_MODE_OFF, false); return; }
           this.openGridCell(anchor.col, anchor.row, anchor.idx);
           this.$nextTick(() => { const f = this.$refs.gridRampFirst; if (f) { f.focus(); f.select(); } });
         } else if (anchor) {
@@ -1945,7 +2222,7 @@ function polygonEditor() {
       // Mirror the contour-vertex right-click convention: right-click a set-cell
       // dot to delete it.  Uses the same CSS-px hit detection as the hover tooltip.
       // Task 774: skip in 'off' mode — overlays are hidden and values are preserved.
-      if (this.gridMode !== 'off' && Object.keys(this.gridCellHeights).length > 0) {
+      if (this.gridMode !== GRID_MODE_OFF && Object.keys(this.gridCellHeights).length > 0) {
         const GRID_COLS = this.gridN;
         const canvas = this.$refs.canvas;
         const rect = canvas.getBoundingClientRect();
@@ -1958,7 +2235,7 @@ function polygonEditor() {
           const pos = this._gridCellCanvasPx(col, row);
           const dotCx = pos.x + pos.w * 0.5;
           const dotCy = pos.y + pos.h * 0.5;
-          const dotR = Math.max(5, Math.min(pos.w, 10));
+          const dotR = Math.max(GRID_DOT_HIT_MIN_PX, Math.min(pos.w, GRID_DOT_HIT_MAX_PX));
           const dx = mx - dotCx;
           const dy = my - dotCy;
           if (dx * dx + dy * dy <= dotR * dotR) {
@@ -1977,7 +2254,7 @@ function polygonEditor() {
       const chit = this.hitTestContourPoint(x, y);
       if (chit) {
         const pts = this.contours[chit.contourIdx].points;
-        if (pts.length > 2) {
+        if (pts.length > MIN_CONTOUR_POINTS) {
           this.pushUndo();
           pts.splice(chit.pointIdx, 1);
           this.draw();
@@ -1999,7 +2276,7 @@ function polygonEditor() {
       if (hit) {
         // Right-click on a vertex — remove it
         const pts = this.polygons[hit.polyIdx].points;
-        if (pts.length > 3) {
+        if (pts.length > MIN_POLYGON_VERTICES) {
           this.pushUndo();
           pts.splice(hit.pointIdx, 1);
           this.selectedVerts = this.selectedVerts.filter(v => !(v.poly === hit.polyIdx && v.idx === hit.pointIdx));
@@ -2009,12 +2286,12 @@ function polygonEditor() {
           this.draw();
           this.flash('Vertex removed', true);
           this.autoSave();
-        } else if (this.polygons[hit.polyIdx].type === 'trap' || this.polygons[hit.polyIdx].type === 'water' || this.polygons[hit.polyIdx].type === 'boulders') {
+        } else if (isRemovablePolyType(this.polygons[hit.polyIdx].type)) {
           // 3-vertex trap/water/boulders — delete the whole polygon rather than erroring
           this.selectedVerts = [];
           this.removePoly(hit.polyIdx);
         } else {
-          this.flash('Minimum 3 vertices required', false);
+          this.flash(MSG_MIN_VERTICES, false);
         }
       } else {
         // Right-click on an edge — insert a vertex and start dragging it
@@ -2033,14 +2310,14 @@ function polygonEditor() {
           this.dragPointIdx = newIdx;
           this.dragStartX = x;
           this.dragStartY = y;
-          this.$refs.canvas.style.cursor = 'grabbing';
+          this.$refs.canvas.style.cursor = CURSOR_GRABBING;
           this.draw();
         }
       }
     },
 
     resamplePoly(pts, n) {
-      if (pts.length < 2 || n < 3) return pts;
+      if (pts.length < 2 || n < MIN_POLYGON_VERTICES) return pts;
       // Compute cumulative arc lengths along the closed polygon
       const len = pts.length;
       const cumLen = [0];
@@ -2092,25 +2369,25 @@ function polygonEditor() {
       this.contourMode = false;
       // Remove duplicate last point added by the double-click mousedown
       const draft = this.contourDraft;
-      if (draft.length >= 4) {
+      if (draft.length >= CONTOUR_DBLCLICK_DEDUP_MIN_POINTS) {
         // double-click fires mousedown twice before dblclick, remove last dup
         const last = draft[draft.length - 1];
         const prev = draft[draft.length - 2];
-        if (Math.hypot(last.x - prev.x, last.y - prev.y) < 3) {
+        if (Math.hypot(last.x - prev.x, last.y - prev.y) < CONTOUR_DBLCLICK_DEDUP_DIST_PX) {
           draft.pop();
         }
       }
-      if (draft.length < 2) {
+      if (draft.length < MIN_CONTOUR_POINTS) {
         this.contourDraft = [];
-        this.flash('Contour needs at least 2 points — cancelled', false);
+        this.flash(`Contour needs at least ${MIN_CONTOUR_POINTS} points — cancelled`, false);
         this.draw();
         return;
       }
       this.pushUndo();
       const ci = this.contours.length + 1;
       this.contours.push({
-        name: 'Contour ' + ci,
-        direction: 'left',
+        name: NAME_PREFIX_CONTOUR + ci,
+        direction: CONTOUR_DIR_LEFT,
         points: [...draft],
       });
       this.contourDraft = [];
@@ -2121,7 +2398,7 @@ function polygonEditor() {
     },
 
     hitTestContourPoint(imgX, imgY) {
-      const hitR = this.POINT_RADIUS / this.scale + 2;
+      const hitR = this.POINT_RADIUS / this.scale + HIT_SLACK_PX;
       for (let ci = 0; ci < this.contours.length; ci++) {
         const pts = this.contours[ci].points;
         for (let i = 0; i < pts.length; i++) {
@@ -2164,7 +2441,7 @@ function polygonEditor() {
       } else {
         this.polygons = data.polygons || data;
         this.contours = (data.contours || []).map(c => ({
-          name: c.name, direction: c.direction || 'left',
+          name: c.name, direction: c.direction || CONTOUR_DIR_LEFT,
           points: c.points.map(pt => ({ x: pt.x, y: pt.y })),
         }));
       }
@@ -2193,7 +2470,7 @@ function polygonEditor() {
 
     resampleAll() {
       this.pushUndo();
-      const n = Math.max(3, Math.min(200, this.numPoints || 20));
+      const n = Math.max(RESAMPLE_MIN_POINTS, Math.min(RESAMPLE_MAX_POINTS, this.numPoints || RESAMPLE_DEFAULT_POINTS));
       for (const poly of this.polygons) {
         poly.points = this.resamplePoly(poly.points, n);
       }
@@ -2208,17 +2485,17 @@ function polygonEditor() {
       const trapCount = this.polygons.filter(p => p.type === 'trap').length;
       const cx = this.imgW / 2;
       const cy = this.imgH / 2;
-      const r = Math.min(this.imgW, this.imgH) * 0.08;
+      const r = Math.min(this.imgW, this.imgH) * NEW_SHAPE_RADIUS_FRAC;
       // Create a small octagon at center
       const pts = [];
-      for (let i = 0; i < 8; i++) {
-        const a = (Math.PI * 2 * i) / 8 - Math.PI / 2;
+      for (let i = 0; i < NEW_SHAPE_SIDES; i++) {
+        const a = (Math.PI * 2 * i) / NEW_SHAPE_SIDES - Math.PI / 2;
         pts.push({ x: Math.round(cx + r * Math.cos(a)), y: Math.round(cy + r * Math.sin(a)) });
       }
       this.polygons.push({
-        name: 'Trap ' + (trapCount + 1),
-        type: 'trap',
-        color: '#EF4444',
+        name: NAME_PREFIX_TRAP + (trapCount + 1),
+        type: POLY_TYPE_TRAP,
+        color: COLOR_POLY_TRAP,
         points: pts,
       });
       this.selectedPoly = this.polygons.length - 1;
@@ -2232,16 +2509,16 @@ function polygonEditor() {
       const waterCount = this.polygons.filter(p => p.type === 'water').length;
       const cx = this.imgW / 2;
       const cy = this.imgH / 2;
-      const r = Math.min(this.imgW, this.imgH) * 0.08;
+      const r = Math.min(this.imgW, this.imgH) * NEW_SHAPE_RADIUS_FRAC;
       const pts = [];
-      for (let i = 0; i < 8; i++) {
-        const a = (Math.PI * 2 * i) / 8 - Math.PI / 2;
+      for (let i = 0; i < NEW_SHAPE_SIDES; i++) {
+        const a = (Math.PI * 2 * i) / NEW_SHAPE_SIDES - Math.PI / 2;
         pts.push({ x: Math.round(cx + r * Math.cos(a)), y: Math.round(cy + r * Math.sin(a)) });
       }
       this.polygons.push({
-        name: 'Water ' + (waterCount + 1),
-        type: 'water',
-        color: '#EAB308',
+        name: NAME_PREFIX_WATER + (waterCount + 1),
+        type: POLY_TYPE_WATER,
+        color: COLOR_POLY_WATER,
         points: pts,
       });
       this.selectedPoly = this.polygons.length - 1;
@@ -2265,7 +2542,7 @@ function polygonEditor() {
     //             = printTopLeft_px + mm * maxDim / PRINT_SIZE_MM
     _pxPerMm() {
       const maxDim = Math.max(this.imgW || 1, this.imgH || 1);
-      const psm = this.printSizeMm || 171.45;
+      const psm = this.printSizeMm || DEFAULT_PRINT_SIZE_MM;
       return maxDim / psm;
     },
     _printTopLeftPx() {
@@ -2291,7 +2568,7 @@ function polygonEditor() {
       // The collar around the hole is ~3.78 mm radius (Topo's 7/32" hole + doubled
       // collar OD); 5 mm keeps ~1.2 mm past the collar edge and honors the 1 mm
       // fringe-cap rule near the frame perimeter.
-      const psm = this.printSizeMm || 171.45;
+      const psm = this.printSizeMm || DEFAULT_PRINT_SIZE_MM;
       const c = this.TEE_HOLE_EDGE_CLAMP_MM;
       const mmX = (imgX - tl.x) / k;
       const mmY = (imgY - tl.y) / k;
@@ -2318,21 +2595,21 @@ function polygonEditor() {
     // Derived from x_mm — no dedicated EGM field. Returns 'left' when marker
     // is missing (radio group is hidden anyway, but keep the getter safe).
     get teeHoleSide() {
-      if (!this.teeHole) return 'left';
-      const psm = this.printSizeMm || 171.45;
-      return (this.teeHole.x_mm < psm / 2) ? 'left' : 'right';
+      if (!this.teeHole) return TEE_SIDE_LEFT;
+      const psm = this.printSizeMm || DEFAULT_PRINT_SIZE_MM;
+      return (this.teeHole.x_mm < psm / 2) ? TEE_SIDE_LEFT : TEE_SIDE_RIGHT;
     },
     // Mirror the tee hole across the print's vertical centerline so its
     // distance from the opposite frame edge is preserved. Y is untouched.
     // No-op when marker is missing or when the requested side already matches.
     setTeeHoleSide(side) {
       if (!this.teeHole) return;
-      if (side !== 'left' && side !== 'right') return;
+      if (side !== TEE_SIDE_LEFT && side !== TEE_SIDE_RIGHT) return;
       if (this.teeHoleSide === side) return;
-      const psm = this.printSizeMm || 171.45;
+      const psm = this.printSizeMm || DEFAULT_PRINT_SIZE_MM;
       const newX = psm - this.teeHole.x_mm;
       this.teeHole = {
-        x_mm: Math.round(newX * 10) / 10,
+        x_mm: roundMm(newX),
         y_mm: this.teeHole.y_mm,
       };
       this.autoSave();
@@ -2362,8 +2639,8 @@ function polygonEditor() {
         const mm = this._imgPxToTeeHoleMm(newImgX, newImgY);
         // Round to 0.1 mm for stability in the saved file
         this.teeHole = {
-          x_mm: Math.round(mm.x_mm * 10) / 10,
-          y_mm: Math.round(mm.y_mm * 10) / 10,
+          x_mm: roundMm(mm.x_mm),
+          y_mm: roundMm(mm.y_mm),
         };
       };
       const onUp = () => {
@@ -2386,7 +2663,7 @@ function polygonEditor() {
       const GRID_ROWS = this.gridN;
       const tl  = this._printTopLeftPx();
       const k   = this._pxPerMm();
-      const psm = this.printSizeMm || 171.45;
+      const psm = this.printSizeMm || DEFAULT_PRINT_SIZE_MM;
       const cellWpx = (psm / GRID_COLS) * k;
       const cellHpx = (psm / GRID_ROWS) * k;
       // Offset from print top-left in pixel space
@@ -2407,7 +2684,7 @@ function polygonEditor() {
       const GRID_ROWS = this.gridN;
       const tl  = this._printTopLeftPx();
       const k   = this._pxPerMm();
-      const psm = this.printSizeMm || 171.45;
+      const psm = this.printSizeMm || DEFAULT_PRINT_SIZE_MM;
       const cellWpx = (psm / GRID_COLS) * k;
       const cellHpx = (psm / GRID_ROWS) * k;
       // Row 0 = bottom; row GRID_ROWS-1 = top of print area image
@@ -2424,8 +2701,8 @@ function polygonEditor() {
     // Open the inline input for a grid cell.
     // Task 774 (v5.34): in 'off' mode editing is disabled — show a hint toast and bail.
     openGridCell(col, row, idx) {
-      if (this.gridMode === 'off') {
-        this.flash('Grid mode is Off — switch to Delta or Absolute to edit cells', false);
+      if (this.gridMode === GRID_MODE_OFF) {
+        this.flash(MSG_GRID_MODE_OFF, false);
         return;
       }
       const existing = this.gridCellHeights[idx];
@@ -2451,20 +2728,20 @@ function polygonEditor() {
       let d = e.deltaY;
       if (e.shiftKey && !d) d = e.deltaX;              // macOS turns Shift+wheel into deltaX
       if (!d) return;
-      const px = d * (e.deltaMode === 1 ? 100 / 3 : e.deltaMode === 2 ? 1000 : 1);   // normalise to px (100 px = 1 notch)
+      const px = d * (e.deltaMode === DOM_DELTA_LINE ? WHEEL_NOTCH_PX / WHEEL_LINES_PER_NOTCH : e.deltaMode === DOM_DELTA_PAGE ? WHEEL_PAGE_PX : 1);   // normalise to px (WHEEL_NOTCH_PX px = 1 notch)
       if (this._wheelAcc && Math.sign(this._wheelAcc) !== Math.sign(px)) this._wheelAcc = 0;
       this._wheelAcc += px;
-      const notches = Math.trunc(Math.abs(this._wheelAcc) / 100) * -Math.sign(this._wheelAcc);   // forward = +
+      const notches = Math.trunc(Math.abs(this._wheelAcc) / WHEEL_NOTCH_PX) * -Math.sign(this._wheelAcc);   // forward = +
       if (!notches) return;
-      this._wheelAcc -= Math.trunc(this._wheelAcc / 100) * 100;
+      this._wheelAcc -= Math.trunc(this._wheelAcc / WHEEL_NOTCH_PX) * WHEEL_NOTCH_PX;
       let v = parseFloat(this._gridInputValue);
       if (isNaN(v)) {                                   // blank box: shared value of the selected cell(s), else 0
         const t = (this._gridMultiSelect && this._gridMultiSelect.size > 0) ? [...this._gridMultiSelect] : [this._gridActiveCell.idx];
         const vals = t.map(i => Number(this.gridCellHeights[i]) || 0);
         v = vals.every(x => x === vals[0]) ? vals[0] : 0;
       }
-      v = v + notches * (e.shiftKey ? 1.0 : 0.1);
-      this._gridInputValue = String(Math.round(v * 10) / 10);
+      v = v + notches * (e.shiftKey ? WHEEL_STEP_SHIFT_MM : WHEEL_STEP_MM);
+      this._gridInputValue = String(roundMm(v));
     },
 
     // Commit the current input value to gridCellHeights.
@@ -2473,9 +2750,8 @@ function polygonEditor() {
       if (!this._gridActiveCell) return;
       const raw = parseFloat(this._gridInputValue);
       if (!isNaN(raw)) {
-        const clamped = (this.gridMode === 'absolute')
-          ? Math.max(0, Math.min(30, raw))
-          : Math.max(-20, Math.min(20, raw));
+        const lim = gridValueLimits(this.gridMode);
+        const clamped = Math.max(lim.min, Math.min(lim.max, raw));
         const targets = (this._gridMultiSelect && this._gridMultiSelect.size > 0)
           ? [...this._gridMultiSelect] : [this._gridActiveCell.idx];
         this.gridUndoSnapshot(targets, targets.length > 1 ? 'set ' + targets.length + ' cells' : 'cell edit');
@@ -2500,7 +2776,7 @@ function polygonEditor() {
     setGridResolution(n) {
       if (n === this.gridN) return;
       if (Object.keys(this.gridCellHeights).length > 0) {
-        if (!window.confirm('Switching resolutions will cause all grid settings to be erased.')) return;
+        if (!window.confirm(MSG_GRID_RESOLUTION_ERASE)) return;
       }
       this.cancelGridRamp && this.cancelGridRamp();
       this.gridN = n;
@@ -2585,7 +2861,7 @@ function polygonEditor() {
     },
 
     removePoly(idx) {
-      if (this.polygons[idx].type !== 'trap' && this.polygons[idx].type !== 'water' && this.polygons[idx].type !== 'boulders') return;
+      if (!isRemovablePolyType(this.polygons[idx].type)) return;
       this.pushUndo();
       this.polygons.splice(idx, 1);
       if (this.selectedPoly >= this.polygons.length) {
@@ -2594,12 +2870,12 @@ function polygonEditor() {
       // Rename traps, water traps, and boulder regions
       let tc = 0, wc = 0, bc = 0;
       for (const p of this.polygons) {
-        if (p.type === 'trap') { tc++; p.name = 'Trap ' + tc; }
-        if (p.type === 'water') { wc++; p.name = 'Water ' + wc; }
-        if (p.type === 'boulders') { bc++; p.name = 'Boulders ' + bc; }
+        if (p.type === 'trap') { tc++; p.name = NAME_PREFIX_TRAP + tc; }
+        if (p.type === 'water') { wc++; p.name = NAME_PREFIX_WATER + wc; }
+        if (p.type === 'boulders') { bc++; p.name = NAME_PREFIX_BOULDERS + bc; }
       }
       this.draw();
-      this.flash('Polygon removed', true);
+      this.flash(MSG_POLYGON_REMOVED, true);
       this.autoSave();
     },
 
@@ -2624,7 +2900,7 @@ function polygonEditor() {
         nSet++; if (n < lo) lo = n; if (n > hi) hi = n;
       }
       if (nSet === 0) return null;
-      if (nSet < 400) { if (0 < lo) lo = 0; if (0 > hi) hi = 0; }
+      if (nSet < GRID_RANGE_FULL_CELL_COUNT) { if (0 < lo) lo = 0; if (0 > hi) hi = 0; }
       return { min: lo, max: hi };
     },
     // single set value => mid colour (avoid divide-by-zero)
@@ -2636,7 +2912,7 @@ function polygonEditor() {
       return 'linear-gradient(to right,' + this.TERRAIN_STOPS.join(',') + ')';
     },
     setColorCells() {   // view preference only — never persisted to the EGM
-      try { localStorage.setItem('editorColorCells', this.colorCellsByHeight ? '1' : '0'); } catch (e) {}
+      try { localStorage.setItem(STORAGE_KEY_COLOR_CELLS, this.colorCellsByHeight ? STORAGE_VALUE_ON : STORAGE_VALUE_OFF); } catch (e) {}
       this.draw();
     },
 
@@ -2652,7 +2928,7 @@ function polygonEditor() {
         const rgb = this.cellColorRgb(mm, rng);
         const p0 = this.imgToCanvas(tl.x + col * cellWpx, tl.y + (GRID_ROWS - 1 - row) * cellHpx);
         const p1 = this.imgToCanvas(tl.x + (col + 1) * cellWpx, tl.y + (GRID_ROWS - row) * cellHpx);
-        ctx.fillStyle = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.5)`;
+        ctx.fillStyle = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${CELL_COLOR_ALPHA})`;
         ctx.fillRect(Math.min(p0.x, p1.x), Math.min(p0.y, p1.y), Math.abs(p1.x - p0.x), Math.abs(p1.y - p0.y));
       }
     },
@@ -2660,7 +2936,7 @@ function polygonEditor() {
     // v5.11 — keep the red controlling-cell rings in sync with the live editor
     // state.  Debounced; skips the network entirely in off mode.
     _scheduleTrapCtl() {
-      if (this.gridMode === 'off' || !Object.keys(this.gridCellHeights).length) {
+      if (this.gridMode === GRID_MODE_OFF || !Object.keys(this.gridCellHeights).length) {
         this._trapCtlCells = []; this._trapCtlSig = '';
         return;
       }
@@ -2681,14 +2957,14 @@ function polygonEditor() {
       const seq = ++this._trapCtlSeq;
       this._trapCtlTimer = setTimeout(async () => {
         try {
-          const r = await fetch('/api/trap_controlling_cells', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: sig });
+          const r = await fetch(API_TRAP_CONTROLLING_CELLS, {
+            method: HTTP_METHOD_POST, headers: HTTP_HEADERS_JSON, body: sig });
           if (!r.ok || seq !== this._trapCtlSeq) return;
           const j = await r.json();
           this._trapCtlCells = (j.traps || []).flatMap(t => t.cells);
           this.draw();
         } catch (e) { /* cosmetic overlay */ }
-      }, 250);
+      }, TRAP_CTL_DEBOUNCE_MS);
     },
 
     async autoSave() {
@@ -2701,7 +2977,7 @@ function polygonEditor() {
       if (!this.holeName.trim())          missing.push('hole name empty');
       if (missing.length) {
         this._pendingAutoSave = true;
-        this.flash('Change kept in memory — will save once ' + missing.join(', '), true, '', 4000);
+        this.flash('Change kept in memory — will save once ' + missing.join(', '), true, '', FLASH_DEFERRED_SAVE_MS);
         return;
       }
       // Build combined polygons list: regular polygons + contour lines
@@ -2746,8 +3022,8 @@ function polygonEditor() {
       // byte-identical to their pre-v4.24 form (backward compat).
       if (this.teeHole && typeof this.teeHole.x_mm === 'number' && typeof this.teeHole.y_mm === 'number') {
         data.tee_hole = {
-          x_mm: Math.round(this.teeHole.x_mm * 10) / 10,
-          y_mm: Math.round(this.teeHole.y_mm * 10) / 10,
+          x_mm: roundMm(this.teeHole.x_mm),
+          y_mm: roundMm(this.teeHole.y_mm),
         };
       }
       // GPS backend block — only written when at least one GPS field has been set
@@ -2773,18 +3049,18 @@ function polygonEditor() {
       }
       // gridMode — task 774 (v5.34). Only persist when non-default so legacy EGMs
       // round-trip unchanged (loader defaults missing field to 'delta').
-      if (this.gridMode && this.gridMode !== 'delta') {
+      if (this.gridMode && this.gridMode !== DEFAULT_GRID_MODE) {
         data.gridMode = this.gridMode;
       }
       // gridResolution — v5.22. Only persist when non-default (40) so legacy EGMs
       // round-trip unchanged (loader defaults missing field to 20).
-      if (this.gridN !== 20) {
+      if (this.gridN !== GRID_N_DEFAULT) {
         data.gridResolution = this.gridN;
       }
       try {
-        await fetch('/api/boundaries', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        await fetch(API_BOUNDARIES, {
+          method: HTTP_METHOD_POST,
+          headers: HTTP_HEADERS_JSON,
           body: JSON.stringify(data),
         });
         this._pendingAutoSave = false;  // v4.48 — clear any deferred-save badge
@@ -2797,7 +3073,7 @@ function polygonEditor() {
       this.dlgImagesLoading = true;
       this.dlgImagesError = false;
       try {
-        const resp = await fetch('/api/images');
+        const resp = await fetch(API_IMAGES);
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         this.dlgImages = await resp.json();
       } catch (e) {
@@ -2822,7 +3098,7 @@ function polygonEditor() {
 
     async refreshCourseList() {
       try {
-        const resp = await fetch('/api/courses');
+        const resp = await fetch(API_COURSES);
         const data = await resp.json();
         this.existingCourses = data.courses || [];
       } catch (e) {
@@ -2880,7 +3156,7 @@ function polygonEditor() {
       this.openProjects = [];
       this.selectedOpenProject = null;
       try {
-        const resp = await fetch('/api/boundaries/list?t=' + Date.now());
+        const resp = await fetch(API_BOUNDARIES_LIST + QUERY_CACHE_BUST + Date.now());
         const data = await resp.json();
         this.openProjects = data.projects || [];
       } catch (err) {
@@ -2915,29 +3191,29 @@ function polygonEditor() {
       this.redoStack          = [];
       this._gridUndo          = null;
       // Per-hole settings — reset to defaults
-      this.contourStep        = 0.5;
-      this.grassAmplitude     = 0.5;
-      this.grassSpacing       = 0.05;
-      this.greenStyle         = 'terraced';
-      this.elevationRange     = 14.5;
-      this.zScale             = 1.0;
-      this.greenScale         = 1.0065;
-      this.fringeEdgeHeight   = 10.0;
-      this.baseThicknessMm    = 1.5;
+      this.contourStep        = DEFAULT_CONTOUR_STEP_MM;
+      this.grassAmplitude     = DEFAULT_GRASS_AMPLITUDE_MM;
+      this.grassSpacing       = DEFAULT_GRASS_SPACING_MM;
+      this.greenStyle         = DEFAULT_GREEN_STYLE;
+      this.elevationRange     = DEFAULT_ELEVATION_RANGE_MM;
+      this.zScale             = DEFAULT_Z_SCALE;
+      this.greenScale         = DEFAULT_GREEN_SCALE;
+      this.fringeEdgeHeight   = DEFAULT_FRINGE_EDGE_HEIGHT_MM;
+      this.baseThicknessMm    = DEFAULT_BASE_THICKNESS_MM;
       this.includeBoundaryRegion    = false;
       this.applyFringeFrameCap      = true;
       this.includeFringeWithoutGrass = false;
-      this.flagOffsetXMm      = 0.0;
-      this.flagOffsetYMm      = 0.0;
+      this.flagOffsetXMm      = DEFAULT_FLAG_OFFSET_MM;
+      this.flagOffsetYMm      = DEFAULT_FLAG_OFFSET_MM;
       // Tee-hole
       this.teeHole            = null;
       // GPS backend
       this.gpsEnabled         = false;
       this.gpsFile            = '';
       this.gpsBbox            = null;
-      this.gpsVertExag        = 3.0;
-      this.gpsApproachM       = 8.0;
-      this.gpsGridSize        = 200;
+      this.gpsVertExag        = DEFAULT_GPS_VERT_EXAG;
+      this.gpsApproachM       = DEFAULT_GPS_APPROACH_M;
+      this.gpsGridSize        = DEFAULT_GPS_GRID_SIZE;
       this.courseGeoRef       = null;
       // GPS preview
       this.gpsPreviewDataUrl  = '';
@@ -2945,8 +3221,8 @@ function polygonEditor() {
       this.gpsPreviewNotes    = [];
       // Grid cell elevation
       this.gridCellHeights    = {};
-      this.gridMode           = 'delta';
-      this.gridN              = 20;
+      this.gridMode           = DEFAULT_GRID_MODE;
+      this.gridN              = GRID_N_DEFAULT;
       this._gridMultiSelect   = null;
       this._gridRampMode      = false;
       this._gridMultiSelectAnchor = null;
@@ -2972,7 +3248,7 @@ function polygonEditor() {
       this.clearEditorState();
       try {
         console.log('loadProject: fetching', proj.filename);
-        const resp = await fetch('/api/boundaries/load?filename=' + encodeURIComponent(proj.filename));
+        const resp = await fetch(API_BOUNDARIES_LOAD + QUERY_FILENAME + encodeURIComponent(proj.filename));
         // fetch() does not throw on 4xx/5xx — check resp.ok explicitly so we
         // can surface the HTTP status + response body instead of a generic
         // "Error loading project" toast (which was hiding server 500s on
@@ -2980,15 +3256,15 @@ function polygonEditor() {
         if (!resp.ok) {
           let bodyText = '';
           try { bodyText = await resp.text(); } catch (_) { bodyText = '(could not read body)'; }
-          const snippet = bodyText.length > 400 ? bodyText.slice(0, 400) + '…' : bodyText;
+          const snippet = bodyText.length > HTTP_ERROR_BODY_SNIPPET_CHARS ? bodyText.slice(0, HTTP_ERROR_BODY_SNIPPET_CHARS) + '…' : bodyText;
           console.error('loadProject HTTP error:', resp.status, resp.statusText, 'body:', bodyText, 'filename=', proj.filename);
-          this.flash('HTTP ' + resp.status + ' loading project: ' + snippet, false, '', 15000);
+          this.flash('HTTP ' + resp.status + ' loading project: ' + snippet, false, '', FLASH_LONG_ERROR_MS);
           return;
         }
         const data = await resp.json();
         if (data.status !== 'ok') {
           console.error('loadProject server-side error:', data, 'filename=', proj.filename);
-          this.flash('Failed to load project: ' + (data.msg || 'unknown'), false, '', 15000);
+          this.flash('Failed to load project: ' + (data.msg || 'unknown'), false, '', FLASH_LONG_ERROR_MS);
           return;
         }
         this.courseName = data.course;
@@ -2996,16 +3272,16 @@ function polygonEditor() {
         this.selectedImage = data.image;
         this.selectedImageCourse = data.imageCourse || data.course || '';
         this.selectedImageUrl = this.selectedImageCourse
-          ? '/egm/images/' + encodeURIComponent(this.selectedImageCourse) + '/' + encodeURIComponent(data.image)
-          : '/team_inbox/' + encodeURIComponent(data.image);
-        this.contourStep = data.contourStep != null ? data.contourStep : 0.5;
-        this.grassAmplitude = data.grassAmplitude != null ? data.grassAmplitude : 0.5;
-        this.grassSpacing = data.grassSpacing != null ? data.grassSpacing : 0.05;
-        this.greenStyle = data.greenStyle || 'terraced';
-        this.elevationRange = data.elevationRange != null ? data.elevationRange : 14.5;
-        this.greenScale = data.greenScale != null ? data.greenScale : 1.0065;
-        this.fringeEdgeHeight = data.fringeEdgeHeight != null ? data.fringeEdgeHeight : 10.0;
-        this.baseThicknessMm = data.baseThicknessMm != null ? data.baseThicknessMm : 1.5;
+          ? IMAGE_URL_EGM_IMAGES + encodeURIComponent(this.selectedImageCourse) + '/' + encodeURIComponent(data.image)
+          : IMAGE_URL_TEAM_INBOX + encodeURIComponent(data.image);
+        this.contourStep = data.contourStep != null ? data.contourStep : DEFAULT_CONTOUR_STEP_MM;
+        this.grassAmplitude = data.grassAmplitude != null ? data.grassAmplitude : DEFAULT_GRASS_AMPLITUDE_MM;
+        this.grassSpacing = data.grassSpacing != null ? data.grassSpacing : DEFAULT_GRASS_SPACING_MM;
+        this.greenStyle = data.greenStyle || DEFAULT_GREEN_STYLE;
+        this.elevationRange = data.elevationRange != null ? data.elevationRange : DEFAULT_ELEVATION_RANGE_MM;
+        this.greenScale = data.greenScale != null ? data.greenScale : DEFAULT_GREEN_SCALE;
+        this.fringeEdgeHeight = data.fringeEdgeHeight != null ? data.fringeEdgeHeight : DEFAULT_FRINGE_EDGE_HEIGHT_MM;
+        this.baseThicknessMm = data.baseThicknessMm != null ? data.baseThicknessMm : DEFAULT_BASE_THICKNESS_MM;
         this.includeBoundaryRegion = data.includeBoundaryRegion === true;
         // Legacy .egm files without applyFringeFrameCap must default to true
         // (preserves the historical always-on behavior).
@@ -3014,8 +3290,8 @@ function polygonEditor() {
         // ignored — semantics are inverted. Use strict truthy check so missing
         // key defaults to false (single plate, no comparison sample).
         this.includeFringeWithoutGrass = !!data.includeFringeWithoutGrass;
-        this.flagOffsetXMm = data.flagOffsetXMm != null ? data.flagOffsetXMm : 0.0;
-        this.flagOffsetYMm = data.flagOffsetYMm != null ? data.flagOffsetYMm : 0.0;
+        this.flagOffsetXMm = data.flagOffsetXMm != null ? data.flagOffsetXMm : DEFAULT_FLAG_OFFSET_MM;
+        this.flagOffsetYMm = data.flagOffsetYMm != null ? data.flagOffsetYMm : DEFAULT_FLAG_OFFSET_MM;
         if (data.zScale != null) { this.zScale = data.zScale; }
         // Absorb print constants from server (avoids hardcoding in JS)
         if (data.print_size_mm != null) this.printSizeMm = data.print_size_mm;
@@ -3025,10 +3301,10 @@ function polygonEditor() {
         this.gpsEnabled  = gps.enabled === true;
         this.gpsFile     = gps.gpsFile  || '';
         this.gpsBbox     = gps.bbox     || null;
-        this.gpsVertExag = typeof gps.vertExag  === 'number' ? gps.vertExag  : 3.0;
-        this.gpsApproachM= typeof gps.approachM === 'number' ? gps.approachM : 8.0;
-        const gs = Array.isArray(gps.gridSize) ? gps.gridSize[0] : (gps.gridSize || 200);
-        this.gpsGridSize = [100, 150, 200, 300].includes(gs) ? gs : 200;
+        this.gpsVertExag = typeof gps.vertExag  === 'number' ? gps.vertExag  : DEFAULT_GPS_VERT_EXAG;
+        this.gpsApproachM= typeof gps.approachM === 'number' ? gps.approachM : DEFAULT_GPS_APPROACH_M;
+        const gs = Array.isArray(gps.gridSize) ? gps.gridSize[0] : (gps.gridSize || DEFAULT_GPS_GRID_SIZE);
+        this.gpsGridSize = GPS_GRID_SIZE_OPTIONS.includes(gs) ? gs : DEFAULT_GPS_GRID_SIZE;
         this.courseGeoRef = data.courseGeoRef || null;
         this.undoStack = [];
         this.redoStack = [];
@@ -3054,12 +3330,12 @@ function polygonEditor() {
         // gridCellHeights — v5.00. Absent in legacy EGMs → default to empty dict.
         this.gridCellHeights = Object.fromEntries(Object.entries(data.gridCellHeights || {}).filter(([, v]) => Number(v) !== 0));  // zero = empty
         // gridResolution — v5.22. Absent in legacy EGMs → 20. Anything but 40 collapses to 20.
-        this.gridN = (Number(data.gridResolution) === 40) ? 40 : 20;
+        this.gridN = (Number(data.gridResolution) === GRID_N_FINE) ? GRID_N_FINE : GRID_N_DEFAULT;
         // gridMode — v5.34 (task 774). Absent in legacy EGMs → default to 'delta'
         // (current/legacy behavior).  Defensive validation: unknown values collapse to 'delta'.
         {
-          const m = String(data.gridMode || 'delta').toLowerCase();
-          this.gridMode = (m === 'delta' || m === 'absolute' || m === 'off') ? m : 'delta';
+          const m = String(data.gridMode || DEFAULT_GRID_MODE).toLowerCase();
+          this.gridMode = GRID_MODES.includes(m) ? m : DEFAULT_GRID_MODE;
         }
         this._gridActiveCell = null;
         this._gridInputValue = '';
@@ -3074,7 +3350,7 @@ function polygonEditor() {
         this.flash('Loaded: ' + data.course + ' — Hole ' + data.hole, true);
       } catch (err) {
         console.error('loadProject failed:', err, 'filename=', proj.filename);
-        this.flash('Error loading project: ' + (err && err.message ? err.message : err), false, '', 15000);
+        this.flash('Error loading project: ' + (err && err.message ? err.message : err), false, '', FLASH_LONG_ERROR_MS);
       }
     },
 
@@ -3092,27 +3368,27 @@ function polygonEditor() {
       this.selectedImageCourse = (matchedImg && matchedImg.course) ? matchedImg.course : '';
       // Reset editor settings to defaults so a new project starts from a clean slate
       // rather than inheriting tweaks from whatever project was open before.
-      this.contourStep = 0.5;
-      this.grassAmplitude = 0.5;
-      this.grassSpacing = 0.05;
-      this.greenStyle = 'terraced';
-      this.elevationRange = 14.5;
-      this.zScale = 1.0;
-      this.greenScale = 1.0065;
-      this.fringeEdgeHeight = 10.0;
-      this.baseThicknessMm = 1.5;
+      this.contourStep = DEFAULT_CONTOUR_STEP_MM;
+      this.grassAmplitude = DEFAULT_GRASS_AMPLITUDE_MM;
+      this.grassSpacing = DEFAULT_GRASS_SPACING_MM;
+      this.greenStyle = DEFAULT_GREEN_STYLE;
+      this.elevationRange = DEFAULT_ELEVATION_RANGE_MM;
+      this.zScale = DEFAULT_Z_SCALE;
+      this.greenScale = DEFAULT_GREEN_SCALE;
+      this.fringeEdgeHeight = DEFAULT_FRINGE_EDGE_HEIGHT_MM;
+      this.baseThicknessMm = DEFAULT_BASE_THICKNESS_MM;
       this.includeBoundaryRegion    = false;
       this.applyFringeFrameCap      = true;
       this.includeFringeWithoutGrass = false;
-      this.flagOffsetXMm = 0.0;
-      this.flagOffsetYMm = 0.0;
+      this.flagOffsetXMm = DEFAULT_FLAG_OFFSET_MM;
+      this.flagOffsetYMm = DEFAULT_FLAG_OFFSET_MM;
       // GPS backend — reset to defaults on new project
       this.gpsEnabled   = false;
       this.gpsFile      = '';
       this.gpsBbox      = null;
-      this.gpsVertExag  = 3.0;
-      this.gpsApproachM = 8.0;
-      this.gpsGridSize  = 200;
+      this.gpsVertExag  = DEFAULT_GPS_VERT_EXAG;
+      this.gpsApproachM = DEFAULT_GPS_APPROACH_M;
+      this.gpsGridSize  = DEFAULT_GPS_GRID_SIZE;
       // courseGeoRef persists if we're reusing the same course folder —
       // but a new project dialog has a potentially different course, so clear.
       this.courseGeoRef = null;
@@ -3121,7 +3397,7 @@ function polygonEditor() {
       this.showNewDialog = false;
       // Fetch print constants so the fringe-expansion zone is correctly sized
       try {
-        const cr = await fetch('/api/print_constants');
+        const cr = await fetch(API_PRINT_CONSTANTS);
         const cd = await cr.json();
         if (cd.status === 'ok') {
           this.printSizeMm = cd.print_size_mm;
@@ -3135,8 +3411,8 @@ function polygonEditor() {
       this.polygons = [];
       // Grid cell elevation — reset on new project
       this.gridCellHeights  = {};
-      this.gridN            = 20;       // v5.22 — reset to default resolution
-      this.gridMode         = 'delta';  // v5.34 (task 774) — reset to default mode
+      this.gridN            = GRID_N_DEFAULT;       // v5.22 — reset to default resolution
+      this.gridMode         = DEFAULT_GRID_MODE;  // v5.34 (task 774) — reset to default mode
       this._gridActiveCell  = null;
       this._gridInputValue  = '';
       this._gridHoveredCell = null;
@@ -3172,13 +3448,13 @@ function polygonEditor() {
 
       // Sample the Catmull-Rom spline to get a dense set of points
       // (the API needs a good polygon, not just control points)
-      const splinePts = this.sampleSplinePoints(greenPoly.points, 16);
+      const splinePts = this.sampleSplinePoints(greenPoly.points, SPLINE_SEGMENTS_PER_EDGE);
       const greenPoints = splinePts.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) }));
 
       try {
-        const resp = await fetch('/api/find_contours', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        const resp = await fetch(API_FIND_CONTOURS, {
+          method: HTTP_METHOD_POST,
+          headers: HTTP_HEADERS_JSON,
           body: JSON.stringify({
             image: this.selectedImage,
             course: this.courseName,
@@ -3192,9 +3468,9 @@ function polygonEditor() {
           // Add detected contours to the editor
           for (const c of result.contours) {
             this.contours.push({
-              name: c.name || ('Contour ' + (this.contours.length + 1)),
-              direction: c.direction || 'left',
-              color: '#FFE600',
+              name: c.name || (NAME_PREFIX_CONTOUR + (this.contours.length + 1)),
+              direction: c.direction || CONTOUR_DIR_LEFT,
+              color: COLOR_CONTOUR,
               points: c.points.map(pt => ({ x: pt.x, y: pt.y })),
             });
           }
@@ -3222,7 +3498,7 @@ function polygonEditor() {
     async refreshGpsFiles() {
       if (!this.courseName) return;
       try {
-        const resp = await fetch('/api/gps_files?course=' + encodeURIComponent(this.courseName));
+        const resp = await fetch(API_GPS_FILES + QUERY_COURSE + encodeURIComponent(this.courseName));
         const data = await resp.json();
         // Alphabetise case-insensitively per feedback_alphabetize_dropdowns
         this.gpsFileList = (data.files || []).sort((a, b) =>
@@ -3244,7 +3520,7 @@ function polygonEditor() {
         this.gpsPreviewDataUrl = '';
         return;
       }
-      this._gpsPreviewTimer = setTimeout(() => this.loadGpsPreview(), 500);
+      this._gpsPreviewTimer = setTimeout(() => this.loadGpsPreview(), GPS_PREVIEW_DEBOUNCE_MS);
     },
 
     async loadGpsPreview() {
@@ -3256,9 +3532,9 @@ function polygonEditor() {
           gps_file: this.gpsFile,
           bbox: JSON.stringify(this.gpsBbox),
           approach_m: String(this.gpsApproachM),
-          grid_size: String(Math.min(this.gpsGridSize, 150)),  // use smaller grid for preview speed
+          grid_size: String(Math.min(this.gpsGridSize, GPS_PREVIEW_MAX_GRID)),  // use smaller grid for preview speed
         });
-        const resp = await fetch('/api/gps_heightmap_preview?' + params.toString());
+        const resp = await fetch(API_GPS_HEIGHTMAP_PREVIEW + '?' + params.toString());
         if (!resp.ok) {
           const body = await resp.json().catch(() => ({ msg: resp.statusText }));
           this.gpsPreviewError = body.msg || 'Preview failed';
@@ -3279,7 +3555,7 @@ function polygonEditor() {
       const green = this.getGreenPolygon();
       if (!green || !this.courseGeoRef) return;
       const pts = green.points;
-      if (!pts || pts.length < 3) return;
+      if (!pts || pts.length < MIN_POLYGON_VERTICES) return;
 
       // Convert green polygon pixel points to lat/lng
       const georef = this.courseGeoRef;
@@ -3301,17 +3577,17 @@ function polygonEditor() {
       const lngMax = Math.max(...latlngs.map(p => p.lng));
 
       // Convert padding from metres to degrees (approximate flat-earth)
-      const padM = this.gpsApproachM + 5;
+      const padM = this.gpsApproachM + GPS_BBOX_EXTRA_PAD_M;
       // 1 degree lat ≈ 111_000 m; 1 degree lng ≈ 111_000 * cos(lat) m
       const latMid = (latMin + latMax) / 2;
-      const padLat = padM / 111000;
-      const padLng = padM / (111000 * Math.cos(latMid * Math.PI / 180));
+      const padLat = padM / METERS_PER_DEG_LAT;
+      const padLng = padM / (METERS_PER_DEG_LAT * Math.cos(latMid * Math.PI / 180));
 
       this.gpsBbox = {
-        lat_min: Math.round((latMin - padLat) * 1e7) / 1e7,
-        lng_min: Math.round((lngMin - padLng) * 1e7) / 1e7,
-        lat_max: Math.round((latMax + padLat) * 1e7) / 1e7,
-        lng_max: Math.round((lngMax + padLng) * 1e7) / 1e7,
+        lat_min: Math.round((latMin - padLat) * LATLNG_ROUND_FACTOR) / LATLNG_ROUND_FACTOR,
+        lng_min: Math.round((lngMin - padLng) * LATLNG_ROUND_FACTOR) / LATLNG_ROUND_FACTOR,
+        lat_max: Math.round((latMax + padLat) * LATLNG_ROUND_FACTOR) / LATLNG_ROUND_FACTOR,
+        lng_max: Math.round((lngMax + padLng) * LATLNG_ROUND_FACTOR) / LATLNG_ROUND_FACTOR,
       };
       this.onGpsParamChange();
       this.drawGpsMap();
@@ -3322,17 +3598,17 @@ function polygonEditor() {
       const canvas = this.$refs.gpsMapCanvas;
       if (!canvas || !this.courseGeoRef) return;
       const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, 300, 300);
+      ctx.clearRect(0, 0, GPS_MAP_SIZE_PX, GPS_MAP_SIZE_PX);
 
       // Draw course image dimmed
       if (this.img && this.imgLoaded) {
         ctx.save();
-        ctx.globalAlpha = 0.35;
-        ctx.drawImage(this.img, 0, 0, 300, 300);
+        ctx.globalAlpha = GPS_MAP_IMAGE_ALPHA;
+        ctx.drawImage(this.img, 0, 0, GPS_MAP_SIZE_PX, GPS_MAP_SIZE_PX);
         ctx.restore();
       } else {
-        ctx.fillStyle = '#e5e7eb';
-        ctx.fillRect(0, 0, 300, 300);
+        ctx.fillStyle = COLOR_GPS_MAP_BG;
+        ctx.fillRect(0, 0, GPS_MAP_SIZE_PX, GPS_MAP_SIZE_PX);
       }
 
       const georef = this.courseGeoRef;
@@ -3344,7 +3620,7 @@ function polygonEditor() {
       const toMapPx = (lat, lng) => {
         const fracX = (lng - lngSw) / (lngNe - lngSw);
         const fracY = (latNe - lat) / (latNe - latSw);
-        return { x: fracX * 300, y: fracY * 300 };
+        return { x: fracX * GPS_MAP_SIZE_PX, y: fracY * GPS_MAP_SIZE_PX };
       };
 
       // Draw GPS points if we have them
@@ -3364,7 +3640,7 @@ function polygonEditor() {
           const { x, y } = toMapPx(pt.lat, pt.lng);
           ctx.fillStyle = toColor(pt.alt);
           ctx.beginPath();
-          ctx.arc(x, y, 2, 0, Math.PI * 2);
+          ctx.arc(x, y, GPS_MAP_POINT_RADIUS_PX, 0, Math.PI * 2);
           ctx.fill();
         }
       }
@@ -3376,10 +3652,10 @@ function polygonEditor() {
         const rx = ne2.x, ry = ne2.y;
         const rw = sw2.x - ne2.x, rh = sw2.y - ne2.y;
         ctx.save();
-        ctx.fillStyle = 'rgba(59,130,246,0.12)';
+        ctx.fillStyle = COLOR_GPS_BBOX_FILL;
         ctx.fillRect(rx, ry, rw, rh);
-        ctx.strokeStyle = 'rgba(59,130,246,0.8)';
-        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = COLOR_GPS_BBOX_STROKE;
+        ctx.lineWidth = GPS_MAP_LINE_WIDTH;
         ctx.strokeRect(rx, ry, rw, rh);
         ctx.restore();
       }
@@ -3392,11 +3668,11 @@ function polygonEditor() {
         const rw = Math.abs(d.curX - d.startX);
         const rh = Math.abs(d.curY - d.startY);
         ctx.save();
-        ctx.fillStyle = 'rgba(245,158,11,0.15)';
+        ctx.fillStyle = COLOR_GPS_DRAG_FILL;
         ctx.fillRect(rx, ry, rw, rh);
-        ctx.strokeStyle = '#F59E0B';
-        ctx.lineWidth = 1.5;
-        ctx.setLineDash([4, 3]);
+        ctx.strokeStyle = COLOR_GPS_DRAG_STROKE;
+        ctx.lineWidth = GPS_MAP_LINE_WIDTH;
+        ctx.setLineDash(GPS_MAP_DRAG_DASH);
         ctx.strokeRect(rx, ry, rw, rh);
         ctx.restore();
       }
@@ -3433,8 +3709,8 @@ function polygonEditor() {
 
       // Map drag rect → lat/lng (canvas is 300×300)
       const toLatLng = (cx, cy) => {
-        const fracX = cx / 300;
-        const fracY = cy / 300;
+        const fracX = cx / GPS_MAP_SIZE_PX;
+        const fracY = cy / GPS_MAP_SIZE_PX;
         return {
           lat: latNe - fracY * (latNe - latSw),
           lng: lngSw + fracX * (lngNe - lngSw),
@@ -3442,16 +3718,16 @@ function polygonEditor() {
       };
       const ptA = toLatLng(d.startX, d.startY);
       const ptB = toLatLng(d.curX,   d.curY);
-      const minDragPx = 5;
+      const minDragPx = GPS_MAP_MIN_DRAG_PX;
       if (Math.abs(d.curX - d.startX) < minDragPx || Math.abs(d.curY - d.startY) < minDragPx) {
         this._gpsMapDrag = null;
         return;
       }
       this.gpsBbox = {
-        lat_min: Math.round(Math.min(ptA.lat, ptB.lat) * 1e7) / 1e7,
-        lng_min: Math.round(Math.min(ptA.lng, ptB.lng) * 1e7) / 1e7,
-        lat_max: Math.round(Math.max(ptA.lat, ptB.lat) * 1e7) / 1e7,
-        lng_max: Math.round(Math.max(ptA.lng, ptB.lng) * 1e7) / 1e7,
+        lat_min: Math.round(Math.min(ptA.lat, ptB.lat) * LATLNG_ROUND_FACTOR) / LATLNG_ROUND_FACTOR,
+        lng_min: Math.round(Math.min(ptA.lng, ptB.lng) * LATLNG_ROUND_FACTOR) / LATLNG_ROUND_FACTOR,
+        lat_max: Math.round(Math.max(ptA.lat, ptB.lat) * LATLNG_ROUND_FACTOR) / LATLNG_ROUND_FACTOR,
+        lng_max: Math.round(Math.max(ptA.lng, ptB.lng) * LATLNG_ROUND_FACTOR) / LATLNG_ROUND_FACTOR,
       };
       this._gpsMapDrag = null;
       this.onGpsParamChange();
@@ -3519,29 +3795,29 @@ function polygonEditor() {
       };
       if (this.teeHole && typeof this.teeHole.x_mm === 'number' && typeof this.teeHole.y_mm === 'number') {
         data.tee_hole = {
-          x_mm: Math.round(this.teeHole.x_mm * 10) / 10,
-          y_mm: Math.round(this.teeHole.y_mm * 10) / 10,
+          x_mm: roundMm(this.teeHole.x_mm),
+          y_mm: roundMm(this.teeHole.y_mm),
         };
       }
       this.generating = true;
       // Immediate user feedback — the pipeline is minutes-long, so without this
       // the button just sits at "Generating…" and Thomas reports it as hung.
-      this.flash('Generation started — this typically takes 1–3 minutes…', true, '', 3500);
+      this.flash(`Generation started — this typically takes ${GENERATE_ETA_TEXT}…`, true, '', FLASH_GENERATE_START_MS);
       // Elapsed-seconds ticker so the button label counts up ("Generating… 42s")
       this.generatingElapsed = 0;
       if (this._generatingTimer) clearInterval(this._generatingTimer);
       const _startedAt = Date.now();
       this._generatingTimer = setInterval(() => {
-        this.generatingElapsed = Math.round((Date.now() - _startedAt) / 1000);
-      }, 1000);
+        this.generatingElapsed = Math.round((Date.now() - _startedAt) / MS_PER_SECOND);
+      }, TIMER_TICK_MS);
       try {
-        const resp = await fetch('/api/generate_models', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        const resp = await fetch(API_GENERATE_MODELS, {
+          method: HTTP_METHOD_POST,
+          headers: HTTP_HEADERS_JSON,
           body: JSON.stringify(data),
         });
         const result = await resp.json();
-        const elapsed = Math.round((Date.now() - _startedAt) / 1000);
+        const elapsed = Math.round((Date.now() - _startedAt) / MS_PER_SECOND);
         if (result.status === 'ok') {
           const fname = result.file && result.file.name ? result.file.name : '';
           let msg = 'Generated in ' + elapsed + 's' + (fname ? ':' : '');
@@ -3552,12 +3828,12 @@ function polygonEditor() {
           }
           const warns = result.warnings || [];
           if (warns.length) msg += ' · WARNING: ' + warns.join(' | ');
-          this.flash(msg, (result.slicer_error || warns.length) ? false : true, fname, (result.slicer_error || warns.length) ? null : 8000);
+          this.flash(msg, (result.slicer_error || warns.length) ? false : true, fname, (result.slicer_error || warns.length) ? null : FLASH_GENERATE_DONE_MS);
         } else {
           this.flash('Generation failed after ' + elapsed + 's: ' + (result.msg || result.error || 'unknown error'), false);
         }
       } catch (err) {
-        const elapsed = Math.round((Date.now() - _startedAt) / 1000);
+        const elapsed = Math.round((Date.now() - _startedAt) / MS_PER_SECOND);
         this.flash('Generation error after ' + elapsed + 's: ' + err.message, false);
       } finally {
         this.generating = false;
@@ -3578,7 +3854,7 @@ function polygonEditor() {
       //   • caller supplied explicit ms → honour it
       //   • ok=true  (info/success)     → 4500ms
       //   • ok=false (error)            → sticky (no timer)
-      const ms = durationMs !== null ? durationMs : (ok ? 4500 : null);
+      const ms = durationMs !== null ? durationMs : (ok ? FLASH_OK_MS : null);
       this.statusSticky = (ms === null);
       if (ms !== null) {
         this._flashTimer = setTimeout(() => { this.statusMsg = ''; this.statusFilename = ''; this._flashTimer = null; }, ms);
@@ -3646,7 +3922,7 @@ function polygonEditor() {
       if ((e.metaKey || e.ctrlKey) && (e.key === 'Delete' || e.key === 'Backspace')) {
         if (this.selectedPoly >= 0 && this.selectedPoly < this.polygons.length) {
           const selType = this.polygons[this.selectedPoly].type;
-          if (selType === 'trap' || selType === 'water' || selType === 'boulders') {
+          if (isRemovablePolyType(selType)) {
             e.preventDefault();
             this.removePoly(this.selectedPoly);
           }
@@ -3670,7 +3946,7 @@ function polygonEditor() {
         for (const [polyIdxStr, count] of Object.entries(removesPerPoly)) {
           const polyIdx = Number(polyIdxStr);
           const poly = this.polygons[polyIdx];
-          if ((poly.type === 'trap' || poly.type === 'water' || poly.type === 'boulders') && poly.points.length - count < 3) {
+          if (isRemovablePolyType(poly.type) && poly.points.length - count < MIN_POLYGON_VERTICES) {
             trapPolysToRemove.add(polyIdx);
           }
         }
@@ -3679,7 +3955,7 @@ function polygonEditor() {
         for (const sv of sorted) {
           if (trapPolysToRemove.has(sv.poly)) continue; // whole trap/water will be removed below
           const pts = this.polygons[sv.poly].points;
-          if (pts.length > 3) {
+          if (pts.length > MIN_POLYGON_VERTICES) {
             pts.splice(sv.idx, 1);
             removed++;
           } else {
@@ -3698,9 +3974,9 @@ function polygonEditor() {
           // Renumber remaining traps, water traps, and boulder regions
           let tc = 0, wc = 0, bc = 0;
           for (const p of this.polygons) {
-            if (p.type === 'trap') { tc++; p.name = 'Trap ' + tc; }
-            if (p.type === 'water') { wc++; p.name = 'Water ' + wc; }
-            if (p.type === 'boulders') { bc++; p.name = 'Boulders ' + bc; }
+            if (p.type === 'trap') { tc++; p.name = NAME_PREFIX_TRAP + tc; }
+            if (p.type === 'water') { wc++; p.name = NAME_PREFIX_WATER + wc; }
+            if (p.type === 'boulders') { bc++; p.name = NAME_PREFIX_BOULDERS + bc; }
           }
         }
         this.draw();
@@ -3708,9 +3984,9 @@ function polygonEditor() {
           this.autoSave();
         }
         if (greenBlocked) {
-          this.flash('Minimum 3 vertices required', false);
+          this.flash(MSG_MIN_VERTICES, false);
         } else if (trapPolysToRemove.size > 0 && removed === 0) {
-          this.flash('Polygon removed', true);
+          this.flash(MSG_POLYGON_REMOVED, true);
         } else if (removed > 0) {
           this.flash(removed + ' vertex(es) removed', true);
         }
@@ -3733,7 +4009,7 @@ window.addEventListener('resize', () => {
       const data = el._x_dataStack[0];
       if (data && data.resizeCanvas) data.resizeCanvas();
     }
-  }, 100);
+  }, RESIZE_DEBOUNCE_MS);
 });
 
 // Handle DPR changes when the window moves between monitors with different
@@ -3764,11 +4040,11 @@ watchDPR();
   <div x-data="{ count: 0 }"
        x-init="(async () => {
          const update = async () => {
-           try { const r = await fetch('/api/tasks/running_count'); if (r.ok) { count = (await r.json()).count; } }
+           try { const r = await fetch(API_RUNNING_TASKS_COUNT); if (r.ok) { count = (await r.json()).count; } }
            catch(e) {}
          };
          update();
-         setInterval(update, 1000);
+         setInterval(update, TIMER_TICK_MS);
        })()"
        x-show="count > 0"
        x-cloak

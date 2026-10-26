@@ -39,6 +39,8 @@ import pytest
 # ---------------------------------------------------------------------------
 APP_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(APP_DIR))
+sys.path.insert(0, str(Path(__file__).parent))
+import editor_constants as C
 
 EDITOR_HTML = APP_DIR / "templates" / "editor.html"
 APP_PY = APP_DIR / "app.py"
@@ -136,7 +138,8 @@ class TestTextFormat:
     def test_toFixed_1_in_grid_loop(self):
         html = _html()
         loop = _grid_loop_body(html)
-        assert re.search(r'\.toFixed\s*\(\s*1\s*\)', loop), (
+        assert C.value("GRID_LABEL_DECIMALS") == 1
+        assert re.search(r'\.toFixed\s*\(\s*GRID_LABEL_DECIMALS\s*\)', loop), (
             ".toFixed(1) not found inside grid rendering loop — format not 1 decimal"
         )
 
@@ -163,7 +166,7 @@ class TestTextColorBlue:
     def test_black_fillStyle_and_no_outline_in_grid_loop(self):
         html = _html()
         loop = _grid_loop_body(html)
-        assert "'#000'" in loop, "delta-mode value text should be plain black"
+        assert "COLOR_GRID_VALUE_DELTA" in loop and C.value("COLOR_GRID_VALUE_DELTA") == "#000", "delta-mode value text should be plain black"
         assert "strokeText" not in loop, "value labels must have no outline"
 
 
@@ -340,6 +343,7 @@ class TestNoPlusSignOnGridValues:
 
     def test_hover_tooltip_has_no_plus_prefix(self):
         html = _html()
-        m = re.search(r'x-text="_gridHoveredCell \?.*?mm offset.*?"', html)
+        m = re.search(r'x-text="_gridHoveredCell \?.*?GRID_HOVER_SUFFIX_DELTA.*?"', html)
         assert m is not None, "hover tooltip x-text not found"
         assert "'+'" not in m.group(0)
+        assert "mm offset" in C.value("GRID_HOVER_SUFFIX_DELTA") and "+" not in C.value("GRID_HOVER_SUFFIX_DELTA")

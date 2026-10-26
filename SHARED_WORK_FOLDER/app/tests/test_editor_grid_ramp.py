@@ -1,19 +1,21 @@
 """Editor v5.19: Ctrl+Option(Alt)+drag selects cells along the drag PATH (visit order) and the
 popup takes a first and a last value; Tab/Enter out of the second box spreads first->last
 linearly over the cells.  Pure function gridRampAssign is extracted from editor.html and run in node."""
-import json, re, shutil, subprocess
+import json, re, shutil, subprocess, sys
 from pathlib import Path
 import pytest
 
 APP_DIR = Path(__file__).parent.parent
 EDITOR = (APP_DIR / "templates" / "editor.html").read_text()
 node = shutil.which("node")
+sys.path.insert(0, str(Path(__file__).parent))
+import editor_constants as C
 
 
 def _fn():
     m = re.search(r"\nfunction (gridRampAssign\(.*?\n\})\n", EDITOR, re.S)
     assert m, "top-level gridRampAssign() missing"
-    return "function " + m.group(1)
+    return C.prelude() + "function " + m.group(1)   # editor constants + the extracted function
 
 
 def _run(order, first, last, mode="delta"):

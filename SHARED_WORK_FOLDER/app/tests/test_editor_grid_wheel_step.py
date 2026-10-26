@@ -1,11 +1,13 @@
 """Editor v5.15: mouse wheel steps the grid value box (0.1 mm; Shift = 1.0 mm), no clamp,
 no autosave until commit.  JS logic is extracted from editor.html and run in node."""
-import json, re, shutil, subprocess
+import json, re, shutil, subprocess, sys
 from pathlib import Path
 import pytest
 
 APP_DIR = Path(__file__).parent.parent
 EDITOR = (APP_DIR / "templates" / "editor.html").read_text()
+sys.path.insert(0, str(Path(__file__).parent))
+import editor_constants as C
 
 
 def _method():
@@ -18,7 +20,9 @@ def test_wired_to_input_non_passive_prevent():
     seg = EDITOR[EDITOR.index('x-ref="gridCellInput"'):][:1600]
     assert "@wheel.prevent=" in seg and "gridWheel($event)" in seg
     assert "Wheel" in seg or "wheel" in seg          # tooltip mentions it
-    assert "Shift" in seg
+    assert "GRID_TIP_INPUT_ABSOLUTE" in seg and "GRID_TIP_INPUT_DELTA" in seg   # tooltip comes from the constants
+    tip = C.value("GRID_TIP_INPUT_DELTA")
+    assert "wheel" in tip.lower() and "Shift" in tip
 
 
 def test_handler_has_no_autosave_or_clamp_or_draw_commit():
@@ -31,7 +35,7 @@ node = shutil.which("node")
 
 
 def _run(events, start="", cells=None, active=5, multi=None):
-    js = """
+    js = C.prelude() + """
 const m = %s;
 const o = {_gridInputValue: %s, _wheelAcc: 0, _gridActiveCell: {idx: %d}, _gridMultiSelect: %s, gridCellHeights: %s};
 o.gridWheel = %s;

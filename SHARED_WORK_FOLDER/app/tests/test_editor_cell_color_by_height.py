@@ -5,6 +5,8 @@ import pytest
 
 APP_DIR = Path(__file__).parent.parent
 EDITOR = (APP_DIR / "templates" / "editor.html").read_text()
+sys.path.insert(0, str(Path(__file__).parent))
+import editor_constants as C
 
 
 def _stops():
@@ -36,18 +38,18 @@ def test_toggle_is_view_only_and_persisted_locally():
     assert "localStorage" in body and "try" in body and "this.draw()" in body
     assert "autoSave" not in body
     assert "colorCellsByHeight: true" in EDITOR           # default on
-    assert "colorCellsByHeight" not in EDITOR[EDITOR.index("const data = {"):EDITOR.index("await fetch('/api/boundaries'")]  # never saved in EGM
+    assert "colorCellsByHeight" not in EDITOR[EDITOR.index("const data = {"):EDITOR.index("await fetch(API_BOUNDARIES")]  # API_BOUNDARIES = '/api/boundaries' (constants block)  # never saved in EGM
 
 
 def test_fill_under_numbers_and_rings_and_semi_transparent():
     fill = EDITOR.index("Cell fill by value (v5.14)")
     helper = EDITOR[EDITOR.index("_drawCellColors(ctx, tl, cellWpx, cellHpx) {"):][:1400]
-    assert ",0.5)" in helper and "idx < GRID_COLS * GRID_ROWS" in helper and "|| 0" in helper and "gridRange()" in helper
+    assert ",${CELL_COLOR_ALPHA})" in helper and C.value("CELL_COLOR_ALPHA") == 0.5 and "idx < GRID_COLS * GRID_ROWS" in helper and "|| 0" in helper and "gridRange()" in helper
     nums = EDITOR.index("Numeric value text for set cells")
     ring = EDITOR.index("Trap-controlling cell ring")
     assert fill < nums < ring
     seg = EDITOR[fill:nums]
-    assert "gridMode !== 'off'" in seg and "_drawCellColors" in seg
+    assert "gridMode !== GRID_MODE_OFF" in seg and C.value("GRID_MODE_OFF") == "off" and "_drawCellColors" in seg
     assert "strokeText" not in EDITOR[nums:ring]           # v5.20: no white outline on value labels
 
 
@@ -68,7 +70,7 @@ def _range_js_semantics(values):
 
 def test_range_counts_empty_cells_as_zero():
     src = EDITOR[EDITOR.index("gridRange() {"):][:600]
-    assert "if (nSet < 400)" in src and "if (0 < lo) lo = 0" in src and "if (0 > hi) hi = 0" in src
+    assert "if (nSet < GRID_RANGE_FULL_CELL_COUNT)" in src and C.value("GRID_RANGE_FULL_CELL_COUNT") == 400 and "if (0 < lo) lo = 0" in src and "if (0 > hi) hi = 0" in src
     assert _range_js_semantics([-3, -1]) == (-3, 0)      # all negative -> 0 is the high end
     assert _range_js_semantics([2, 5]) == (0, 5)
     assert _range_js_semantics([]) is None

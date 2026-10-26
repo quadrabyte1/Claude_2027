@@ -25,7 +25,7 @@ app = Flask(__name__)
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "db", "workspace.db")
 
-APP_VERSION = "v5.69"  # unified version for all main-app pages, shown in every sticky footer
+APP_VERSION = "v5.71"  # unified version for all main-app pages, shown in every sticky footer
 
 # Tier -> concrete model (single source of truth for Team page + Dashboard).
 # Keep in sync with the mapping in team/README.md.
@@ -55,6 +55,285 @@ DEGRID_DETECT_ON_CLEANED = False
 EGM_IMAGE_URL_FMT = "/egm/images/{course}/{filename}"
 TEAM_INBOX_URL_FMT = "/team_inbox/{filename}"
 IMAGE_EXTS = (".png", ".jpg", ".jpeg")
+
+# ═══ APP CONSTANTS (editor / boundary / generation) ═══════════════════════════
+# Coding Standard "Named Constants, No Literals" (CLAUDE.md): every meaningful value the
+# editor-facing server code uses is defined ONCE here.  Values that must stay equal to a
+# constant in templates/editor.html are tagged "editor: NAME"; the guard test
+# tests/test_editor_server_constants_sync.py reads the editor block (editor_constants.value)
+# and asserts equality, so the two sides cannot drift apart.
+# PRINT_SIZE_MM / FRINGE_XY_EXPANSION_MM / grid clamps / grid resolutions are NOT redefined
+# here: the generator modules own them (generate_stl_3mf.py, gradient_surface_diagnostic.py)
+# and the routes import them lazily from there (a top-level import would pull in trimesh).
+
+# ── Server ──
+SERVER_HOST = "0.0.0.0"
+SERVER_PORT = 5051
+SERVER_USE_RELOADER = True
+
+# ── HTTP status codes ──
+HTTP_OK = 200
+HTTP_BAD_REQUEST = 400
+HTTP_NOT_FOUND = 404
+HTTP_CONFLICT = 409
+HTTP_SERVER_ERROR = 500
+HEADER_CACHE_CONTROL = "Cache-Control"
+CACHE_NO_STORE = "no-store"
+CONTENT_TYPE_PNG = "image/png"
+GPS_PREVIEW_CACHE_HEADER = "X-GPS-Preview-Cache"
+GPS_PREVIEW_CACHE_HIT = "hit"
+GPS_PREVIEW_CACHE_MISS = "miss"
+
+# ── JSON envelope ──
+KEY_STATUS = "status"
+KEY_MSG = "msg"
+STATUS_OK = "ok"
+STATUS_ERROR = "error"
+
+# ── Route strings (editor: API_* in the EDITOR CONSTANTS block) ──
+ROUTE_EDITOR = "/editor"
+ROUTE_API_TASKS_RUNNING_COUNT = "/api/tasks/running_count"   # editor: API_RUNNING_TASKS_COUNT
+ROUTE_API_DEGRID_IMAGE = "/api/degrid_image"
+ROUTE_API_IMAGES = "/api/images"                             # editor: API_IMAGES
+ROUTE_API_COURSES = "/api/courses"                           # editor: API_COURSES
+ROUTE_TEAM_INBOX = "/team_inbox/<path:filename>"             # editor: IMAGE_URL_TEAM_INBOX (prefix)
+ROUTE_EGM_IMAGE = "/egm/images/<path:course>/<path:filename>"  # editor: IMAGE_URL_EGM_IMAGES (prefix)
+ROUTE_API_BOUNDARIES = "/api/boundaries"                     # editor: API_BOUNDARIES
+ROUTE_API_BOUNDARIES_LIST = "/api/boundaries/list"           # editor: API_BOUNDARIES_LIST
+ROUTE_API_BOUNDARIES_LOAD = "/api/boundaries/load"           # editor: API_BOUNDARIES_LOAD
+ROUTE_API_TRAP_CONTROLLING_CELLS = "/api/trap_controlling_cells"  # editor: API_TRAP_CONTROLLING_CELLS
+ROUTE_API_PRINT_CONSTANTS = "/api/print_constants"           # editor: API_PRINT_CONSTANTS
+ROUTE_API_DETECT_BOUNDARIES = "/api/detect_boundaries"       # editor: API_DETECT_BOUNDARIES
+ROUTE_API_FIND_CONTOURS = "/api/find_contours"               # editor: API_FIND_CONTOURS
+ROUTE_API_GENERATE_MODELS = "/api/generate_models"           # editor: API_GENERATE_MODELS
+ROUTE_API_GPS_HEIGHTMAP_PREVIEW = "/api/gps_heightmap_preview"  # editor: API_GPS_HEIGHTMAP_PREVIEW
+ROUTE_API_GPS_FILES = "/api/gps_files"                       # editor: API_GPS_FILES
+ROUTE_DIAGNOSTIC_ARROWS = "/diagnostic/arrows"
+ROUTE_PLAQUE = "/plaque"
+ROUTE_API_FONTS = "/api/fonts"
+ROUTE_API_GENERATE_PLATE = "/api/generate_plate"
+METHOD_GET = "GET"
+METHOD_POST = "POST"
+
+# ── Query-string / payload keys (editor sends these; names are the wire contract) ──
+QUERY_IMAGE = "image"                  # /editor?image=
+QUERY_FILENAME = "filename"            # /api/boundaries/load?filename=   (editor: QUERY_FILENAME)
+QUERY_COURSE = "course"                # /api/gps_files?course=           (editor: QUERY_COURSE)
+QUERY_GPS_FILE = "gps_file"
+QUERY_BBOX = "bbox"
+QUERY_APPROACH_M = "approach_m"
+QUERY_GRID_SIZE = "grid_size"
+KEY_IMAGE = "image"                    # detect_boundaries / find_contours / degrid_image payload
+KEY_COURSE = "course"
+KEY_IMAGE_COURSE = "imageCourse"
+KEY_GREEN_POINTS = "green_points"      # find_contours payload
+KEY_HOLE = "hole"                      # generate_models payload (also the saved-EGM key)
+KEY_INCLUDE_BOUNDARY_REGION = "includeBoundaryRegion"          # generate_models payload
+KEY_APPLY_FRINGE_FRAME_CAP = "applyFringeFrameCap"
+KEY_INCLUDE_FRINGE_WITHOUT_GRASS = "includeFringeWithoutGrass"
+KEY_OPEN_IN_SLICER = "open_in_slicer"
+KEY_NAME = "name"                      # create_course payload / image + gps file rows
+KEY_FILENAME = "filename"
+KEY_URL = "url"
+KEY_PATH = "path"
+KEY_FILES = "files"
+KEY_FILE = "file"
+KEY_TYPE = "type"
+KEY_COURSES = "courses"
+KEY_PROJECTS = "projects"
+KEY_POLYGONS = "polygons"
+KEY_POLYGON_COUNT = "polygon_count"
+KEY_POINTS = "points"
+KEY_X = "x"
+KEY_Y = "y"
+KEY_IMAGE_SIZE = "imageSize"
+KEY_WIDTH = "width"
+KEY_HEIGHT = "height"
+KEY_CONTOUR_STEP = "contourStep"
+KEY_CONTOURS = "contours"
+KEY_PRINT_SIZE_MM = "print_size_mm"
+KEY_FRINGE_XY_EXPANSION_MM = "fringe_xy_expansion_mm"
+KEY_SLICER_OPENED = "slicer_opened"
+KEY_SLICER_ERROR = "slicer_error"
+KEY_WARNINGS = "warnings"
+KEY_FOUND = "found"
+KEY_ORIGINAL_URL = "originalUrl"
+KEY_DEGRIDDED_URL = "degriddedUrl"
+KEY_MODE = "mode"
+KEY_TRAPS = "traps"
+KEY_GPS_BACKEND = "gpsBackend"
+KEY_GPS_ENABLED = "enabled"
+KEY_GPS_FILE = "gpsFile"
+KEY_COURSE_GEOREF = "courseGeoRef"
+BBOX_KEYS = ("lat_min", "lng_min", "lat_max", "lng_max")
+
+# ── Folders / files / extensions ──
+DIR_GOLF_COURSES_PARENT = "ItWentIn"
+DIR_GOLF_COURSES = "GolfCourses"
+DIR_TEAM_INBOX = "team_inbox"
+DIR_OWNER_INBOX = "owner_inbox"
+COURSE_SUBDIR_3MFS = "3MFs"
+COURSE_SUBDIR_EGMS = "EGMs"
+COURSE_SUBDIR_IMAGES = "Images"
+COURSE_SUBDIRS = (COURSE_SUBDIR_3MFS, COURSE_SUBDIR_EGMS, COURSE_SUBDIR_IMAGES)   # no STLs/
+EXT_EGM = ".egm"
+EXT_3MF = ".3mf"
+EXT_GPS = ".gps"
+EXT_TXT = ".txt"
+GPS_NAME_HINTS = ("gps", "stracka")     # legacy ItWentIn/ files: only these look like GPS data
+DEFAULT_COURSE_NAME = "Unknown Course"
+DEFAULT_HOLE = "0"
+HOLE_LABEL_WIDTH = 2                    # hole "5" -> "05" in filenames
+EGM_FILENAME_FMT = "{course} (Hole {hole_label})" + EXT_EGM
+THREE_MF_FILENAME_FMT = "{course} (Hole {hole_label})" + EXT_3MF
+EGM_JSON_INDENT = 2
+HIDDEN_PREFIX = "."
+PATH_SEPARATORS = ("/", "\\")
+PARENT_DIR_TOKEN = ".."
+PIPELINE_RUN_PATH_RELATIVE_TO = os.path.dirname(__file__)   # generate_models "path" is relative to app/
+
+# ── Error / info messages (tests assert on some of these) ──
+MSG_NO_IMAGE = "No image specified"
+MSG_IMAGE_NOT_FOUND_FMT = "Image not found: {name}"
+MSG_CANNOT_READ_IMAGE_FMT = "Cannot read image: {path}"
+MSG_COURSE_EMPTY = "Course name must not be empty."
+MSG_COURSE_SEPARATORS = "Course name must not contain path separators."
+MSG_COURSE_DOT = "Course name must not start with a dot."
+MSG_COURSE_INVALID = "Invalid course name."
+MSG_COURSE_EXISTS_FMT = "Folder '{name}' already exists."
+MSG_INVALID_FILENAME = "Invalid filename"
+MSG_FILE_NOT_FOUND = "File not found"
+MSG_NEED_IMAGE_AND_GREEN = "Need image and green_points"
+MSG_NO_JSON = "No JSON payload"
+MSG_MISSING_COURSE_OR_HOLE = "Missing course or hole"
+MSG_EGM_NOT_FOUND_FMT = "EGM file not found: {name}"
+MSG_CANNOT_READ_EGM_FMT = "Cannot read EGM: {err}"
+MSG_GPS_FILE_REQUIRED = "gps_file param required"
+MSG_BBOX_REQUIRED = "bbox param required"
+MSG_GPS_FILE_NOT_FOUND_FMT = "GPS file not found: {path}"
+MSG_INVALID_BBOX_FMT = "Invalid bbox JSON: {err}"
+MSG_MISSING_DEPENDENCY_FMT = "Missing dependency: {err}"
+MSG_GPS_HEIGHTMAP_ERROR_FMT = "GPS heightmap error: {err}"
+MSG_RENDER_ERROR_FMT = "Render error: {err}"
+MSG_GPS_NO_FILE = (
+    "gpsBackend.enabled=true but gpsFile is not set. "
+    "Select a .gps file in the GPS backend panel."
+)
+MSG_GPS_FILE_MISSING_FMT = (
+    "GPS file not found: {path}. "
+    "Upload or select a .gps file in the GPS backend panel."
+)
+MSG_GPS_NO_GEOREF = (
+    "courseGeoRef is not set for this course. "
+    "The GPS backend needs the SW and NE corner lat/lng of the course image "
+    "in the EGM's courseGeoRef block (the editor no longer has a dialog for this)."
+)
+MSG_SLICER_TIMEOUT = (
+    "Timed out waiting for `open` to hand the file to the slicer. "
+    "Try opening it manually in Finder."
+)
+MSG_SLICER_EXIT_FMT = (
+    "`open` exited with code {code}. "
+    "Try opening the file manually in Finder."
+)
+
+# ── detect_boundaries: defaults, caps, classifier thresholds (HSV, OpenCV scale H 0-179) ──
+DETECT_DEFAULT_CONTOUR_STEP_MM = 0.5        # editor: DEFAULT_CONTOUR_STEP_MM
+DETECT_MAX_TRAPS = 5
+DETECT_MAX_WATERS = 5                       # same cap as traps
+DETECT_MIN_BLOB_AREA_PX = 500               # trap / water connected-component floor
+DETECT_GREEN_POINTS = 8                     # green polygon resample count
+DETECT_HAZARD_POINTS = 16                   # trap / water polygon resample count
+DETECT_GREEN_HUE_SPLIT_LO = 30              # non-green hues are < LO or > HI ...
+DETECT_GREEN_HUE_SPLIT_HI = 90
+DETECT_GREEN_NONGREEN_MIN_SAT = 80          # ... with sat > this ...
+DETECT_GREEN_GREENHUE_MIN_SAT = 120         # ... green hues need sat > this
+DETECT_GREEN_MIN_VAL = 80
+DETECT_GREEN_CLOSE_KERNEL = 15
+DETECT_GREEN_CLOSE_ITERATIONS = 5
+DETECT_GREEN_BLUR_KERNEL = 21
+DETECT_MASK_THRESHOLD = 127                 # binarise a blurred 0/255 mask at mid-grey
+DETECT_MASK_ON = 255
+DETECT_TRAP_HUE = (10, 40)                  # widened from [15,34] to catch light beige (Stanford H8)
+DETECT_TRAP_SAT = (15, 60)
+DETECT_TRAP_MIN_VAL = 200
+DETECT_HAZARD_CLOSE_KERNEL = 11
+DETECT_HAZARD_CLOSE_ITERATIONS = 3
+DETECT_HAZARD_OPEN_KERNEL = 7
+DETECT_HAZARD_OPEN_ITERATIONS = 2
+DETECT_WATER_BLUE_HUE = (100, 130)          # high-saturation path: royal blue / bright cyan
+DETECT_WATER_BLUE_MIN_SAT = 130
+DETECT_WATER_BLUE_VAL = (130, 220)
+DETECT_WATER_PALE_HUE = (80, 105)           # pale-cyan path (2026-09-28)
+DETECT_WATER_PALE_SAT = (15, 50)
+DETECT_WATER_PALE_MIN_VAL = 200
+DETECT_POLY_SMOOTH_KERNEL = 15              # Gaussian blur before resampling trap/water outlines
+DETECT_ARC_EPSILON = 1e-9
+# Contour-band classification (currently disabled in the response, kept for the debug path)
+DETECT_BAND_RANGES = [
+    (85, 100),   # 0: blue/cyan
+    (65, 84),    # 1: teal
+    (45, 64),    # 2: green
+    (25, 44),    # 3: yellow-green / yellow
+    (15, 24),    # 4: orange
+    (5, 14),     # 5: red-orange
+    (0, 4),      # 6: dark red (low end)
+]
+DETECT_BAND_MIN_SAT = 40
+DETECT_BAND_MIN_VAL = 60
+DETECT_BAND_RED_WRAP_HUE = (175, 180)
+DETECT_BAND_RED_WRAP_INDEX = 6
+DETECT_BAND_CLEAN_KERNEL = 7
+DETECT_BAND_CLOSE_ITERATIONS = 2
+DETECT_BAND_PRESENT_MIN_PX = 200
+DETECT_BAND_DILATE_KERNEL = 5
+DETECT_BAND_DILATE_ITERATIONS = 2
+DETECT_ISOLINE_MIN_BOUNDARY_PX = 50
+DETECT_ISOLINE_MIN_PIXELS = 20
+DETECT_ISOLINE_MERGE_KERNEL = 11
+DETECT_ISOLINE_MERGE_ITERATIONS = 3
+DETECT_ISOLINE_MIN_POINTS = 4
+DETECT_ISOLINE_POINTS = 10
+CONTOUR_DIRECTION_LEFT = "left"
+CONTOUR_DIRECTION_RIGHT = "right"
+POLY_TYPE_GREEN = "green"
+POLY_TYPE_TRAP = "trap"
+POLY_TYPE_WATER = "water"
+POLY_TYPE_CONTOUR = "contour"
+POLY_NAME_GREEN = "Green"
+POLY_NAME_TRAP_FMT = "Trap {n}"
+POLY_NAME_WATER_FMT = "Water {n}"
+POLY_NAME_CONTOUR_FMT = "Contour {n}"
+KEY_CLOSED = "closed"
+KEY_DIRECTION = "direction"
+
+# ── generate_models ──
+SLICER_OPEN_COMMAND = "open"                # macOS: hand the file to the .3mf association
+SLICER_OPEN_TIMEOUT_S = 10
+
+# ── GPS heightmap preview (defaults mirror the editor's gpsBackend panel) ──
+GPS_PREVIEW_DEFAULT_APPROACH_M = 8.0        # editor: DEFAULT_GPS_APPROACH_M
+GPS_PREVIEW_DEFAULT_GRID_SIZE = 100         # preview-only (editor default 200 is for the final model)
+GPS_PREVIEW_GRID_MIN = 50
+GPS_PREVIEW_GRID_MAX = 300
+GPS_PREVIEW_VERT_EXAG = 1.0                 # no exaggeration in preview
+GPS_PREVIEW_FIGSIZE = (3, 3)
+GPS_PREVIEW_DPI = 100
+GPS_PREVIEW_CMAP = "terrain"
+GPS_PREVIEW_COLORBAR = {"fraction": 0.046, "pad": 0.04, "label": "mm"}
+GPS_PREVIEW_TITLE_FONTSIZE = 8
+GPS_PREVIEW_TIGHT_PAD = 0.5
+GPS_PREVIEW_BACKEND = "Agg"
+ROUTE_ARG_DEFAULT_EMPTY = ""
+
+# ── Plaque / e-mail ──
+SMTP_DEFAULT_PORT = "587"
+SMTP_DEFAULT_TO = "quadrabyte@pm.me"
+SMTP_TIMEOUT_S = 15
+PLATE_FONT_FAMILY = "Helvetica"
+PLATE_DEFAULT_SLUG = "custom_plate"
+PLATE_DOWNLOADS_FMT = "~/Downloads/{name}"
+# ═══ END APP CONSTANTS ════════════════════════════════════════════════════════
 
 # ── detect_boundaries: classifier knobs ────────────────────────────────────
 # When True the green polygon interior is excluded from trap/water detection.
@@ -724,7 +1003,7 @@ def update_team_member_model(member_id):
     return jsonify({"id": member_id, "model": tier})
 
 
-@app.route("/api/tasks/running_count")
+@app.route(ROUTE_API_TASKS_RUNNING_COUNT)
 def api_tasks_running_count():
     import sqlite3
     held = _db_lock_acquire()
@@ -845,16 +1124,18 @@ def activity():
 # ── Editor routes ──────────────────────────────────────────────────────────
 
 _EGM_BASE = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), "..", "ItWentIn", "GolfCourses")
-)
-_TEAM_INBOX = os.path.join(os.path.dirname(__file__), "..", "team_inbox")
+    os.path.join(os.path.dirname(__file__), "..", DIR_GOLF_COURSES_PARENT, DIR_GOLF_COURSES)
+)   # generate_stl_3mf.EGM_BASE is the same path (sync test asserts equality)
+_TEAM_INBOX = os.path.join(os.path.dirname(__file__), "..", DIR_TEAM_INBOX)
+_OWNER_INBOX = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", DIR_OWNER_INBOX))
+_GOLF_COURSES_PARENT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", DIR_GOLF_COURSES_PARENT))
 
 # ── GPS-backend helpers ────────────────────────────────────────────────────
 # Simple in-process cache for the GPS preview endpoint.
 # Key: SHA-256 of "gps_path|bbox_json|approach_m|grid_size"
 # Value: (png_bytes, expiry_timestamp)
 _GPS_PREVIEW_CACHE: dict[str, tuple[bytes, float]] = {}
-_GPS_PREVIEW_CACHE_TTL_S = 30  # seconds
+_GPS_PREVIEW_CACHE_TTL_S = 30  # seconds (also quoted in the gps_heightmap_preview docstring)
 
 
 def _gps_preview_cache_key(gps_file: str, bbox_json: str, approach_m: float, grid_size: int) -> str:
@@ -883,29 +1164,19 @@ def _validate_gps_prereqs(egm_data: dict) -> tuple[bool, str]:
 
     Returns (ok: bool, error_msg: str).  ok=True means pre-check passed.
     """
-    gps = egm_data.get("gpsBackend") or {}
-    if not gps.get("enabled"):
+    gps = egm_data.get(KEY_GPS_BACKEND) or {}
+    if not gps.get(KEY_GPS_ENABLED):
         return True, ""  # GPS not active — nothing to check
 
-    gps_file = gps.get("gpsFile", "").strip()
+    gps_file = gps.get(KEY_GPS_FILE, "").strip()
     if not gps_file:
-        return False, (
-            "gpsBackend.enabled=true but gpsFile is not set. "
-            "Select a .gps file in the GPS backend panel."
-        )
+        return False, MSG_GPS_NO_FILE
     if not os.path.isfile(gps_file):
-        return False, (
-            f"GPS file not found: {gps_file}. "
-            "Upload or select a .gps file in the GPS backend panel."
-        )
+        return False, MSG_GPS_FILE_MISSING_FMT.format(path=gps_file)
 
-    georef = egm_data.get("courseGeoRef")
+    georef = egm_data.get(KEY_COURSE_GEOREF)
     if not georef:
-        return False, (
-            "courseGeoRef is not set for this course. "
-            "The GPS backend needs the SW and NE corner lat/lng of the course image "
-            "in the EGM's courseGeoRef block (the editor no longer has a dialog for this)."
-        )
+        return False, MSG_GPS_NO_GEOREF
 
     return True, ""
 
@@ -924,19 +1195,18 @@ def _find_image_path(image_name: str, preferred_course: str = "") -> str | None:
     search_dirs = []
     # 1. Preferred (source) course first
     if preferred_course and os.path.isdir(_EGM_BASE):
-        search_dirs.append(os.path.abspath(os.path.join(_EGM_BASE, preferred_course, "Images")))
+        search_dirs.append(os.path.abspath(os.path.join(_EGM_BASE, preferred_course, COURSE_SUBDIR_IMAGES)))
     # 2. All course Images/ folders (catches cross-course references)
     if os.path.isdir(_EGM_BASE):
         for entry in sorted(os.listdir(_EGM_BASE)):
             if entry == preferred_course:
                 continue  # already added above
-            candidate_dir = os.path.abspath(os.path.join(_EGM_BASE, entry, "Images"))
+            candidate_dir = os.path.abspath(os.path.join(_EGM_BASE, entry, COURSE_SUBDIR_IMAGES))
             if os.path.isdir(candidate_dir):
                 search_dirs.append(candidate_dir)
     # 3. Legacy locations
     search_dirs.append(os.path.abspath(_TEAM_INBOX))
-    _owner_inbox = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "owner_inbox"))
-    search_dirs.append(os.path.abspath(_owner_inbox))
+    search_dirs.append(os.path.abspath(_OWNER_INBOX))
 
     for folder in search_dirs:
         candidate = os.path.join(folder, image_name)
@@ -957,12 +1227,12 @@ def _image_url_for_path(img_path: str) -> str | None:
     if os.path.abspath(_TEAM_INBOX) == folder:
         return TEAM_INBOX_URL_FMT.format(filename=name)
     parent, leaf = os.path.split(folder)
-    if leaf == "Images" and os.path.dirname(parent) == os.path.abspath(_EGM_BASE):
+    if leaf == COURSE_SUBDIR_IMAGES and os.path.dirname(parent) == os.path.abspath(_EGM_BASE):
         return EGM_IMAGE_URL_FMT.format(course=os.path.basename(parent), filename=name)
     return None
 
 
-@app.route("/api/degrid_image", methods=["POST"])
+@app.route(ROUTE_API_DEGRID_IMAGE, methods=[METHOD_POST])
 def degrid_image():
     """Create New Project only: build (or reuse) the degridded copy of a heat-map PNG.
 
@@ -971,21 +1241,21 @@ def degrid_image():
     The original file is never touched; the copy is written next to it.
     """
     data = request.get_json(silent=True) or {}
-    image_name = data.get("image", "")
-    img_path = _find_image_path(image_name, preferred_course=data.get("imageCourse", ""))
+    image_name = data.get(KEY_IMAGE, "")
+    img_path = _find_image_path(image_name, preferred_course=data.get(KEY_IMAGE_COURSE, ""))
     if not image_name or img_path is None:
-        return jsonify({"status": "error", "msg": f"Image not found: {image_name}"}), 400
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: MSG_IMAGE_NOT_FOUND_FMT.format(name=image_name)}), HTTP_BAD_REQUEST
     original_url = _image_url_for_path(img_path)
     if original_url is None:
-        return jsonify({"status": "ok", "found": False, "originalUrl": None, "degriddedUrl": None})
+        return jsonify({KEY_STATUS: STATUS_OK, KEY_FOUND: False, KEY_ORIGINAL_URL: None, KEY_DEGRIDDED_URL: None})
     out_path = heatmap_degrid.degridded_path(img_path)
     fresh = os.path.isfile(out_path) and os.path.getmtime(out_path) >= os.path.getmtime(img_path)
     if not fresh:
         info = heatmap_degrid.degrid_file(img_path, out_path)
         if not info.get(heatmap_degrid.INFO_WRITTEN):
-            return jsonify({"status": "ok", "found": False, "originalUrl": original_url, "degriddedUrl": None})
-    return jsonify({"status": "ok", "found": True, "originalUrl": original_url,
-                    "degriddedUrl": _image_url_for_path(out_path)})
+            return jsonify({KEY_STATUS: STATUS_OK, KEY_FOUND: False, KEY_ORIGINAL_URL: original_url, KEY_DEGRIDDED_URL: None})
+    return jsonify({KEY_STATUS: STATUS_OK, KEY_FOUND: True, KEY_ORIGINAL_URL: original_url,
+                    KEY_DEGRIDDED_URL: _image_url_for_path(out_path)})
 
 
 def _collect_course_images():
@@ -1000,43 +1270,43 @@ def _collect_course_images():
     exts = IMAGE_EXTS
     if os.path.isdir(_EGM_BASE):
         for course in sorted(os.listdir(_EGM_BASE), key=str.casefold):
-            img_dir = os.path.join(_EGM_BASE, course, "Images")
+            img_dir = os.path.join(_EGM_BASE, course, COURSE_SUBDIR_IMAGES)
             if not os.path.isdir(img_dir):
                 continue
             for fname in sorted(os.listdir(img_dir), key=str.casefold):
                 if fname.lower().endswith(exts) and not _is_degridded_name(fname):
                     results.append({
-                        "filename": fname,
-                        "course": course,
-                        "url": EGM_IMAGE_URL_FMT.format(course=course, filename=fname),
+                        KEY_FILENAME: fname,
+                        KEY_COURSE: course,
+                        KEY_URL: EGM_IMAGE_URL_FMT.format(course=course, filename=fname),
                     })
     # Backwards compat: also include team_inbox images
     if os.path.isdir(_TEAM_INBOX):
         for fname in sorted(os.listdir(_TEAM_INBOX), key=str.casefold):
             if fname.lower().endswith(exts) and not _is_degridded_name(fname):
                 results.append({
-                    "filename": fname,
-                    "course": None,
-                    "url": TEAM_INBOX_URL_FMT.format(filename=fname),
+                    KEY_FILENAME: fname,
+                    KEY_COURSE: None,
+                    KEY_URL: TEAM_INBOX_URL_FMT.format(filename=fname),
                 })
     return results
 
 
-@app.route("/editor")
+@app.route(ROUTE_EDITOR)
 def editor():
     """Polygon boundary editor for golf hole images."""
-    image = request.args.get("image", "")
-    images = [entry["filename"] for entry in _collect_course_images()]
+    image = request.args.get(QUERY_IMAGE, "")
+    images = [entry[KEY_FILENAME] for entry in _collect_course_images()]
     return render("editor.html", image=image, images=images)
 
 
-@app.route("/api/images")
+@app.route(ROUTE_API_IMAGES)
 def list_images():
     """Return current list of images from all GolfCourses/*/Images/ folders."""
     return jsonify(_collect_course_images())
 
 
-@app.route("/api/courses", methods=["GET"])
+@app.route(ROUTE_API_COURSES, methods=[METHOD_GET])
 def list_courses():
     """Return case-insensitively sorted list of existing course folder names under GolfCourses/.
 
@@ -1046,96 +1316,96 @@ def list_courses():
     courses = []
     if os.path.isdir(_EGM_BASE):
         for entry in sorted(os.listdir(_EGM_BASE), key=str.casefold):
-            if entry.startswith("."):
+            if entry.startswith(HIDDEN_PREFIX):
                 continue
             if os.path.isdir(os.path.join(_EGM_BASE, entry)):
                 courses.append(entry)
-    resp = jsonify({"courses": courses})
-    resp.headers["Cache-Control"] = "no-store"
+    resp = jsonify({KEY_COURSES: courses})
+    resp.headers[HEADER_CACHE_CONTROL] = CACHE_NO_STORE
     return resp
 
 
-@app.route("/api/courses", methods=["POST"])
+@app.route(ROUTE_API_COURSES, methods=[METHOD_POST])
 def create_course():
     """Create a new course folder under GolfCourses/ with standard subfolders.
 
     Expects JSON: {"name": "<course folder name>"}
-    Returns: {"status": "ok", "course": "<name>"} on success.
+    Returns: {KEY_STATUS: STATUS_OK, "course": "<name>"} on success.
     Rejects: empty name, path separators, leading dot, or already-exists (409).
     Subfolders created: 3MFs/, EGMs/, Images/ (no STLs/).
     """
     data = request.get_json(force=True) or {}
-    name = (data.get("name") or "").strip()
+    name = (data.get(KEY_NAME) or "").strip()
 
     # Validate
     if not name:
-        return jsonify({"status": "error", "msg": "Course name must not be empty."}), 400
-    if "/" in name or "\\" in name:
-        return jsonify({"status": "error", "msg": "Course name must not contain path separators."}), 400
-    if name.startswith("."):
-        return jsonify({"status": "error", "msg": "Course name must not start with a dot."}), 400
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: MSG_COURSE_EMPTY}), HTTP_BAD_REQUEST
+    if any(sep in name for sep in PATH_SEPARATORS):
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: MSG_COURSE_SEPARATORS}), HTTP_BAD_REQUEST
+    if name.startswith(HIDDEN_PREFIX):
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: MSG_COURSE_DOT}), HTTP_BAD_REQUEST
 
     course_root = os.path.normpath(os.path.join(_EGM_BASE, name))
     # Guard against path traversal
     if not course_root.startswith(os.path.normpath(_EGM_BASE) + os.sep):
-        return jsonify({"status": "error", "msg": "Invalid course name."}), 400
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: MSG_COURSE_INVALID}), HTTP_BAD_REQUEST
 
     if os.path.exists(course_root):
-        return jsonify({"status": "error", "msg": f"Folder '{name}' already exists."}), 409
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: MSG_COURSE_EXISTS_FMT.format(name=name)}), HTTP_CONFLICT
 
     try:
-        for sub in ("3MFs", "EGMs", "Images"):
+        for sub in COURSE_SUBDIRS:
             os.makedirs(os.path.join(course_root, sub), exist_ok=True)
     except OSError as exc:
-        return jsonify({"status": "error", "msg": str(exc)}), 500
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: str(exc)}), HTTP_SERVER_ERROR
 
-    return jsonify({"status": "ok", "course": name})
+    return jsonify({KEY_STATUS: STATUS_OK, KEY_COURSE: name})
 
 
-@app.route("/team_inbox/<path:filename>")
+@app.route(ROUTE_TEAM_INBOX)
 def serve_team_inbox(filename):
     """Serve images from team_inbox for the editor (backwards compat)."""
     inbox = os.path.abspath(_TEAM_INBOX)
     return send_from_directory(inbox, filename)
 
 
-@app.route("/egm/images/<path:course>/<path:filename>")
+@app.route(ROUTE_EGM_IMAGE)
 def serve_egm_image(course, filename):
     """Serve images from a course's Images/ folder."""
-    img_dir = os.path.abspath(os.path.join(_EGM_BASE, course, "Images"))
+    img_dir = os.path.abspath(os.path.join(_EGM_BASE, course, COURSE_SUBDIR_IMAGES))
     return send_from_directory(img_dir, filename)
 
 
 def _ensure_course_subfolders(course_root: str) -> None:
     """Create 3MFs/, EGMs/, and Images/ under course_root if they don't exist."""
-    for sub in ("3MFs", "EGMs", "Images"):
+    for sub in COURSE_SUBDIRS:
         os.makedirs(os.path.join(course_root, sub), exist_ok=True)
 
 
-@app.route("/api/boundaries", methods=["POST"])
+@app.route(ROUTE_API_BOUNDARIES, methods=[METHOD_POST])
 def save_boundaries():
     """Save polygon boundary coordinates as an .egm file."""
     import json as _json
     data = request.get_json()
-    course = data.get("course", "Unknown Course")
-    hole = data.get("hole", "0")
-    hole_label = str(hole).zfill(2) if str(hole).isdigit() else str(hole)
-    filename = f"{course} (Hole {hole_label}).egm"
+    course = data.get(KEY_COURSE, DEFAULT_COURSE_NAME)
+    hole = data.get(KEY_HOLE, DEFAULT_HOLE)
+    hole_label = str(hole).zfill(HOLE_LABEL_WIDTH) if str(hole).isdigit() else str(hole)
+    filename = EGM_FILENAME_FMT.format(course=course, hole_label=hole_label)
     # Save to course EGMs/ folder; fall back to owner_inbox for unknown courses
-    if course and course != "Unknown Course" and os.path.isdir(_EGM_BASE):
+    if course and course != DEFAULT_COURSE_NAME and os.path.isdir(_EGM_BASE):
         course_root = os.path.join(_EGM_BASE, course)
         _ensure_course_subfolders(course_root)
-        egm_dir = os.path.join(course_root, "EGMs")
+        egm_dir = os.path.join(course_root, COURSE_SUBDIR_EGMS)
     else:
-        egm_dir = os.path.join(os.path.dirname(__file__), "..", "owner_inbox")
+        egm_dir = os.path.join(os.path.dirname(__file__), "..", DIR_OWNER_INBOX)
         os.makedirs(egm_dir, exist_ok=True)
     output = os.path.join(egm_dir, filename)
     with open(output, "w") as f:
-        _json.dump(data, f, indent=2)
-    return jsonify({"status": "ok", "path": output, "filename": filename})
+        _json.dump(data, f, indent=EGM_JSON_INDENT)
+    return jsonify({KEY_STATUS: STATUS_OK, KEY_PATH: output, KEY_FILENAME: filename})
 
 
-@app.route("/api/boundaries/list")
+@app.route(ROUTE_API_BOUNDARIES_LIST)
 def list_boundaries():
     """Return a list of all saved .egm project files from all course EGMs/ folders.
 
@@ -1149,18 +1419,18 @@ def list_boundaries():
         if not os.path.isdir(scan_dir):
             return
         for fname in sorted(os.listdir(scan_dir), key=str.casefold):
-            if not fname.endswith(".egm"):
+            if not fname.endswith(EXT_EGM):
                 continue
             fpath = os.path.join(scan_dir, fname)
             try:
                 with open(fpath) as f:
                     data = _json.load(f)
                 projects.append({
-                    "filename": fname,
-                    "course": data.get("course", ""),
-                    "hole": data.get("hole", ""),
-                    "image": data.get("image", ""),
-                    "polygon_count": len(data.get("polygons", [])),
+                    KEY_FILENAME: fname,
+                    KEY_COURSE: data.get(KEY_COURSE, ""),
+                    KEY_HOLE: data.get(KEY_HOLE, ""),
+                    KEY_IMAGE: data.get(KEY_IMAGE, ""),
+                    KEY_POLYGON_COUNT: len(data.get(KEY_POLYGONS, [])),
                 })
             except Exception:
                 pass
@@ -1168,44 +1438,44 @@ def list_boundaries():
     # Scan all GolfCourses/*/EGMs/ directories
     if os.path.isdir(_EGM_BASE):
         for course_name in sorted(os.listdir(_EGM_BASE), key=str.casefold):
-            _scan_dir(os.path.join(_EGM_BASE, course_name, "EGMs"))
+            _scan_dir(os.path.join(_EGM_BASE, course_name, COURSE_SUBDIR_EGMS))
     # Backwards compat: also scan owner_inbox
-    _scan_dir(os.path.join(os.path.dirname(__file__), "..", "owner_inbox"))
+    _scan_dir(os.path.join(os.path.dirname(__file__), "..", DIR_OWNER_INBOX))
 
-    resp = jsonify({"status": "ok", "projects": projects})
-    resp.headers["Cache-Control"] = "no-store"
+    resp = jsonify({KEY_STATUS: STATUS_OK, KEY_PROJECTS: projects})
+    resp.headers[HEADER_CACHE_CONTROL] = CACHE_NO_STORE
     return resp
 
 
-@app.route("/api/boundaries/load")
+@app.route(ROUTE_API_BOUNDARIES_LOAD)
 def load_boundaries():
     """Load a saved .egm file by filename and return its contents.
 
     Searches all GolfCourses/*/EGMs/ directories first, then owner_inbox/.
     """
     import json as _json
-    filename = request.args.get("filename", "")
-    if not filename or ".." in filename or "/" in filename:
-        return jsonify({"status": "error", "msg": "Invalid filename"}), 400
+    filename = request.args.get(QUERY_FILENAME, "")
+    if not filename or PARENT_DIR_TOKEN in filename or "/" in filename:
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: MSG_INVALID_FILENAME}), HTTP_BAD_REQUEST
 
     # Search course EGMs/ folders first
     fpath = None
     if os.path.isdir(_EGM_BASE):
         for course_name in sorted(os.listdir(_EGM_BASE)):
-            candidate = os.path.join(_EGM_BASE, course_name, "EGMs", filename)
+            candidate = os.path.join(_EGM_BASE, course_name, COURSE_SUBDIR_EGMS, filename)
             if os.path.isfile(candidate):
                 fpath = candidate
                 break
     # Fallback: owner_inbox
     if fpath is None:
-        candidate = os.path.join(os.path.dirname(__file__), "..", "owner_inbox", filename)
+        candidate = os.path.join(os.path.dirname(__file__), "..", DIR_OWNER_INBOX, filename)
         if os.path.isfile(candidate):
             fpath = candidate
     if fpath is None:
-        return jsonify({"status": "error", "msg": "File not found"}), 404
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: MSG_FILE_NOT_FOUND}), HTTP_NOT_FOUND
     with open(fpath) as f:
         data = _json.load(f)
-    data["status"] = "ok"
+    data[KEY_STATUS] = STATUS_OK
     # Expose print constants so the editor can size the fringe-expansion zone.
     # generate_stl_3mf imports trimesh/shapely/numpy at module load; on a fresh
     # machine missing any of those, this route used to 500 with an ImportError
@@ -1213,8 +1483,8 @@ def load_boundaries():
     # constants — the editor tolerates them being null via `if (data.print_size_mm != null)`.
     try:
         from generate_stl_3mf import PRINT_SIZE_MM, FRINGE_XY_EXPANSION_MM
-        data["print_size_mm"] = PRINT_SIZE_MM
-        data["fringe_xy_expansion_mm"] = FRINGE_XY_EXPANSION_MM
+        data[KEY_PRINT_SIZE_MM] = PRINT_SIZE_MM
+        data[KEY_FRINGE_XY_EXPANSION_MM] = FRINGE_XY_EXPANSION_MM
     except ImportError as _imp_err:
         print(f"[load_boundaries] WARN: could not import print constants from generate_stl_3mf: {_imp_err!r}")
 
@@ -1227,7 +1497,7 @@ def load_boundaries():
     return jsonify(data)
 
 
-@app.route("/api/trap_controlling_cells", methods=["POST"])
+@app.route(ROUTE_API_TRAP_CONTROLLING_CELLS, methods=[METHOD_POST])
 def trap_controlling_cells():
     """Editor red-circle overlay: which grid cell(s) control each trap's height.
 
@@ -1238,19 +1508,19 @@ def trap_controlling_cells():
     data = request.get_json(silent=True) or {}
     try:
         from gradient_surface_diagnostic import compute_trap_controlling_cells
-        return jsonify({"status": "ok", **compute_trap_controlling_cells(data)})
+        return jsonify({KEY_STATUS: STATUS_OK, **compute_trap_controlling_cells(data)})
     except Exception as exc:  # overlay is cosmetic; never break the editor
-        return jsonify({"status": "error", "msg": str(exc), "mode": None, "traps": []}), 200
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: str(exc), KEY_MODE: None, KEY_TRAPS: []}), HTTP_OK
 
 
-@app.route("/api/print_constants")
+@app.route(ROUTE_API_PRINT_CONSTANTS)
 def print_constants():
     """Return the print-size and fringe-expansion constants needed by the boundary editor."""
     from generate_stl_3mf import PRINT_SIZE_MM, FRINGE_XY_EXPANSION_MM
     return jsonify({
-        "status": "ok",
-        "print_size_mm": PRINT_SIZE_MM,
-        "fringe_xy_expansion_mm": FRINGE_XY_EXPANSION_MM,
+        KEY_STATUS: STATUS_OK,
+        KEY_PRINT_SIZE_MM: PRINT_SIZE_MM,
+        KEY_FRINGE_XY_EXPANSION_MM: FRINGE_XY_EXPANSION_MM,
     })
 
 
@@ -1285,27 +1555,27 @@ def _clamp_polygon_points(points: list, w: int, h: int) -> tuple:
     clamp_count = 0
     clamped = []
     for pt in points:
-        cx, cy = _clamp_point_to_image(pt["x"], pt["y"], w, h)
-        if cx != float(pt["x"]) or cy != float(pt["y"]):
+        cx, cy = _clamp_point_to_image(pt[KEY_X], pt[KEY_Y], w, h)
+        if cx != float(pt[KEY_X]) or cy != float(pt[KEY_Y]):
             clamp_count += 1
             print(
                 f"[boundary_clamp] Point ({pt['x']}, {pt['y']}) clamped to "
                 f"({cx}, {cy}) for image {w}x{h}"
             )
-        clamped.append({"x": cx, "y": cy})
+        clamped.append({KEY_X: cx, KEY_Y: cy})
 
     # Deduplicate consecutive identical points (can arise when two adjacent
     # vertices both snap to the same corner of the image frame).
     deduped = []
     for pt in clamped:
-        if deduped and deduped[-1]["x"] == pt["x"] and deduped[-1]["y"] == pt["y"]:
+        if deduped and deduped[-1][KEY_X] == pt[KEY_X] and deduped[-1][KEY_Y] == pt[KEY_Y]:
             continue  # skip consecutive duplicate
         deduped.append(pt)
 
     return deduped, clamp_count
 
 
-@app.route("/api/detect_boundaries", methods=["POST"])
+@app.route(ROUTE_API_DETECT_BOUNDARIES, methods=[METHOD_POST])
 def detect_boundaries():
     """Run quick CV detection on a golf hole image, return initial polygon guesses."""
     import cv2
@@ -1317,20 +1587,20 @@ def detect_boundaries():
     course = data.get("course", "")
     image_course = data.get("imageCourse", "") or course
     if not image_name:
-        return jsonify({"status": "error", "msg": "No image specified"}), 400
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: "No image specified"}), HTTP_BAD_REQUEST
 
     # Resolve image to absolute path, searching all course folders as fallback
     img_path = _find_image_path(image_name, preferred_course=image_course)
     print(f"[detect_boundaries] image lookup: name={image_name!r} preferred_course={image_course!r} -> {img_path!r}")
     if img_path is None:
-        return jsonify({"status": "error", "msg": f"Image not found: {image_name}"}), 400
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: f"Image not found: {image_name}"}), HTTP_BAD_REQUEST
     if DEGRID_DETECT_ON_CLEANED:
         _cleaned_path = heatmap_degrid.degridded_path(img_path)
         if os.path.isfile(_cleaned_path):
             img_path = _cleaned_path
     img = cv2.imread(img_path)
     if img is None:
-        return jsonify({"status": "error", "msg": f"Cannot read image: {img_path}"}), 400
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: f"Cannot read image: {img_path}"}), HTTP_BAD_REQUEST
 
     h, w = img.shape[:2]
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
@@ -1718,14 +1988,14 @@ def detect_boundaries():
               f"({w}x{h})")
 
     return jsonify({
-        "status": "ok",
+        KEY_STATUS: STATUS_OK,
         "imageSize": {"width": w, "height": h},
         "polygons": polygons,
         "contourStep": 0.5,
     })
 
 
-@app.route("/api/find_contours", methods=["POST"])
+@app.route(ROUTE_API_FIND_CONTOURS, methods=[METHOD_POST])
 def find_contours():
     """Find contour lines inside an existing green perimeter.
 
@@ -1751,13 +2021,13 @@ def find_contours():
     green_points = data.get("green_points", [])
 
     if not image_name or not green_points:
-        return jsonify({"status": "error", "msg": "Need image and green_points"}), 400
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: "Need image and green_points"}), HTTP_BAD_REQUEST
 
     # Resolve image to absolute path, searching all course folders as fallback
     img_path = _find_image_path(image_name, preferred_course=image_course)
     print(f"[find_contours] image lookup: name={image_name!r} preferred_course={image_course!r} -> {img_path!r}")
     if img_path is None:
-        return jsonify({"status": "error", "msg": f"Image not found: {image_name}"}), 400
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: f"Image not found: {image_name}"}), HTTP_BAD_REQUEST
 
     # The editor sends dense spline-sampled points — use them directly as the
     # green boundary polygon (Nx2 float64 array of (x, y) pixel coords).
@@ -1772,7 +2042,7 @@ def find_contours():
             img_path, green_boundary_px
         )
     except FileNotFoundError as exc:
-        return jsonify({"status": "error", "msg": str(exc)}), 400
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: str(exc)}), HTTP_BAD_REQUEST
 
     # Step 2: Extract ordered polylines from the contour blob mask.
     # extract_contour_polylines_from_mask saves its own debug image to owner_inbox/.
@@ -1794,12 +2064,12 @@ def find_contours():
     print(f"[find_contours] Returning {len(contour_lines)} contour(s) for {image_name}")
 
     return jsonify({
-        "status": "ok",
+        KEY_STATUS: STATUS_OK,
         "contours": contour_lines,
     })
 
 
-@app.route("/api/generate_models", methods=["POST"])
+@app.route(ROUTE_API_GENERATE_MODELS, methods=[METHOD_POST])
 def generate_models():
     """Run the full gradient surface pipeline for a course/hole.
 
@@ -1807,18 +2077,18 @@ def generate_models():
     The EGM file must already exist on disk (saved by the editor).
 
     Returns:
-        {"status": "ok", "file": {"name": ..., "path": ..., "type": "3mf"}}
+        {KEY_STATUS: STATUS_OK, "file": {"name": ..., "path": ..., "type": "3mf"}}
     """
     from gradient_surface_diagnostic import run_pipeline
 
     data = request.get_json(force=True)
     if not data:
-        return jsonify({"status": "error", "msg": "No JSON payload"}), 400
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: "No JSON payload"}), HTTP_BAD_REQUEST
 
     course = data.get("course", "").strip()
     hole = data.get("hole", "").strip()
     if not course or not hole:
-        return jsonify({"status": "error", "msg": "Missing course or hole"}), 400
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: "Missing course or hole"}), HTTP_BAD_REQUEST
 
     # Auto-derive a 5 mm boulders ring around each water polygon when checked
     # (replaces any manual boulders polygons in the EGM). The editor persists
@@ -1854,9 +2124,9 @@ def generate_models():
             egm_path = candidate
     if egm_path is None:
         return jsonify({
-            "status": "error",
-            "msg": f"EGM file not found: {egm_fname}"
-        }), 404
+            KEY_STATUS: STATUS_ERROR,
+            KEY_MSG: f"EGM file not found: {egm_fname}"
+        }), HTTP_NOT_FOUND
 
     print(f"[generate_models] EGM path:        {egm_path}")
 
@@ -1868,11 +2138,11 @@ def generate_models():
         with open(egm_path) as _egm_fh:
             _egm_for_gps_check = _json.load(_egm_fh)
     except (OSError, ValueError) as _e:
-        return jsonify({"status": "error", "msg": f"Cannot read EGM: {_e}"}), 500
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: f"Cannot read EGM: {_e}"}), HTTP_SERVER_ERROR
 
     _gps_ok, _gps_err = _validate_gps_prereqs(_egm_for_gps_check)
     if not _gps_ok:
-        return jsonify({"status": "error", "msg": _gps_err}), 400
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: _gps_err}), HTTP_BAD_REQUEST
 
     # ── Commit global serial at click time ───────────────────────────────────
     # The serial is burned here, BEFORE calling into the pipeline, so that:
@@ -1892,7 +2162,7 @@ def generate_models():
             serial=_serial,
         )
     except Exception as exc:
-        return jsonify({"status": "error", "msg": str(exc)}), 500
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: str(exc)}), HTTP_SERVER_ERROR
 
     # run_pipeline returns the absolute path with serial in the filename.
     # If for any reason it returns None (old callers), fall back to the plain name.
@@ -1952,14 +2222,14 @@ def generate_models():
             slicer_error  = str(exc)
 
     import gradient_surface_diagnostic as _gsd
-    return jsonify({"status": "ok", "file": result,
+    return jsonify({KEY_STATUS: STATUS_OK, "file": result,
                     "slicer_opened": slicer_opened, "slicer_error": slicer_error,
                     "warnings": list(_gsd.PIPELINE_WARNINGS)})
 
 
 # ── GPS Heightmap Preview ─────────────────────────────────────────────────────
 
-@app.route("/api/gps_heightmap_preview")
+@app.route(ROUTE_API_GPS_HEIGHTMAP_PREVIEW)
 def gps_heightmap_preview():
     """Return a server-side PNG heightmap preview for the GPS backend panel.
 
@@ -1979,12 +2249,12 @@ def gps_heightmap_preview():
     bbox_raw = request.args.get("bbox", "").strip()
 
     if not gps_file:
-        return jsonify({"status": "error", "msg": "gps_file param required"}), 400
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: "gps_file param required"}), HTTP_BAD_REQUEST
     if not bbox_raw:
-        return jsonify({"status": "error", "msg": "bbox param required"}), 400
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: "bbox param required"}), HTTP_BAD_REQUEST
 
     if not os.path.isfile(gps_file):
-        return jsonify({"status": "error", "msg": f"GPS file not found: {gps_file}"}), 404
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: f"GPS file not found: {gps_file}"}), HTTP_NOT_FOUND
 
     try:
         bbox_dict = _json.loads(bbox_raw)
@@ -1995,7 +2265,7 @@ def gps_heightmap_preview():
             float(bbox_dict["lng_max"]),
         )
     except (KeyError, TypeError, ValueError) as e:
-        return jsonify({"status": "error", "msg": f"Invalid bbox JSON: {e}"}), 400
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: f"Invalid bbox JSON: {e}"}), HTTP_BAD_REQUEST
 
     try:
         approach_m = float(request.args.get("approach_m", 8.0))
@@ -2022,7 +2292,7 @@ def gps_heightmap_preview():
         import matplotlib.pyplot as plt
         import matplotlib.colors as mcolors
     except ImportError as e:
-        return jsonify({"status": "error", "msg": f"Missing dependency: {e}"}), 500
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: f"Missing dependency: {e}"}), HTTP_SERVER_ERROR
 
     try:
         result = build_heightmap_from_gps(
@@ -2034,7 +2304,7 @@ def gps_heightmap_preview():
             vert_exag=1.0,             # no exaggeration in preview
         )
     except Exception as exc:
-        return jsonify({"status": "error", "msg": f"GPS heightmap error: {exc}"}), 500
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: f"GPS heightmap error: {exc}"}), HTTP_SERVER_ERROR
 
     # ── Render to PNG ──────────────────────────────────────────────────────────
     try:
@@ -2058,13 +2328,13 @@ def gps_heightmap_preview():
         plt.close(fig)
         png_bytes = buf.getvalue()
     except Exception as exc:
-        return jsonify({"status": "error", "msg": f"Render error: {exc}"}), 500
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: f"Render error: {exc}"}), HTTP_SERVER_ERROR
 
     _gps_preview_cache_set(cache_key, png_bytes)
     return png_bytes, 200, {"Content-Type": "image/png", "X-GPS-Preview-Cache": "miss"}
 
 
-@app.route("/api/gps_files")
+@app.route(ROUTE_API_GPS_FILES)
 def list_gps_files():
     """Return a list of .gps files found in the course folder for the given course.
 
@@ -2072,7 +2342,7 @@ def list_gps_files():
     ------------
     course : str   course name (looks in GolfCourses/<course>/)
 
-    Returns {"status": "ok", "files": [{"name": ..., "path": ...}, ...]}
+    Returns {KEY_STATUS: STATUS_OK, "files": [{"name": ..., "path": ...}, ...]}
     """
     course = request.args.get("course", "").strip()
     files = []
@@ -2096,12 +2366,12 @@ def list_gps_files():
                     abs_path = os.path.abspath(os.path.join(it_went_in, fname))
                     if not any(f["path"] == abs_path for f in files):
                         files.append({"name": fname, "path": abs_path})
-    return jsonify({"status": "ok", "files": files})
+    return jsonify({KEY_STATUS: STATUS_OK, "files": files})
 
 
 # ── Arrow Diagnostic ─────────────────────────────────────────────────────────
 
-@app.route("/diagnostic/arrows", methods=["POST"])
+@app.route(ROUTE_DIAGNOSTIC_ARROWS, methods=[METHOD_POST])
 def diagnostic_arrows():
     """Return an annotated PNG showing every detected arrow in a source image.
 
@@ -2637,7 +2907,7 @@ def life_areas():
 owner_inbox = os.path.join(os.path.dirname(__file__), "..", "owner_inbox")
 
 
-@app.route("/plaque")
+@app.route(ROUTE_PLAQUE)
 def plaque_page():
     plate_text_path = os.path.join(os.path.dirname(__file__), "plate_text.py")
     try:
@@ -2649,7 +2919,7 @@ def plaque_page():
     return render("plaque.html", last_modified=last_modified)
 
 
-@app.route("/api/fonts")
+@app.route(ROUTE_API_FONTS)
 def api_fonts():
     from plate_text import list_available_fonts
     return jsonify({"fonts": list_available_fonts()})
@@ -2727,7 +2997,7 @@ def _smtp_config():
     return smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from, smtp_to, missing_vars
 
 
-@app.route("/api/generate_plate", methods=["POST"])
+@app.route(ROUTE_API_GENERATE_PLATE, methods=[METHOD_POST])
 def api_generate_plate():
     import smtplib
     import tempfile

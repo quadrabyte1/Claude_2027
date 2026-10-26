@@ -18,6 +18,10 @@ scikit-image==0.26.0
 shapely==2.1.2
 trimesh==4.11.5
 numpy-stl==3.2.0
+# trimesh soft deps used by generate_stl_3mf.py (3MF export + extrusion)
+lxml==6.0.2
+mapbox_earcut==2.0.0
+networkx==3.6.1
 
 # HTTP / scraping / config
 requests==2.32.5

@@ -41,6 +41,8 @@ import pytest
 # ---------------------------------------------------------------------------
 APP_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(APP_DIR))
+sys.path.insert(0, str(Path(__file__).parent))
+import editor_constants as C
 
 EDITOR_HTML = APP_DIR / "templates" / "editor.html"
 APP_PY = APP_DIR / "app.py"
@@ -79,10 +81,10 @@ class TestInputWider:
         assert inp_start != -1, "gridCellInput ref not found"
         inp_block = html[inp_start: inp_start + 600]
         # min-width must be at least 80px
-        m = re.search(r'min-width\s*:\s*(\d+)px', inp_block)
-        assert m is not None, "No min-width found on gridCellInput"
-        assert int(m.group(1)) >= 80, (
-            f"min-width {m.group(1)}px is still too narrow; expected >= 80px"
+        m = re.search(r"min-width\s*:\s*'\s*\+\s*GRID_INPUT_MIN_WIDTH_PX", inp_block)
+        assert m is not None, "No min-width (GRID_INPUT_MIN_WIDTH_PX) found on gridCellInput"
+        assert C.value("GRID_INPUT_MIN_WIDTH_PX") >= 80, (
+            f"min-width {C.value('GRID_INPUT_MIN_WIDTH_PX')}px is still too narrow; expected >= 80px"
         )
 
 
@@ -97,10 +99,11 @@ class TestContainerWider:
         html = _html()
         # The wrapper div has :style with Math.max(<N>, ...) for width
         # Old value was Math.max(36, ...) — should now be Math.max(80, ...) or higher
-        m = re.search(r'Math\.max\((\d+),\s*_gridActiveCell\.canvasPx\.w\)', html)
+        m = re.search(r'Math\.max\((\w+),\s*_gridActiveCell\.canvasPx\.w\)', html)
         assert m is not None, "Math.max(..., _gridActiveCell.canvasPx.w) not found"
-        assert int(m.group(1)) >= 80, (
-            f"Math.max floor is {m.group(1)} — should be at least 80 to match wider input"
+        floor = int(m.group(1)) if m.group(1).isdigit() else C.value(m.group(1))
+        assert floor >= 80, (
+            f"Math.max floor is {floor} — should be at least 80 to match wider input"
         )
 
 

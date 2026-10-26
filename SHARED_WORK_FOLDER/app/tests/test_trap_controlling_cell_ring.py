@@ -14,6 +14,8 @@ import pytest
 
 APP_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(APP_DIR))
+sys.path.insert(0, str(Path(__file__).parent))
+import editor_constants as C
 
 
 def _gsd():
@@ -153,9 +155,9 @@ def test_editor_draws_red_ring_on_top_of_numbers():
     nums = EDITOR.index("Numeric value text for set cells")
     assert ring > nums                                  # drawn after numbers
     seg = EDITOR[ring:ring + 1500]
-    assert "#dc2626" in seg and "ctx.arc(" in seg and "ctx.stroke()" in seg
+    assert "COLOR_TRAP_CTL_RING" in seg and C.value("COLOR_TRAP_CTL_RING") == "#dc2626" and "ctx.arc(" in seg and "ctx.stroke()" in seg
     assert "fill(" not in seg                           # ring only, number stays visible
-    assert "this.gridMode !== 'off'" in seg
+    assert "this.gridMode !== GRID_MODE_OFF" in seg and C.value("GRID_MODE_OFF") == "off"
 
 
 def test_editor_refreshes_live():

@@ -9,6 +9,8 @@ import numpy as np
 
 APP_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(APP_DIR))
+sys.path.insert(0, str(Path(__file__).parent))
+import editor_constants as C
 HTML = (APP_DIR / "templates" / "editor.html").read_text()
 
 
@@ -58,9 +60,9 @@ def test_tps_field_40_grid():
 
 def test_editor_source_wiring():
     assert "v5.68 — Grid resolution switch" in HTML
-    assert "gridN: 20," in HTML
-    assert "setGridResolution(40)" in HTML and "setGridResolution(20)" in HTML
+    assert "gridN: GRID_N_DEFAULT," in HTML and C.value("GRID_N_DEFAULT") == 20
+    assert "setGridResolution(GRID_N_FINE)" in HTML and "setGridResolution(GRID_N_DEFAULT)" in HTML and C.value("GRID_N_FINE") == 40
     assert "Switching resolutions will cause all grid settings to be erased." in HTML
     assert "data.gridResolution = this.gridN" in HTML
-    assert "this.gridN = (Number(data.gridResolution) === 40) ? 40 : 20;" in HTML
+    assert "this.gridN = (Number(data.gridResolution) === GRID_N_FINE) ? GRID_N_FINE : GRID_N_DEFAULT;" in HTML
     assert not re.search(r"GRID_(COLS|ROWS)\s*=\s*20", HTML)
