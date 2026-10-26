@@ -3690,7 +3690,8 @@ def _build_tps_grid_height_field(
     from scipy.interpolate import RBFInterpolator
     from scipy.spatial import cKDTree
 
-    GRID_SIZE = 20  # 20 × 20 cells
+    # v5.22: resolution is per-EGM (20 legacy default, or 40).
+    GRID_SIZE = _normalize_grid_resolution(egm_data.get("gridResolution"))
     _elevation_range_mm = float(egm_data.get("elevationRange") or ELEVATION_RANGE_MM)
     half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0
     cell_side = (2.0 * half) / GRID_SIZE  # square cells
@@ -3698,7 +3699,7 @@ def _build_tps_grid_height_field(
     # ── Step 1: Compute default Z for every cell centre via nearest bnd_z ──────
     # Build KDTree once over the green boundary for vectorised lookup.
     gbnd_kd = cKDTree(green_bnd_mm)
-    n_cells = GRID_SIZE * GRID_SIZE  # 400
+    n_cells = GRID_SIZE * GRID_SIZE  # 400 (20x20) or 1600 (40x40)
 
     cell_cx = np.empty(n_cells, dtype=np.float64)  # world x-coord of cell centre
     cell_cy = np.empty(n_cells, dtype=np.float64)  # world y-coord of cell centre
@@ -6260,6 +6261,18 @@ def _apply_lift_and_cap(
     }
 
 
+def _normalize_grid_resolution(value) -> int:
+    """Return the EGM grid resolution N (cells per axis): 20 (legacy default) or 40.
+
+    Missing / unknown values fall back to 20 so old EGMs behave unchanged.
+    """
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return 20
+    return n if n in (20, 40) else 20
+
+
 def _normalize_grid_mode(mode) -> str:
     """Return 'delta' | 'absolute' | 'off' (unknown/missing -> 'delta')."""
     m = str(mode or "delta").lower()
@@ -6361,7 +6374,8 @@ def compute_trap_controlling_cells(egm_data: dict) -> dict:
     green_boundary_px = _prepare_egm_geometry(data, green_poly)
     scale, centroid_px = _compute_px_to_mm(green_boundary_px, data)
     half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0
-    side = (2.0 * half) / 20
+    grid_n = _normalize_grid_resolution(egm_data.get("gridResolution"))
+    side = (2.0 * half) / grid_n
     pipe_circle = None
     if ENABLE_MOUNT_BORE:
         pipe_circle = _build_pipe_circle(-half + MOUNT_BORE_INSET_MM, half - MOUNT_BORE_INSET_MM)
@@ -6373,7 +6387,7 @@ def compute_trap_controlling_cells(egm_data: dict) -> dict:
             fp = None
         if fp is None:
             continue
-        cells = controlling_cells_for_trap(fp, gch, side, half)
+        cells = controlling_cells_for_trap(fp, gch, side, half, grid_n)
         if cells:
             out["traps"].append({"trap": i, "cells": cells})
     return out
@@ -6858,11 +6872,12 @@ def export_trap_stls(
             if not TRAP_SURFACE_CURVED:
                 _gch = egm_data.get("gridCellHeights") or {}
                 _grid_half = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0
-                _grid_cell_side = (2.0 * _grid_half) / 20
+                _grid_n = _normalize_grid_resolution(egm_data.get("gridResolution"))
+                _grid_cell_side = (2.0 * _grid_half) / _grid_n
                 _trap_grid_mode = _normalize_grid_mode(egm_data.get("gridMode"))
                 _new_height = _resolve_trap_height_from_grid(
                     shapely_trap, _gch, _trap_grid_mode, trap_height,
-                    _grid_cell_side, _grid_half,
+                    _grid_cell_side, _grid_half, _grid_n,
                 )
                 if _new_height is not None:
                     print(f"  Trap {i}: grid-cell override active (mode={_trap_grid_mode}) — "

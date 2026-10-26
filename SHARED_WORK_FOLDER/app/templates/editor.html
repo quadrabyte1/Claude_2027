@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{# Boundary Editor v5.21 — Default tee-hole position moved to (40, 40) mm (was 30, 30); saved positions untouched. v5.20 — Grid cell value labels are plain black (delta) with no white outline; absolute keeps orange. v5.19 — Ctrl+Option(Alt)+drag selects cells along the drag path (visit order); popup has first/last boxes, Tab/Enter from the last box spreads first->last linearly (0.1 mm precision). v5.18 — Grid cell value labels/tooltip no longer show a leading '+' on positives (negatives keep '-'). v5.17 — Geo-ref setup dialog removed (orphaned after the GPS panel ⚙ opener was removed); courseGeoRef data still loads/saves untouched. v5.16 — GPS controls removed from the UI (JS state/load/save kept so any EGM gpsBackend block still round-trips). v5.15 — Mouse wheel steps the open grid value box (0.1 mm, Shift = 1.0; no clamp; commit still Enter/Tab). v5.14 — Grid cells colored by value (matplotlib 'terrain', auto-scaled; view-only toggle in localStorage). v5.13 — Only cells FULLY inside a bunker can control it (partial cells ignored). v5.12 — Ring now in delta AND absolute (not off); delta = default + highest cell (was mean). v5.11 — Absolute mode: red ring around the grid cell(s) that control each trap's height (server-computed, mirrors generator). v5.10 — Grid value 0 = empty cell (deleted on commit, dropped on load). Grid lines recolored to indigo; Cmd+drag multi-cell selection with shared-value edit (task 726) #}
+{# Boundary Editor v5.69 — Create New Project: the heat-map PNG's baked-in background grid is erased for display (server-side heatmap_degrid.py; cleaned copy saved next to the original, original untouched) with an Original/Degridded view toggle; boundary detection still runs on the original; Open Project is unaffected. v5.68 — Grid resolution switch (20x20 default / 40x40) next to the Grid mode switch; confirm dialog then erases all cell values; saved as EGM `gridResolution` (absent = 20); drawing, hit-testing, overlays and the server TPS/controlling-cell code honour it. v5.21 — Default tee-hole position moved to (40, 40) mm (was 30, 30); saved positions untouched. v5.20 — Grid cell value labels are plain black (delta) with no white outline; absolute keeps orange. v5.19 — Ctrl+Option(Alt)+drag selects cells along the drag path (visit order); popup has first/last boxes, Tab/Enter from the last box spreads first->last linearly (0.1 mm precision). v5.18 — Grid cell value labels/tooltip no longer show a leading '+' on positives (negatives keep '-'). v5.17 — Geo-ref setup dialog removed (orphaned after the GPS panel ⚙ opener was removed); courseGeoRef data still loads/saves untouched. v5.16 — GPS controls removed from the UI (JS state/load/save kept so any EGM gpsBackend block still round-trips). v5.15 — Mouse wheel steps the open grid value box (0.1 mm, Shift = 1.0; no clamp; commit still Enter/Tab). v5.14 — Grid cells colored by value (matplotlib 'terrain', auto-scaled; view-only toggle in localStorage). v5.13 — Only cells FULLY inside a bunker can control it (partial cells ignored). v5.12 — Ring now in delta AND absolute (not off); delta = default + highest cell (was mean). v5.11 — Absolute mode: red ring around the grid cell(s) that control each trap's height (server-computed, mirrors generator). v5.10 — Grid value 0 = empty cell (deleted on commit, dropped on load). Grid lines recolored to indigo; Cmd+drag multi-cell selection with shared-value edit (task 726) #}
 {% block title %}Boundary Editor — AI Team Workspace{% endblock %}
 {% block content_width %}max-w-6xl{% endblock %}
 {% block content %}
@@ -569,6 +569,40 @@
               title="Off: hide cell overlays and ignore all values. Stored values are preserved.">Off</button>
     </div>
 
+    {# ── Heat-map view toggle (v5.69) — only after Create New Project found a baked-in grid ── #}
+    <div x-show="degridUrls" x-cloak data-testid="degrid-view-switch"
+         class="inline-flex items-center gap-1 pl-1.5 pr-1 py-0.5 rounded-md border border-notion-border bg-stone-50/70"
+         :title="DEGRID_TOGGLE_TIP">
+      <span class="text-[10px] text-notion-muted font-semibold tracking-wide uppercase pr-0.5" x-text="DEGRID_LABEL_TITLE"></span>
+      <button type="button" data-testid="degrid-view-original"
+              @click="setImageView(DEGRID_VIEW_ORIGINAL)"
+              :class="imageView === DEGRID_VIEW_ORIGINAL ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white text-notion-text border-notion-border hover:bg-indigo-50'"
+              class="text-[11px] font-medium px-1.5 py-0.5 rounded border transition-default"
+              x-text="DEGRID_LABEL_ORIGINAL"></button>
+      <button type="button" data-testid="degrid-view-clean"
+              @click="setImageView(DEGRID_VIEW_CLEAN)"
+              :class="imageView === DEGRID_VIEW_CLEAN ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white text-notion-text border-notion-border hover:bg-indigo-50'"
+              class="text-[11px] font-medium px-1.5 py-0.5 rounded border transition-default"
+              x-text="DEGRID_LABEL_CLEAN"></button>
+    </div>
+
+    {# ── Grid resolution switch (v5.22) — 20x20 (default) / 40x40. Switching erases all cell values. ── #}
+    <div class="inline-flex items-center gap-1 pl-1.5 pr-1 py-0.5 rounded-md border border-notion-border bg-stone-50/70"
+         data-testid="grid-resolution-switch"
+         title="Grid resolution (cells per side). Switching resolutions erases all grid cell values.">
+      <span class="text-[10px] text-notion-muted font-semibold tracking-wide uppercase pr-0.5">Res</span>
+      <button type="button" data-testid="grid-res-20"
+              @click="setGridResolution(20)"
+              :class="gridN === 20 ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white text-notion-text border-notion-border hover:bg-indigo-50'"
+              class="text-[11px] font-medium px-1.5 py-0.5 rounded border transition-default"
+              title="20 x 20 grid (default)">20&times;20</button>
+      <button type="button" data-testid="grid-res-40"
+              @click="setGridResolution(40)"
+              :class="gridN === 40 ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white text-notion-text border-notion-border hover:bg-indigo-50'"
+              class="text-[11px] font-medium px-1.5 py-0.5 rounded border transition-default"
+              title="40 x 40 grid (finer)">40&times;40</button>
+    </div>
+
     {# ── Cell-color toggle + legend (v5.14) — view preference only (localStorage), never saved to the EGM ── #}
     <label class="inline-flex items-center gap-1.5 text-[11px] text-notion-text cursor-pointer select-none whitespace-nowrap"
            title="Tint each grid cell by its value (terrain colormap, auto-scaled to the lowest and highest set cell). View only — not saved in the EGM.">
@@ -677,8 +711,23 @@ function polygonEditor() {
     _pendingAutoSave: false,   // v4.48 — set when autoSave() skips due to unmet prereqs; re-fires once they clear
 
     // ── Grid cell elevation overlay (v5.00) ──────────────────────────────────
-    // 20×20 sparse dict keyed by cell_index = row*20+col. Values in mm (0–50).
+    // N×N sparse dict keyed by cell_index = row*N+col (N = gridN). Values in mm (0–50).
     gridCellHeights: {},
+    // v5.22: grid resolution (cells per axis): 20 (legacy default) or 40. Saved in the EGM as
+    // `gridResolution` (only when != 20). Changing it erases all cell values (see setGridResolution).
+    gridN: 20,
+    // v5.69: heat-map degrid view (Create New Project only).  degridUrls = {original, degridded}
+    // or null; imageView picks which one the canvas shows.  Never saved in the EGM.
+    DEGRID_API_URL: '/api/degrid_image',
+    DEGRID_VIEW_ORIGINAL: 'original',
+    DEGRID_VIEW_CLEAN: 'degridded',
+    DEGRID_LABEL_ORIGINAL: 'Original',
+    DEGRID_LABEL_CLEAN: 'Degridded',
+    DEGRID_LABEL_TITLE: 'Image',
+    DEGRID_TOGGLE_TIP: 'Show the original heat-map image or the copy with its baked-in grid erased. View only; the original file is never modified.',
+    degridUrls: null,
+    imageView: 'degridded',
+    _pendingDegrid: false,
     // Grid interpretation mode (task 774, v5.34):
     //   'delta'    — values are additive offsets to Poisson default (±20 mm). Blue/indigo UI.
     //   'absolute' — values REPLACE the Poisson default (0 to 30 mm). Orange UI.
@@ -810,8 +859,42 @@ function polygonEditor() {
       }
     },
 
+    // v5.69 — Create New Project only: ask the server for the degridded copy first, then load.
+    // Every other path (Open Project, Load, reload) shows the original and clears the toggle.
     loadImage() {
       if (!this.selectedImage) return;
+      if (!this._pendingDegrid) { this.degridUrls = null; return this._loadImageNow(); }
+      this._pendingDegrid = false;
+      this.imgLoaded = false;
+      fetch(this.DEGRID_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: this.selectedImage, imageCourse: this.selectedImageCourse }),
+      })
+      .then(resp => resp.json())
+      .then(r => {
+        this.degridUrls = (r.status === 'ok' && r.found) ? { original: r.originalUrl, degridded: r.degriddedUrl } : null;
+        this.imageView = this.DEGRID_VIEW_CLEAN;
+      })
+      .catch(() => { this.degridUrls = null; })
+      .finally(() => this._loadImageNow());
+    },
+
+    _displayImageUrl() {
+      if (this.degridUrls && this.imageView === this.DEGRID_VIEW_CLEAN) return this.degridUrls.degridded;
+      return this.selectedImageUrl || '/team_inbox/' + encodeURIComponent(this.selectedImage);
+    },
+
+    // Swap the displayed image without touching polygons / detection (same pixel size).
+    setImageView(view) {
+      if (!this.degridUrls || view === this.imageView) return;
+      this.imageView = view;
+      const next = new Image();
+      next.onload = () => { this.img = next; this.draw(); };
+      next.src = this._displayImageUrl() + '?t=' + Date.now();
+    },
+
+    _loadImageNow() {
       this.imgLoaded = false;
       this.img = new Image();
       const onImageReady = () => {
@@ -857,7 +940,7 @@ function polygonEditor() {
       };
       // Cache-buster query param forces the browser to re-request the image,
       // ensuring onload always fires even if the underlying file is cached.
-      this.img.src = (this.selectedImageUrl || '/team_inbox/' + encodeURIComponent(this.selectedImage)) + '?t=' + Date.now();
+      this.img.src = this._displayImageUrl() + '?t=' + Date.now();
     },
 
     runDetection() {
@@ -1272,8 +1355,8 @@ function polygonEditor() {
       // loaded (grid origin = lower-left of print frame, axis-aligned).
       this._scheduleTrapCtl();
       if (this.imgLoaded) {
-        const GRID_COLS = 20;
-        const GRID_ROWS = 20;
+        const GRID_COLS = this.gridN;
+        const GRID_ROWS = this.gridN;
         const tl = this._printTopLeftPx();
         const k  = this._pxPerMm();
         const psm = this.printSizeMm || 171.45;
@@ -1325,7 +1408,7 @@ function polygonEditor() {
         if (this.gridMode !== 'off') {
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.font = `${11 * dpr}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+          ctx.font = `${(this.gridN > 20 ? 8 : 11) * dpr}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
           ctx.fillStyle = (this.gridMode === 'absolute')
             ? 'rgba(249,115,22,0.95)'   // tailwind orange-500
             : '#000';  // v5.20: plain black (delta), no outline
@@ -1745,8 +1828,8 @@ function polygonEditor() {
       // Done only when no cell input is currently open.
       // Task 774: in 'off' mode, overlays are hidden — don't register hovers either.
       if (!this._gridActiveCell && this.gridMode !== 'off' && Object.keys(this.gridCellHeights).length > 0) {
-        const GRID_COLS = 20;
-        const GRID_ROWS = 20;
+        const GRID_COLS = this.gridN;
+        const GRID_ROWS = this.gridN;
         const canvas = this.$refs.canvas;
         const rect = canvas.getBoundingClientRect();
         const mx = e.clientX - rect.left;   // CSS px from canvas left
@@ -1863,7 +1946,7 @@ function polygonEditor() {
       // dot to delete it.  Uses the same CSS-px hit detection as the hover tooltip.
       // Task 774: skip in 'off' mode — overlays are hidden and values are preserved.
       if (this.gridMode !== 'off' && Object.keys(this.gridCellHeights).length > 0) {
-        const GRID_COLS = 20;
+        const GRID_COLS = this.gridN;
         const canvas = this.$refs.canvas;
         const rect = canvas.getBoundingClientRect();
         const mx = e.clientX - rect.left;
@@ -2299,8 +2382,8 @@ function polygonEditor() {
     // Convert an image-pixel coordinate to a grid (col, row) or null if outside.
     // Row 0 is at the BOTTOM of the print area (lower-left origin per spec).
     _gridCellFromImgPx(imgX, imgY) {
-      const GRID_COLS = 20;
-      const GRID_ROWS = 20;
+      const GRID_COLS = this.gridN;
+      const GRID_ROWS = this.gridN;
       const tl  = this._printTopLeftPx();
       const k   = this._pxPerMm();
       const psm = this.printSizeMm || 171.45;
@@ -2320,8 +2403,8 @@ function polygonEditor() {
     // Return canvas CSS-px position (top-left) of a grid cell for positioning
     // the input overlay. (Canvas CSS px = image-px * scale + offset.)
     _gridCellCanvasPx(col, row) {
-      const GRID_COLS = 20;
-      const GRID_ROWS = 20;
+      const GRID_COLS = this.gridN;
+      const GRID_ROWS = this.gridN;
       const tl  = this._printTopLeftPx();
       const k   = this._pxPerMm();
       const psm = this.printSizeMm || 171.45;
@@ -2410,6 +2493,29 @@ function polygonEditor() {
 
     // v5.19 — single-level grid-cell undo.  Snapshot ONLY the cells an edit is about to change
     // (replacing any earlier snapshot); gridUndo() restores them via the normal draw + autoSave path.
+    // v5.22 — switch grid resolution (20 <-> 40). Existing cell values are meaningless in the
+    // new grid, so they are erased after a confirm.  Cancel = no change (the toggle is state-
+    // driven, so it stays on the old value).  The switch is NOT undoable: the grid undo
+    // snapshot is cleared because its cell indices belong to the old resolution.
+    setGridResolution(n) {
+      if (n === this.gridN) return;
+      if (Object.keys(this.gridCellHeights).length > 0) {
+        if (!window.confirm('Switching resolutions will cause all grid settings to be erased.')) return;
+      }
+      this.cancelGridRamp && this.cancelGridRamp();
+      this.gridN = n;
+      this.gridCellHeights = {};
+      this._gridUndo = null;
+      this._gridActiveCell = null;
+      this._gridInputValue = '';
+      this._gridHoveredCell = null;
+      this._gridMultiSelect = null;
+      this._trapCtlCells = [];
+      this._trapCtlSig = '';
+      this.autoSave();
+      this.draw();
+    },
+
     gridUndoSnapshot(idxs, label) {
       const cells = {};
       for (const i of idxs) cells[i] = this.gridCellHeights[i];   // undefined = was empty
@@ -2537,7 +2643,7 @@ function polygonEditor() {
     // v5.14 — terrain-colored cell fill, auto-scaled between lowest and highest set
     // cell, empties counted as 0 (all 400 cells filled).  Skipped in 'off' mode and when nothing is set.
     _drawCellColors(ctx, tl, cellWpx, cellHpx) {
-      const GRID_COLS = 20, GRID_ROWS = 20;
+      const GRID_COLS = this.gridN, GRID_ROWS = this.gridN;
       const rng = this.gridRange();
       if (!rng) return;
       for (let idx = 0; idx < GRID_COLS * GRID_ROWS; idx++) {   // every cell; empty = 0
@@ -2562,6 +2668,7 @@ function polygonEditor() {
         .map(p => ({ type: p.type, name: p.name, closed: true, points: p.points.map(pt => ({ x: pt.x, y: pt.y })) }));
       const payload = {
         gridMode: this.gridMode,
+        gridResolution: this.gridN,
         gridCellHeights: Object.assign({}, this.gridCellHeights),
         imageSize: { width: this.imgW, height: this.imgH },
         greenScale: this.greenScale,
@@ -2668,6 +2775,11 @@ function polygonEditor() {
       // round-trip unchanged (loader defaults missing field to 'delta').
       if (this.gridMode && this.gridMode !== 'delta') {
         data.gridMode = this.gridMode;
+      }
+      // gridResolution — v5.22. Only persist when non-default (40) so legacy EGMs
+      // round-trip unchanged (loader defaults missing field to 20).
+      if (this.gridN !== 20) {
+        data.gridResolution = this.gridN;
       }
       try {
         await fetch('/api/boundaries', {
@@ -2834,6 +2946,7 @@ function polygonEditor() {
       // Grid cell elevation
       this.gridCellHeights    = {};
       this.gridMode           = 'delta';
+      this.gridN              = 20;
       this._gridMultiSelect   = null;
       this._gridRampMode      = false;
       this._gridMultiSelectAnchor = null;
@@ -2940,6 +3053,8 @@ function polygonEditor() {
         }
         // gridCellHeights — v5.00. Absent in legacy EGMs → default to empty dict.
         this.gridCellHeights = Object.fromEntries(Object.entries(data.gridCellHeights || {}).filter(([, v]) => Number(v) !== 0));  // zero = empty
+        // gridResolution — v5.22. Absent in legacy EGMs → 20. Anything but 40 collapses to 20.
+        this.gridN = (Number(data.gridResolution) === 40) ? 40 : 20;
         // gridMode — v5.34 (task 774). Absent in legacy EGMs → default to 'delta'
         // (current/legacy behavior).  Defensive validation: unknown values collapse to 'delta'.
         {
@@ -3020,6 +3135,7 @@ function polygonEditor() {
       this.polygons = [];
       // Grid cell elevation — reset on new project
       this.gridCellHeights  = {};
+      this.gridN            = 20;       // v5.22 — reset to default resolution
       this.gridMode         = 'delta';  // v5.34 (task 774) — reset to default mode
       this._gridActiveCell  = null;
       this._gridInputValue  = '';
@@ -3032,6 +3148,7 @@ function polygonEditor() {
         y_mm: this.TEE_HOLE_DEFAULT_Y_MM,
       };
       this._pendingDetect = true;
+      this._pendingDegrid = true;   // v5.69: Create New Project only
       this.loadImage();
       this.refreshGpsFiles();  // populate GPS file picker for the new course
     },

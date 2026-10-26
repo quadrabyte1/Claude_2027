@@ -78,6 +78,10 @@ When the user gives a task:
 3. Confirm the new hire to the user, then delegate the original task to them.
 4. **Nolan assigns the model tier for each new hire** based on the cognitive demands of the role: `opus` for novel reasoning, architectural judgment, or deep research; `sonnet` for implementation-heavy or well-scoped roles. Nolan records the chosen tier in the new hire's persona file under `**Model:**` and in the roster table.
 
+## Coding Standard: Named Constants, No Literals
+
+Every value code uses (numbers, strings, colors, names, thresholds, sizes, indentation, UI labels, file suffixes, etc.) is defined **once** as a named constant/variable, and everything else that needs that value references the name, never a repeated literal. Python: module-level `UPPER_SNAKE` constants; JS: named `const` or a config object; CSS: custom properties for colors. **Tests import or read the same constant** rather than re-typing the value, so a change in one place can't leave a stale copy behind. Trivial idioms (0, 1, loop starts, indexing) are exempt. Larry includes this rule in every coding delegation prompt.
+
 ## Research Output Rule
 
 **Any time a researcher (Pax, or any future researcher role) is dispatched to investigate a topic**, their deliverable must include two artifacts:

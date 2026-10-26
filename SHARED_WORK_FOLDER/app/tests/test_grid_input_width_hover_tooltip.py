@@ -259,13 +259,13 @@ class TestGridGeometryRegression:
 
     def test_grid_cols_20_present(self):
         html = _html()
-        assert re.search(r'GRID_COLS\s*=\s*20', html), (
+        assert re.search(r'GRID_COLS\s*=\s*(?:20|this\.gridN)', html), (
             "GRID_COLS = 20 constant missing — grid geometry regression"
         )
 
     def test_grid_rows_20_present(self):
         html = _html()
-        assert re.search(r'GRID_ROWS\s*=\s*20', html), (
+        assert re.search(r'GRID_ROWS\s*=\s*(?:20|this\.gridN)', html), (
             "GRID_ROWS = 20 constant missing — grid geometry regression"
         )
 

@@ -10,6 +10,8 @@ import hashlib
 import time
 from datetime import datetime, date
 from pathlib import Path
+
+import heatmap_degrid
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent / ".env")
@@ -23,7 +25,7 @@ app = Flask(__name__)
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "db", "workspace.db")
 
-APP_VERSION = "v5.67"  # unified version for all main-app pages, shown in every sticky footer
+APP_VERSION = "v5.69"  # unified version for all main-app pages, shown in every sticky footer
 
 # Tier -> concrete model (single source of truth for Team page + Dashboard).
 # Keep in sync with the mapping in team/README.md.
@@ -40,6 +42,19 @@ def model_info(tier):
     t = (tier or "sonnet").strip().lower()
     return MODEL_VERSIONS.get(t, {"label": (tier or t).capitalize(), "id": tier or t})
 
+
+# ── Heat-map degrid (task #590) ────────────────────────────────────────────
+# Create New Project shows a copy of the heat-map PNG with its baked-in background
+# grid erased (heatmap_degrid.py).  The cleaned copy is saved NEXT TO the original
+# as "<stem>__degridded.png"; the original is never modified.
+# Boundary detection: compared on 5 holes (Delaveaga 5/11/15, Stanford 3/8) -- identical
+# green results, trap IoU within +/-0.3%, no systematic gain.  During the classifier-
+# tuning phase detection therefore keeps using the ORIGINAL; flip this to feed it the
+# cleaned image.
+DEGRID_DETECT_ON_CLEANED = False
+EGM_IMAGE_URL_FMT = "/egm/images/{course}/{filename}"
+TEAM_INBOX_URL_FMT = "/team_inbox/{filename}"
+IMAGE_EXTS = (".png", ".jpg", ".jpeg")
 
 # ── detect_boundaries: classifier knobs ────────────────────────────────────
 # When True the green polygon interior is excluded from trap/water detection.
@@ -930,6 +945,49 @@ def _find_image_path(image_name: str, preferred_course: str = "") -> str | None:
     return None
 
 
+def _is_degridded_name(filename: str) -> bool:
+    """True for the generated cleaned copies (hidden from the image picker)."""
+    return os.path.splitext(filename)[0].endswith(heatmap_degrid.DEGRID_SUFFIX)
+
+
+def _image_url_for_path(img_path: str) -> str | None:
+    """Servable URL for an image that lives in a course Images/ folder or team_inbox."""
+    folder = os.path.abspath(os.path.dirname(img_path))
+    name = os.path.basename(img_path)
+    if os.path.abspath(_TEAM_INBOX) == folder:
+        return TEAM_INBOX_URL_FMT.format(filename=name)
+    parent, leaf = os.path.split(folder)
+    if leaf == "Images" and os.path.dirname(parent) == os.path.abspath(_EGM_BASE):
+        return EGM_IMAGE_URL_FMT.format(course=os.path.basename(parent), filename=name)
+    return None
+
+
+@app.route("/api/degrid_image", methods=["POST"])
+def degrid_image():
+    """Create New Project only: build (or reuse) the degridded copy of a heat-map PNG.
+
+    Body: {"image": filename, "imageCourse": course}.  Returns
+    {"status":"ok","found":bool,"originalUrl":..,"degriddedUrl":..|None}.
+    The original file is never touched; the copy is written next to it.
+    """
+    data = request.get_json(silent=True) or {}
+    image_name = data.get("image", "")
+    img_path = _find_image_path(image_name, preferred_course=data.get("imageCourse", ""))
+    if not image_name or img_path is None:
+        return jsonify({"status": "error", "msg": f"Image not found: {image_name}"}), 400
+    original_url = _image_url_for_path(img_path)
+    if original_url is None:
+        return jsonify({"status": "ok", "found": False, "originalUrl": None, "degriddedUrl": None})
+    out_path = heatmap_degrid.degridded_path(img_path)
+    fresh = os.path.isfile(out_path) and os.path.getmtime(out_path) >= os.path.getmtime(img_path)
+    if not fresh:
+        info = heatmap_degrid.degrid_file(img_path, out_path)
+        if not info.get(heatmap_degrid.INFO_WRITTEN):
+            return jsonify({"status": "ok", "found": False, "originalUrl": original_url, "degriddedUrl": None})
+    return jsonify({"status": "ok", "found": True, "originalUrl": original_url,
+                    "degriddedUrl": _image_url_for_path(out_path)})
+
+
 def _collect_course_images():
     """
     Return a list of image dicts from all GolfCourses/*/Images/ folders.
@@ -939,27 +997,27 @@ def _collect_course_images():
     Results are sorted case-insensitively: courses A→Z, then filenames A→Z within each course.
     """
     results = []
-    exts = ('.png', '.jpg', '.jpeg')
+    exts = IMAGE_EXTS
     if os.path.isdir(_EGM_BASE):
         for course in sorted(os.listdir(_EGM_BASE), key=str.casefold):
             img_dir = os.path.join(_EGM_BASE, course, "Images")
             if not os.path.isdir(img_dir):
                 continue
             for fname in sorted(os.listdir(img_dir), key=str.casefold):
-                if fname.lower().endswith(exts):
+                if fname.lower().endswith(exts) and not _is_degridded_name(fname):
                     results.append({
                         "filename": fname,
                         "course": course,
-                        "url": f"/egm/images/{course}/{fname}",
+                        "url": EGM_IMAGE_URL_FMT.format(course=course, filename=fname),
                     })
     # Backwards compat: also include team_inbox images
     if os.path.isdir(_TEAM_INBOX):
         for fname in sorted(os.listdir(_TEAM_INBOX), key=str.casefold):
-            if fname.lower().endswith(exts):
+            if fname.lower().endswith(exts) and not _is_degridded_name(fname):
                 results.append({
                     "filename": fname,
                     "course": None,
-                    "url": f"/team_inbox/{fname}",
+                    "url": TEAM_INBOX_URL_FMT.format(filename=fname),
                 })
     return results
 
@@ -1266,6 +1324,10 @@ def detect_boundaries():
     print(f"[detect_boundaries] image lookup: name={image_name!r} preferred_course={image_course!r} -> {img_path!r}")
     if img_path is None:
         return jsonify({"status": "error", "msg": f"Image not found: {image_name}"}), 400
+    if DEGRID_DETECT_ON_CLEANED:
+        _cleaned_path = heatmap_degrid.degridded_path(img_path)
+        if os.path.isfile(_cleaned_path):
+            img_path = _cleaned_path
     img = cv2.imread(img_path)
     if img is None:
         return jsonify({"status": "error", "msg": f"Cannot read image: {img_path}"}), 400

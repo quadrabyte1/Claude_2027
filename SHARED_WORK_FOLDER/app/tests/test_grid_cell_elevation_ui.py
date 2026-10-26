@@ -128,7 +128,7 @@ class TestGridOverlayInDraw:
         # Scan up to 12k chars to cover the full function
         draw_body = html[draw_start:draw_start + 12000]
         # Must reference GRID_COLS=20 or literal 20 in grid context
-        assert re.search(r'GRID_COLS\s*=\s*20|GRID_ROWS\s*=\s*20', draw_body), (
+        assert re.search(r'GRID_COLS\s*=\s*(?:20|this\.gridN)|GRID_ROWS\s*=\s*(?:20|this\.gridN)', draw_body), (
             "No GRID_COLS/GRID_ROWS = 20 constant in draw() body"
         )
 
@@ -420,7 +420,7 @@ class TestGridGeometryConstants:
         html = _html()
         # GRID_COLS = 20 or GRID_ROWS = 20 or inline literals
         assert re.search(
-            r'GRID_COLS\s*=\s*20|GRID_ROWS\s*=\s*20|'
+            r'GRID_COLS\s*=\s*(?:20|this\.gridN)|GRID_ROWS\s*=\s*(?:20|this\.gridN)|'
             r'gridCols\s*=\s*20|gridRows\s*=\s*20|'
             r'const\s+(?:cols|rows|COLS|ROWS)\s*=\s*20',
             html
