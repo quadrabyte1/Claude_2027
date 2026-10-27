@@ -187,7 +187,8 @@ def test_resolution_mismatch_is_refused_without_changes():
 
 def test_version_bumped_and_constants_defined_once():
     app = (APP_DIR / "app.py").read_text()
-    assert 'APP_VERSION = "v5.83"' in app and "Boundary Editor v5.83" in EDITOR
+    version = re.search(r'^APP_VERSION = "([^"]+)"', app, re.M).group(1)   # single source of truth: app.py
+    assert "Boundary Editor " + version in EDITOR
     for name in ("GRID_COPY_KEY", "GRID_PASTE_KEY", "GRID_CLIP_TYPE"):
         assert len(re.findall(r"^const %s\b" % name, EDITOR, re.M)) == 1
     assert EDITOR.count(CLIP_TYPE) == 1
