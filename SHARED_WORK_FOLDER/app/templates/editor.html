@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{# Boundary Editor v5.82 — Bunkers are now carved from the finished fringe: set cells FULLY inside a bunker belong to that bunker only (the fringe is built without them; partly-inside cells still shape the fringe); the bunker floor is the fringe surface minus 1 mm, and its fully-inside cells shape it smoothly (delta = offsets, absolute = floor height in mm) with the rim always 1 mm below the fringe; a bunker with no set cells stays flat. The red controlling-cell ring overlay and its server route are removed. v5.81 — Fix: the canvas could be sized from a container width measured before the paint palette laid out (palette shows/hides with Grid mode), leaving it wider than its frame so the right edge of the image/polygons was clipped; the canvas now re-measures via a ResizeObserver whenever its container width changes. v5.80 — Removed the -15/+15 colour legend gradient next to "Color cells by height" (the left palette shows the scale) and the "N cells set" badge from the Grid row. A 0 painted with the paint-mode BRUSH is now a REAL value: stored in gridCellHeights (key present = set; explicit 0), drawn with its normal scale colour (delta: the pale-yellow midpoint) and labelled 0.0, kept on reload, and used by the generator like any set cell (TPS constraint, trap controlling cell). The Eraser empties a cell; typing 0 in the value box, right-click and Delete still empty it; undo restores empty vs explicit 0 exactly. Old EGMs (never stored zeros) are unaffected. v5.79 — Below-canvas controls reorganised into labelled groups (Project / Shapes / Image / Output on one row with Generate at the right end; Grid row: mode, resolution, Paint, Undo, colour-by-height) with consistent 32px controls and segmented switches; Remove T Hole gets a subtle danger style; Undo moved from the top bar into the Grid group; the tee-hole Side Left/Right picker (and its dead setTeeHoleSide / teeHoleSide / TEE_SIDE_* code) removed — drag the marker instead. Layout and styling only. v5.78 — Cell value labels scale with the actual cell pixel width on the 40x40 grid (clamped min/max; 20x20 unchanged) so labels like -12.5 fit one cell; with "Color cells by height" on, empty cells (0 / unset) are left uncoloured — only set, non-zero cells get a fill. v5.77 — Paint mode: left-margin colour palette (31 swatches on the fixed v5.76 scale + Eraser; delta +15..-15, absolute 30..0), Paint button / B key / swatch click to enter, Esc / B / button / Grid Off to exit; mouse-down + drag paints cells (interpolated along the drag, 20x20 and 40x40) with a brush-tinted paintbrush cursor (eraser has its own); one stroke = one undo step; undo is now ONE chronological history (max 50 grid steps) shared by grid edits and polygon/contour edits, so polygon edits no longer wipe grid undo. v5.76 — Cell colours use a FIXED scale (colormap matplotlib RdYlBu_r, blue low -> red high): delta -15..+15 mm, absolute 0..30 mm on the same colours; values outside clamp to the end colours; legend shows the fixed ends; auto-scaling (and the 400-cell rule) removed. v5.75 — Generate stops with a clear message when a required Python package (e.g. triangle) is missing instead of producing a degraded model. v5.70 — Named-constants refactor (CLAUDE.md Coding Standard), no behavior change: every tunable, color, size, threshold, API URL, storage key, mode name and repeated UI string now lives in one EDITOR CONSTANTS block at the top of the script (CSS custom properties for markup-only values); tests read the constants via tests/editor_constants.py. v5.69 — Create New Project: the heat-map PNG's baked-in background grid is erased for display (server-side heatmap_degrid.py; cleaned copy saved next to the original, original untouched) with an Original/Degridded view toggle; boundary detection still runs on the original; Open Project is unaffected. v5.68 — Grid resolution switch (20x20 default / 40x40) next to the Grid mode switch; confirm dialog then erases all cell values; saved as EGM `gridResolution` (absent = 20); drawing, hit-testing, overlays and the server TPS/controlling-cell code honour it. v5.21 — Default tee-hole position moved to (40, 40) mm (was 30, 30); saved positions untouched. v5.20 — Grid cell value labels are plain black (delta) with no white outline; absolute keeps orange. v5.19 — Ctrl+Option(Alt)+drag selects cells along the drag path (visit order); popup has first/last boxes, Tab/Enter from the last box spreads first->last linearly (0.1 mm precision). v5.18 — Grid cell value labels/tooltip no longer show a leading '+' on positives (negatives keep '-'). v5.17 — Geo-ref setup dialog removed (orphaned after the GPS panel ⚙ opener was removed); courseGeoRef data still loads/saves untouched. v5.16 — GPS controls removed from the UI (JS state/load/save kept so any EGM gpsBackend block still round-trips). v5.15 — Mouse wheel steps the open grid value box (0.1 mm, Shift = 1.0; no clamp; commit still Enter/Tab). v5.14 — Grid cells colored by value (matplotlib 'terrain', auto-scaled; view-only toggle in localStorage). v5.13 — Only cells FULLY inside a bunker can control it (partial cells ignored). v5.12 — Ring now in delta AND absolute (not off); delta = default + highest cell (was mean). v5.11 — Absolute mode: red ring around the grid cell(s) that control each trap's height (server-computed, mirrors generator). v5.10 — Grid value 0 = empty cell (deleted on commit, dropped on load). Grid lines recolored to indigo; Cmd+drag multi-cell selection with shared-value edit (task 726) #}
+{# Boundary Editor v5.84 — Bunker body is now a ruled surface: rim 2 mm below the fringe, straight chords between boundary heights across the strongest-gradient direction; grid cells inside a bunker no longer reshape it (server-side change; no editor UI change). v5.83 — Grid cells copy/paste: Cmd/Ctrl+C copies the selected cells with their values (explicit 0 kept) as offsets from the most recently selected cell, to the system clipboard (JSON, type-tagged) and an in-memory fallback; Cmd/Ctrl+V pastes that pattern anchored at the most recently selected cell as one undoable step (cells outside the grid skipped). Native copy/paste in text fields is untouched. v5.82 — Bunkers are now carved from the finished fringe: set cells FULLY inside a bunker belong to that bunker only (the fringe is built without them; partly-inside cells still shape the fringe); the bunker floor is the fringe surface minus 1 mm, and its fully-inside cells shape it smoothly (delta = offsets, absolute = floor height in mm) with the rim always 1 mm below the fringe; a bunker with no set cells stays flat. The red controlling-cell ring overlay and its server route are removed. v5.81 — Fix: the canvas could be sized from a container width measured before the paint palette laid out (palette shows/hides with Grid mode), leaving it wider than its frame so the right edge of the image/polygons was clipped; the canvas now re-measures via a ResizeObserver whenever its container width changes. v5.80 — Removed the -15/+15 colour legend gradient next to "Color cells by height" (the left palette shows the scale) and the "N cells set" badge from the Grid row. A 0 painted with the paint-mode BRUSH is now a REAL value: stored in gridCellHeights (key present = set; explicit 0), drawn with its normal scale colour (delta: the pale-yellow midpoint) and labelled 0.0, kept on reload, and used by the generator like any set cell (TPS constraint, trap controlling cell). The Eraser empties a cell; typing 0 in the value box, right-click and Delete still empty it; undo restores empty vs explicit 0 exactly. Old EGMs (never stored zeros) are unaffected. v5.79 — Below-canvas controls reorganised into labelled groups (Project / Shapes / Image / Output on one row with Generate at the right end; Grid row: mode, resolution, Paint, Undo, colour-by-height) with consistent 32px controls and segmented switches; Remove T Hole gets a subtle danger style; Undo moved from the top bar into the Grid group; the tee-hole Side Left/Right picker (and its dead setTeeHoleSide / teeHoleSide / TEE_SIDE_* code) removed — drag the marker instead. Layout and styling only. v5.78 — Cell value labels scale with the actual cell pixel width on the 40x40 grid (clamped min/max; 20x20 unchanged) so labels like -12.5 fit one cell; with "Color cells by height" on, empty cells (0 / unset) are left uncoloured — only set, non-zero cells get a fill. v5.77 — Paint mode: left-margin colour palette (31 swatches on the fixed v5.76 scale + Eraser; delta +15..-15, absolute 30..0), Paint button / B key / swatch click to enter, Esc / B / button / Grid Off to exit; mouse-down + drag paints cells (interpolated along the drag, 20x20 and 40x40) with a brush-tinted paintbrush cursor (eraser has its own); one stroke = one undo step; undo is now ONE chronological history (max 50 grid steps) shared by grid edits and polygon/contour edits, so polygon edits no longer wipe grid undo. v5.76 — Cell colours use a FIXED scale (colormap matplotlib RdYlBu_r, blue low -> red high): delta -15..+15 mm, absolute 0..30 mm on the same colours; values outside clamp to the end colours; legend shows the fixed ends; auto-scaling (and the 400-cell rule) removed. v5.75 — Generate stops with a clear message when a required Python package (e.g. triangle) is missing instead of producing a degraded model. v5.70 — Named-constants refactor (CLAUDE.md Coding Standard), no behavior change: every tunable, color, size, threshold, API URL, storage key, mode name and repeated UI string now lives in one EDITOR CONSTANTS block at the top of the script (CSS custom properties for markup-only values); tests read the constants via tests/editor_constants.py. v5.69 — Create New Project: the heat-map PNG's baked-in background grid is erased for display (server-side heatmap_degrid.py; cleaned copy saved next to the original, original untouched) with an Original/Degridded view toggle; boundary detection still runs on the original; Open Project is unaffected. v5.68 — Grid resolution switch (20x20 default / 40x40) next to the Grid mode switch; confirm dialog then erases all cell values; saved as EGM `gridResolution` (absent = 20); drawing, hit-testing, overlays and the server TPS/controlling-cell code honour it. v5.21 — Default tee-hole position moved to (40, 40) mm (was 30, 30); saved positions untouched. v5.20 — Grid cell value labels are plain black (delta) with no white outline; absolute keeps orange. v5.19 — Ctrl+Option(Alt)+drag selects cells along the drag path (visit order); popup has first/last boxes, Tab/Enter from the last box spreads first->last linearly (0.1 mm precision). v5.18 — Grid cell value labels/tooltip no longer show a leading '+' on positives (negatives keep '-'). v5.17 — Geo-ref setup dialog removed (orphaned after the GPS panel ⚙ opener was removed); courseGeoRef data still loads/saves untouched. v5.16 — GPS controls removed from the UI (JS state/load/save kept so any EGM gpsBackend block still round-trips). v5.15 — Mouse wheel steps the open grid value box (0.1 mm, Shift = 1.0; no clamp; commit still Enter/Tab). v5.14 — Grid cells colored by value (matplotlib 'terrain', auto-scaled; view-only toggle in localStorage). v5.13 — Only cells FULLY inside a bunker can control it (partial cells ignored). v5.12 — Ring now in delta AND absolute (not off); delta = default + highest cell (was mean). v5.11 — Absolute mode: red ring around the grid cell(s) that control each trap's height (server-computed, mirrors generator). v5.10 — Grid value 0 = empty cell (deleted on commit, dropped on load). Grid lines recolored to indigo; Cmd+drag multi-cell selection with shared-value edit (task 726) #}
 {% block title %}Boundary Editor — AI Team Workspace{% endblock %}
 {% block content_width %}max-w-6xl{% endblock %}
 {% block content %}
@@ -836,6 +836,45 @@ const GRID_UNDO_MAX_STEPS = 50;             // grid entries kept in the unified 
 const UNDO_LABEL_POLY_DEFAULT = 'polygon edit';
 const UNDO_LABEL_CELL_EDIT = 'cell edit';
 const UNDO_LABEL_CELL_CLEAR = 'cell clear';
+const UNDO_LABEL_CELL_PASTE = 'paste';
+// v5.83 — grid cell copy / paste (Cmd/Ctrl+C, Cmd/Ctrl+V)
+const GRID_COPY_KEY = 'c';
+const GRID_PASTE_KEY = 'v';
+const GRID_CLIP_TYPE = 'boundary-editor/grid-cells';   // type tag in the JSON written to the system clipboard
+const GRID_CLIP_VERSION = 1;
+const MSG_GRID_COPIED = 'Copied cells: ';
+const MSG_GRID_PASTED = 'Pasted cells: ';
+const MSG_GRID_PASTE_NOTHING = 'Select a cell to paste at';
+const MSG_GRID_PASTE_RES_MISMATCH = 'Copied cells are from a different grid resolution';
+const MSG_GRID_PASTE_OUTSIDE = 'Nothing to paste inside the grid';
+// Pure helpers (also exercised by tests/test_editor_grid_copy_paste.py)
+// Pattern = {type, v, gridN, cells:[{dc, dr, val}]}; dc/dr are col/row offsets from the anchor cell; val null = empty cell.
+function gridClipBuild(idxs, anchorIdx, heights, gridN) {
+  const ac = anchorIdx % gridN, ar = Math.floor(anchorIdx / gridN);
+  return {
+    type: GRID_CLIP_TYPE, v: GRID_CLIP_VERSION, gridN,
+    cells: idxs.map(i => ({ dc: (i % gridN) - ac, dr: Math.floor(i / gridN) - ar, val: heights[i] === undefined ? null : heights[i] })),
+  };
+}
+// Parse clipboard text; returns the pattern or null when it is not one of ours.
+function gridClipParse(text) {
+  try {
+    const p = JSON.parse(text);
+    if (p && p.type === GRID_CLIP_TYPE && Array.isArray(p.cells) && p.gridN > 0) return p;
+  } catch (err) { /* not JSON */ }
+  return null;
+}
+// Map a pattern onto the grid at anchorIdx -> [[idx, val|null], ...]; cells landing outside the grid are skipped.
+function gridClipTargets(p, anchorIdx, gridN) {
+  const ac = anchorIdx % gridN, ar = Math.floor(anchorIdx / gridN);
+  const out = [];
+  for (const c of p.cells) {
+    const col = ac + c.dc, row = ar + c.dr;
+    if (col < 0 || col >= gridN || row < 0 || row >= gridN) continue;
+    out.push([row * gridN + col, c.val]);
+  }
+  return out;
+}
 const MSG_NOTHING_TO_UNDO = 'Nothing to undo';
 const MSG_UNDO_MODE_CHANGED = 'Grid mode changed — nothing to undo';
 const TIP_PAINT_BTN = 'Paint mode (B): pick a colour in the left palette, then click or drag on the grid to paint cells. Esc / B / this button exits.';
@@ -1215,6 +1254,7 @@ function polygonEditor() {
     _gridRampLast: '',
     _gridHoveredCell: null,  // {idx, canvasPx:{x,y,w,h}} or null — drives dot tooltip (v5.04)
     _gridMouseDownAt: null,  // {x, y, col, row, idx, time} — pending click until drag threshold resolved (v5.05)
+    _gridClipPattern: null,  // v5.83 in-memory copy of the grid-cell pattern (fallback when the system clipboard is unavailable)
     _gridMultiSelect: null,  // Set of cell indices selected via Cmd/Ctrl+drag (v5.09); null when inactive
     _gridMultiSelectAnchor: null, // {col, row, idx} of the first cell in the multi-select drag (v5.09)
 
@@ -3073,6 +3113,72 @@ function polygonEditor() {
       this.autoSave();
     },
 
+    // ── Grid cell copy / paste (v5.83) ───────────────────────────────────────────
+
+    // Selected cells in selection order (a Set keeps insertion order); a lone open cell counts as a selection of one.
+    _gridSelectionList() {
+      if (this._gridMultiSelect && this._gridMultiSelect.size > 0) return [...this._gridMultiSelect];
+      if (this._gridActiveCell) return [this._gridActiveCell.idx];
+      return [];
+    },
+
+    // True when a grid clipboard shortcut may act on this key event.  Inside a text field native copy/paste wins,
+    // except in the grid-cell value box while it is untouched (empty or fully selected), where the user's intent is the cells.
+    _gridClipKeyOk(e) {
+      const t = e.target;
+      if (!t || !(t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return true;
+      if (t !== this.$refs.gridCellInput) return false;
+      const v = t.value || '';
+      return v === '' || (t.selectionStart === 0 && t.selectionEnd === v.length);
+    },
+
+    // Copy: ANCHOR = the most recently selected cell (last in selection order), the same rule paste uses, so
+    // copy-then-paste at a cell lands the pattern translated by (target - anchor).
+    copyGridCells() {
+      const sel = this._gridSelectionList();
+      if (!sel.length) return false;
+      const pattern = gridClipBuild(sel, sel[sel.length - 1], this.gridCellHeights, this.gridN);
+      this._gridClipPattern = pattern;
+      try { navigator.clipboard.writeText(JSON.stringify(pattern)).catch(() => {}); } catch (err) { /* memory copy still works */ }
+      this.flash(MSG_GRID_COPIED + sel.length, true);
+      return true;
+    },
+
+    // Paste at the most recently selected cell.  Prefers a tagged pattern on the system clipboard, else the in-memory copy.
+    pasteGridCells() {
+      const sel = this._gridSelectionList();
+      if (!sel.length || (!this._gridClipPattern && !(navigator.clipboard && navigator.clipboard.readText))) {
+        this.flash(MSG_GRID_PASTE_NOTHING, false);
+        return false;
+      }
+      const anchor = sel[sel.length - 1];
+      let read = null;
+      try { read = navigator.clipboard.readText(); } catch (err) { read = null; }
+      Promise.resolve(read).catch(() => null).then(text => {
+        this.applyGridPattern(gridClipParse(text || '') || this._gridClipPattern, anchor);
+      });
+      return true;
+    },
+
+    // Write a pattern into the grid as ONE undo step through the normal cell-edit path
+    // (gridUndoSnapshot -> write gridCellHeights -> cancelGridCell/draw -> autoSave).
+    applyGridPattern(pattern, anchorIdx) {
+      if (!pattern) { this.flash(MSG_GRID_PASTE_NOTHING, false); return false; }
+      if (pattern.gridN !== this.gridN) { this.flash(MSG_GRID_PASTE_RES_MISMATCH, false); return false; }
+      const targets = gridClipTargets(pattern, anchorIdx, this.gridN);
+      if (!targets.length) { this.flash(MSG_GRID_PASTE_OUTSIDE, false); return false; }
+      const lim = gridValueLimits(this.gridMode);
+      this.gridUndoSnapshot(targets.map(t => t[0]), UNDO_LABEL_CELL_PASTE + ' (' + targets.length + ' cells)');
+      for (const [i, v] of targets) {
+        if (v === null) delete this.gridCellHeights[i];
+        else this.gridCellHeights[i] = Math.max(lim.min, Math.min(lim.max, v));   // explicit 0 stays a real value
+      }
+      this.cancelGridCell();     // closes the value box / selection and redraws (recolor-by-height)
+      this.autoSave();
+      this.flash(MSG_GRID_PASTED + targets.length, true);
+      return true;
+    },
+
     // ── Paint mode (v5.77) ───────────────────────────────────────────────────────
 
     updatePaletteSize() { this.paletteSwatchPx = paletteSwatchHeight(window.innerHeight); },
@@ -4180,6 +4286,17 @@ function polygonEditor() {
         if (!typing) {
           if (String(e.key || '').toLowerCase() === PAINT_KEY) { e.preventDefault(); this.togglePaintMode(); return; }
           if (e.key === PAINT_EXIT_KEY && this.paintMode) { e.preventDefault(); this.exitPaintMode(); return; }
+        }
+      }
+      // v5.83 grid cell copy / paste (never inside a text field, see _gridClipKeyOk)
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && !this.showNewDialog && !this.showOpenDialog) {
+        const k = String(e.key || '').toLowerCase();
+        if (k === GRID_COPY_KEY && this._gridClipKeyOk(e) && this._gridSelectionList().length) {
+          e.preventDefault(); this.copyGridCells(); return;
+        }
+        if (k === GRID_PASTE_KEY && this._gridClipKeyOk(e) && this._gridSelectionList().length
+            && this.gridMode !== GRID_MODE_OFF) {
+          e.preventDefault(); this.pasteGridCells(); return;
         }
       }
       // Undo: Cmd+Z / Ctrl+Z

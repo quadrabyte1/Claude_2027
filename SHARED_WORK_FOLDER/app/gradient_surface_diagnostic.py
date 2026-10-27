@@ -1,3 +1,8 @@
+# v0.28 — 2026-10-27 Topo — Ruled bunker body (APP_VERSION v5.84), gated by BUNKER_BODY_MODE.
+#         Rim = local fringe - BUNKER_RIM_DROP_MM (2.0).  Body = ruled surface: g = downhill dir of a plane
+#           fit to the fringe around the bunker; each chord perpendicular to g is a straight line between
+#           its two boundary heights (fringe - drop).  Grid cells no longer warp the bunker body.
+#           BUNKER_BODY_MODE_LEGACY recovers the v5.82 cell-driven floor.  Rake texture layered on top.
 # v0.27 — 2026-10-26 Topo — Cell-owned, fringe-carved bunker floors (APP_VERSION v5.82).
 #         Set grid cells FULLY inside a bunker belong to that bunker only (bunker_owned_cells);
 #           the fringe TPS/ceilings are built without them (fringe_grid_cell_heights).
@@ -4598,7 +4603,8 @@ def build_fringe_mesh(
 
     # v5.82: fringe Z at carve-out cells (bunker areas), so bunkers can be carved from
     # the finished fringe 'as if it continued there'.  Only computed when a bunker owns cells.
-    Z_virtual = np.full((fringe_grid_res, fringe_grid_res), np.nan) if _bunker_owned else None
+    _want_virtual = bool(_bunker_owned) or (BUNKER_BODY_MODE == BUNKER_BODY_MODE_RULED and traps_union is not None)
+    Z_virtual = np.full((fringe_grid_res, fringe_grid_res), np.nan) if _want_virtual else None
 
     for r in range(fringe_grid_res):
         for c in range(fringe_grid_res):
@@ -6185,6 +6191,16 @@ BUNKER_FLOOR_MIN_MM:                   float = BASE_THICKNESS_MM  # rake valleys
 BUNKER_MIN_SOLID_MM:                   float = 0.6  # absolute last-resort solid under the valleys (very low fringe)
 SAND_RAKE_AMPLITUDE_MM:                float = 1.0  # rake peak-to-valley (apply_sand_texture default)
 BUNKER_EDGE_ANCHOR_SPACING_MM:         float = 2.0  # spacing of zero-offset TPS anchors along the bunker boundary
+# v5.84 -- ruled bunker body (Thomas 2026-10-27): rim 2 mm under the fringe, body = ruled surface
+BUNKER_BODY_MODE_LEGACY:               str   = "legacy"  # v5.82 behaviour: fringe - BUNKER_DROP_BELOW_FRINGE_MM + cell-driven TPS offset
+BUNKER_BODY_MODE_RULED:                str   = "ruled"   # v5.84: straight chords across the bunker, driven by boundary heights only
+BUNKER_BODY_MODE:                      str   = BUNKER_BODY_MODE_RULED  # switch back to BUNKER_BODY_MODE_LEGACY to recover v5.82
+BUNKER_RIM_DROP_MM:                    float = 2.0  # ruled mode: rim sits this far below the local fringe surface
+BUNKER_RULED_RING_SPACING_MM:          float = BUNKER_EDGE_ANCHOR_SPACING_MM  # boundary sampling step for the gradient plane fit
+BUNKER_RULED_MIN_SLOPE:                float = 1e-3  # mm/mm; fitted fringe plane flatter than this -> use the polygon principal axis
+BUNKER_RULED_QUERY_CHUNK:              int   = 4000  # query points per vectorised chord-intersection batch
+BUNKER_RULED_GRAD_SRC_PLANE:           str   = "plane-fit"    # info label: g from the boundary plane fit
+BUNKER_RULED_GRAD_SRC_PRINCIPAL:       str   = "principal-axis"  # info label: degenerate gradient fallback
                                             # v0.04: -2.0 (max), v0.05–v0.09: -4.0 (max),
                                             # v0.11: -2.0 (min) — full circle per Thomas.
 # Task v0.11 (Topo, 2026-09-30): flat scalar surface was default.
@@ -6681,6 +6697,95 @@ def _build_bunker_floor_fn(footprint, owned_cells, grid_mode, fringe_z_fn, cell_
 
 
 
+def _ruled_gradient_direction(footprint, fringe_z_fn):
+    """Unit downhill direction g (2,) of the fringe around a bunker, plus a source label.
+
+    Least-squares plane z = a*x + b*y + c through fringe Z sampled every
+    BUNKER_RULED_RING_SPACING_MM along the footprint exterior; g = -(a, b)/|(a, b)|.
+    If |(a, b)| < BUNKER_RULED_MIN_SLOPE the fringe is effectively flat there, so g
+    falls back to the principal (long) axis of the polygon (PCA of exterior vertices)."""
+    ring = footprint.exterior
+    n = max(8, int(math.ceil(ring.length / BUNKER_RULED_RING_SPACING_MM)))
+    pts = np.array([[ring.interpolate(t, normalized=True).x, ring.interpolate(t, normalized=True).y]
+                    for t in np.linspace(0.0, 1.0, n, endpoint=False)])
+    z = np.asarray(fringe_z_fn(pts), dtype=np.float64)
+    A = np.column_stack([pts[:, 0], pts[:, 1], np.ones(len(pts))])
+    (a, b, _c), *_ = np.linalg.lstsq(A, z, rcond=None)
+    mag = math.hypot(a, b)
+    if mag >= BUNKER_RULED_MIN_SLOPE:
+        return np.array([-a / mag, -b / mag]), BUNKER_RULED_GRAD_SRC_PLANE
+    xy = np.asarray(footprint.exterior.coords)[:-1]
+    _u, _s, vt = np.linalg.svd(xy - xy.mean(axis=0), full_matrices=False)
+    return np.asarray(vt[0], dtype=np.float64), BUNKER_RULED_GRAD_SRC_PRINCIPAL
+
+
+def _build_bunker_ruled_floor_fn(footprint, fringe_z_fn):
+    """Ruled bunker body (v5.84).  Returns (floor_fn(xy)->z, info dict).
+
+    g = downhill direction of the fringe (see _ruled_gradient_direction); n = g rotated +90 deg.
+    A point p has station t = p.g and cross coordinate u = p.n.  The chord through p is the
+    line {q : q.g = t} cut by the footprint; for a point inside the polygon the nearest
+    boundary crossing on each side of u IS the enclosing entry/exit pair (this pairs
+    crossings correctly for non-convex outlines).  Endpoint heights are
+    fringe(endpoint) - BUNKER_RIM_DROP_MM; the surface along the chord is their linear
+    interpolation.  Evaluating every query point on its own chord is the continuous limit of
+    sweeping stations densely.  Driven by boundary heights only -- grid cells play no part.
+    The MEAN surface is returned and clamped exactly like the legacy floor (rake safety)."""
+    g, src = _ruled_gradient_direction(footprint, fringe_z_fn)
+    nrm = np.array([-g[1], g[0]])
+    polys = [footprint] if hasattr(footprint, "exterior") else list(footprint.geoms)
+    seg_a, seg_b = [], []
+    for pg in polys:
+        for ring in [pg.exterior] + list(pg.interiors):
+            c = np.asarray(ring.coords)
+            seg_a.append(c[:-1]); seg_b.append(c[1:])
+    A = np.vstack(seg_a); B = np.vstack(seg_b)
+    At, Au = A @ g, A @ nrm
+    Bt, Bu = B @ g, B @ nrm
+    dt = Bt - At
+    nonflat = np.abs(dt) > 0.0
+    safe_dt = np.where(nonflat, dt, 1.0)
+    lo = np.minimum(At, Bt); hi = np.maximum(At, Bt)
+    half_rake = SAND_RAKE_AMPLITUDE_MM / 2.0
+
+    def _chord_z(xy):
+        t = xy @ g; u = xy @ nrm
+        out = np.empty(len(xy))
+        for s0 in range(0, len(xy), BUNKER_RULED_QUERY_CHUNK):
+            sl = slice(s0, s0 + BUNKER_RULED_QUERY_CHUNK)
+            tq = t[sl][:, None]; uq = u[sl][:, None]
+            hit = nonflat[None, :] & (tq >= lo[None, :]) & (tq < hi[None, :])   # half-open: vertices counted once
+            frac = (tq - At[None, :]) / safe_dt[None, :]
+            uc = Au[None, :] + frac * (Bu - Au)[None, :]
+            xc = A[None, :, :] + frac[:, :, None] * (B - A)[None, :, :]          # crossing XY (Q,S,2)
+            left = hit & (uc <= uq); right = hit & (uc > uq)
+            ul = np.where(left, uc, -np.inf); ur = np.where(right, uc, np.inf)
+            il = ul.argmax(axis=1); ir = ur.argmin(axis=1)
+            rows = np.arange(len(il))
+            has_l = np.isfinite(ul[rows, il]); has_r = np.isfinite(ur[rows, ir])
+            pl = xc[rows, il]; pr = xc[rows, ir]
+            zl = np.asarray(fringe_z_fn(pl), dtype=np.float64) - BUNKER_RIM_DROP_MM
+            zr = np.asarray(fringe_z_fn(pr), dtype=np.float64) - BUNKER_RIM_DROP_MM
+            u_l = ul[rows, il]; u_r = ur[rows, ir]
+            both = has_l & has_r
+            span = np.where(both, u_r - u_l, 1.0)
+            w = np.where(both, (uq[:, 0] - u_l) / np.where(span > 0, span, 1.0), 0.0)
+            z = zl + w * (zr - zl)
+            z = np.where(both, z, np.where(has_l, zl, zr))   # outside the outline: clamp to the nearest endpoint
+            out[sl] = z
+        return out
+
+    def _floor(xy):
+        xy = np.asarray(xy, dtype=np.float64).reshape(-1, 2)
+        fr = fringe_z_fn(xy)
+        z = _chord_z(xy)
+        z = np.maximum(z, BUNKER_FLOOR_MIN_MM + half_rake)
+        z = np.minimum(z, fr - half_rake - BUNKER_MIN_CLEARANCE_BELOW_FRINGE_MM)
+        return np.maximum(z, half_rake + BUNKER_MIN_SOLID_MM)
+    return _floor, {"g": g, "gradient_source": src, "n_cells": 0, "n_anchors": 0,
+                    "n_segments": len(A), "unclamped": _chord_z}
+
+
 def _compute_trap_height_from_fringe(
     trap_poly_mm: "ShapelyPolygon",
     fringe_mesh: "trimesh.Trimesh | None",
@@ -7125,6 +7230,17 @@ def export_trap_stls(
                     except Exception as _exc_floor:
                         _bunker_floor_fn = None
                         print(f"  Trap {i}: sloped floor failed ({_exc_floor}) — staying flat")
+            _ruled_info = None
+            if (BUNKER_BODY_MODE == BUNKER_BODY_MODE_RULED and not TRAP_SURFACE_CURVED
+                    and fringe_mesh is not None
+                    and getattr(fringe_mesh, "bunker_fringe_field", None) is not None):
+                # v5.84: ruled body replaces the cell-driven floor; grid cells never warp it.
+                try:
+                    _bunker_floor_fn, _ruled_info = _build_bunker_ruled_floor_fn(
+                        shapely_trap, _make_fringe_field_sampler(fringe_mesh.bunker_fringe_field))
+                    _binfo = _ruled_info
+                except Exception as _exc_ruled:
+                    print(f"  Trap {i}: ruled floor failed ({_exc_ruled}) -- using previous path")
             if _bunker_floor_fn is not None:
                 _ins = contains_xy_poly(shapely_inset, _grid_xy)
                 import shapely as _shapely_mod
@@ -7135,10 +7251,16 @@ def export_trap_stls(
                 # texture base = floor - A/2, so the mean rim sits BUNKER_DROP below the fringe.
                 _trap_base_z_map = (lambda _xy, _f=_bunker_floor_fn:
                                     _f(_xy) - SAND_RAKE_AMPLITUDE_MM / 2.0)   # callable: smooth per-point base
-                print(f"  Trap {i}: SLOPED floor from {_binfo['n_cells']} owned cell(s) "
-                      f"(mode={_grid_mode_t}, rim = fringe - {BUNKER_DROP_BELOW_FRINGE_MM:.1f} mm, "
-                      f"{_binfo['n_anchors']} edge anchors) — floor Z "
-                      f"{float(_fz.min()):.2f}..{trap_height:.2f} mm")
+                if _ruled_info is not None:
+                    print(f"  Trap {i}: RULED body (g={_ruled_info['gradient_source']} "
+                          f"[{_ruled_info['g'][0]:.3f}, {_ruled_info['g'][1]:.3f}], "
+                          f"rim = fringe - {BUNKER_RIM_DROP_MM:.1f} mm) — floor Z "
+                          f"{float(_fz.min()):.2f}..{trap_height:.2f} mm")
+                else:
+                    print(f"  Trap {i}: SLOPED floor from {_binfo['n_cells']} owned cell(s) "
+                          f"(mode={_grid_mode_t}, rim = fringe - {BUNKER_DROP_BELOW_FRINGE_MM:.1f} mm, "
+                          f"{_binfo['n_anchors']} edge anchors) — floor Z "
+                          f"{float(_fz.min()):.2f}..{trap_height:.2f} mm")
 
             # Build slab at the (possibly curved) maximum height.
             mesh = _build_slab_from_shapely(shapely_inset, trap_height)

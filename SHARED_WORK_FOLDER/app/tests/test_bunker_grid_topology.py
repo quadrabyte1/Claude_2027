@@ -46,6 +46,7 @@ def g():
     spec = importlib.util.spec_from_file_location("gsd_bunker_topology", APP_DIR / "gradient_surface_diagnostic.py")
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
+    m.BUNKER_BODY_MODE = m.BUNKER_BODY_MODE_LEGACY   # v5.84: these B1-B9 rules describe the legacy (v5.82) body
     return m
 
 

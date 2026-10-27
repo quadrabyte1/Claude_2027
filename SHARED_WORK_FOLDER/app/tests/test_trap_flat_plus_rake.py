@@ -55,6 +55,7 @@ def _load_gsd():
     spec = importlib.util.spec_from_file_location("gsd_trap_test", GSD_PATH)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
+    mod.BUNKER_BODY_MODE = mod.BUNKER_BODY_MODE_LEGACY   # v5.84: these tests describe the flat (pre-ruled) bunker path
     return mod
 
 
