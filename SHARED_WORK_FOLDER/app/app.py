@@ -12,6 +12,7 @@ from datetime import datetime, date
 from pathlib import Path
 
 import heatmap_degrid
+import dependency_preflight
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent / ".env")
@@ -25,7 +26,7 @@ app = Flask(__name__)
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "db", "workspace.db")
 
-APP_VERSION = "v5.73"  # unified version for all main-app pages, shown in every sticky footer
+APP_VERSION = "v5.82"  # unified version for all main-app pages, shown in every sticky footer
 
 # Tier -> concrete model (single source of truth for Team page + Dashboard).
 # Keep in sync with the mapping in team/README.md.
@@ -102,11 +103,11 @@ ROUTE_EGM_IMAGE = "/egm/images/<path:course>/<path:filename>"  # editor: IMAGE_U
 ROUTE_API_BOUNDARIES = "/api/boundaries"                     # editor: API_BOUNDARIES
 ROUTE_API_BOUNDARIES_LIST = "/api/boundaries/list"           # editor: API_BOUNDARIES_LIST
 ROUTE_API_BOUNDARIES_LOAD = "/api/boundaries/load"           # editor: API_BOUNDARIES_LOAD
-ROUTE_API_TRAP_CONTROLLING_CELLS = "/api/trap_controlling_cells"  # editor: API_TRAP_CONTROLLING_CELLS
 ROUTE_API_PRINT_CONSTANTS = "/api/print_constants"           # editor: API_PRINT_CONSTANTS
 ROUTE_API_DETECT_BOUNDARIES = "/api/detect_boundaries"       # editor: API_DETECT_BOUNDARIES
 ROUTE_API_FIND_CONTOURS = "/api/find_contours"               # editor: API_FIND_CONTOURS
 ROUTE_API_GENERATE_MODELS = "/api/generate_models"           # editor: API_GENERATE_MODELS
+ROUTE_API_DEPENDENCIES = "/api/dependencies"                 # GET: generation dependency status
 ROUTE_API_GPS_HEIGHTMAP_PREVIEW = "/api/gps_heightmap_preview"  # editor: API_GPS_HEIGHTMAP_PREVIEW
 ROUTE_API_GPS_FILES = "/api/gps_files"                       # editor: API_GPS_FILES
 ROUTE_DIAGNOSTIC_ARROWS = "/diagnostic/arrows"
@@ -160,8 +161,6 @@ KEY_WARNINGS = "warnings"
 KEY_FOUND = "found"
 KEY_ORIGINAL_URL = "originalUrl"
 KEY_DEGRIDDED_URL = "degriddedUrl"
-KEY_MODE = "mode"
-KEY_TRAPS = "traps"
 KEY_GPS_BACKEND = "gpsBackend"
 KEY_GPS_ENABLED = "enabled"
 KEY_GPS_FILE = "gpsFile"
@@ -1253,7 +1252,8 @@ def degrid_image():
     if original_url is None:
         return jsonify({KEY_STATUS: STATUS_OK, KEY_FOUND: False, KEY_ORIGINAL_URL: None, KEY_DEGRIDDED_URL: None})
     out_path = heatmap_degrid.degridded_path(img_path)
-    fresh = os.path.isfile(out_path) and os.path.getmtime(out_path) >= os.path.getmtime(img_path)
+    # cache is reused only if newer than the source AND stamped with the current algorithm version
+    fresh = heatmap_degrid.cache_is_fresh(img_path, out_path)
     if not fresh:
         info = heatmap_degrid.degrid_file(img_path, out_path)
         if not info.get(heatmap_degrid.INFO_WRITTEN):
@@ -1499,22 +1499,6 @@ def load_boundaries():
     # off-frame points are preserved here.
 
     return jsonify(data)
-
-
-@app.route(ROUTE_API_TRAP_CONTROLLING_CELLS, methods=[METHOD_POST])
-def trap_controlling_cells():
-    """Editor red-circle overlay: which grid cell(s) control each trap's height.
-
-    Body is the live (possibly unsaved) EGM JSON.  Delegates to
-    gradient_surface_diagnostic.compute_trap_controlling_cells, which reuses the
-    generator's own in-trap test, so the editor can never drift from the print.
-    """
-    data = request.get_json(silent=True) or {}
-    try:
-        from gradient_surface_diagnostic import compute_trap_controlling_cells
-        return jsonify({KEY_STATUS: STATUS_OK, **compute_trap_controlling_cells(data)})
-    except Exception as exc:  # overlay is cosmetic; never break the editor
-        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: str(exc), KEY_MODE: None, KEY_TRAPS: []}), HTTP_OK
 
 
 @app.route(ROUTE_API_PRINT_CONSTANTS)
@@ -2067,6 +2051,12 @@ def find_contours():
     })
 
 
+@app.route(ROUTE_API_DEPENDENCIES, methods=[METHOD_GET])
+def api_dependencies():
+    """Report whether every package the 3MF generator needs is importable."""
+    return jsonify(dependency_preflight.status_report())
+
+
 @app.route(ROUTE_API_GENERATE_MODELS, methods=[METHOD_POST])
 def generate_models():
     """Run the full gradient surface pipeline for a course/hole.
@@ -2077,6 +2067,13 @@ def generate_models():
     Returns:
         {KEY_STATUS: STATUS_OK, "file": {"name": ..., "path": ..., "type": "3mf"}}
     """
+    # v5.75: dependency preflight BEFORE importing the pipeline, burning a serial,
+    # or doing any heavy work. Missing packages stop generation with a clear message.
+    try:
+        dependency_preflight.check_dependencies()
+    except dependency_preflight.MissingDependencyError as exc:
+        print(f"[generate_models] {exc}")
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: str(exc)}), HTTP_SERVER_ERROR
     from gradient_surface_diagnostic import run_pipeline
 
     data = request.get_json(force=True)
@@ -3156,6 +3153,15 @@ def api_generate_plate():
 # ── Run ─────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    # v5.75: surface missing generator packages at server start (never crash on it).
+    try:
+        _dep_status = dependency_preflight.status_report()
+        if _dep_status["ok"]:
+            print("[startup] Generator dependencies: all present.")
+        else:
+            print("[startup] WARNING: " + _dep_status["message"])
+    except Exception as _dep_exc:
+        print(f"[startup] Dependency check itself failed: {_dep_exc}")
     # use_reloader explicit so edits pick up regardless of how the process is launched.
     # debug=False avoids Werkzeug's DebuggedApplication wrapper, which creates a
     # multiprocessing.Value POSIX semaphore that leaked after ~16h and deadlocked

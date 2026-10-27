@@ -51,7 +51,6 @@ def gsd():
 
 @pytest.mark.parametrize("editor_name, server_name", [
     ("API_DETECT_BOUNDARIES", "ROUTE_API_DETECT_BOUNDARIES"),
-    ("API_TRAP_CONTROLLING_CELLS", "ROUTE_API_TRAP_CONTROLLING_CELLS"),
     ("API_BOUNDARIES", "ROUTE_API_BOUNDARIES"),
     ("API_BOUNDARIES_LIST", "ROUTE_API_BOUNDARIES_LIST"),
     ("API_BOUNDARIES_LOAD", "ROUTE_API_BOUNDARIES_LOAD"),
@@ -124,13 +123,21 @@ def test_grid_modes_match_generator(gsd):
     assert gsd._normalize_grid_mode(None) == C.value("DEFAULT_GRID_MODE")
 
 
-def test_absolute_upper_clamp_matches_generator(gsd, monkeypatch):
-    """Generator clamps a trap's absolute height at the editor's GRID_ABSOLUTE_MAX_MM."""
+def test_absolute_upper_clamp_matches_generator(gsd):
+    """Generator clamps a bunker's absolute floor value at the editor's GRID_ABSOLUTE_MAX_MM."""
+    import numpy as np
+    from shapely.geometry import box
+    n = C.value("GRID_N_DEFAULT")
+    half = gsd.FRINGE_HALF_MM
+    side = 2 * half / n
     over = C.value("GRID_ABSOLUTE_MAX_MM") * 10.0
-    monkeypatch.setattr(gsd, "_trap_inside_cells", lambda *a, **k: [(0, over)])
-    got = gsd._resolve_trap_height_from_grid(
-        None, {"0": over}, "absolute", 1.0, 1.0, 1.0, C.value("GRID_N_DEFAULT"))
-    assert got == C.value("GRID_ABSOLUTE_MAX_MM")
+    fp = box(-3 * side, -3 * side, 3 * side, 3 * side)
+    ci = (n // 2) * n + n // 2                                   # a cell inside the footprint
+    tall_fringe = lambda xy: np.full(len(np.asarray(xy).reshape(-1, 2)), 10 * over)   # fringe ceiling never binds
+    floor_fn, _ = gsd._build_bunker_floor_fn(fp, [(ci, over)], "absolute", tall_fringe, side, half, n)
+    r, c = divmod(ci, n)
+    centre = np.array([[-half + (c + 0.5) * side, -half + (r + 0.5) * side]])
+    assert floor_fn(centre)[0] == pytest.approx(C.value("GRID_ABSOLUTE_MAX_MM"))
 
 
 @pytest.mark.parametrize("gsd_name, editor_name", [

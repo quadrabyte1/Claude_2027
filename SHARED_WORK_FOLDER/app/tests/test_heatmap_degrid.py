@@ -33,7 +33,7 @@ HEAT_COLOR = (60, 220, 20)           # saturated green BGR
 SAMPLE_COURSES = ("Delaveaga", "Stanford")
 GOLF_ROOT = APP_DIR.parent / "ItWentIn" / "GolfCourses"
 TOLERANCE = 2                        # max abs gray diff regarded as "restored"
-REAL_RESIDUAL_MAX_FRAC = 0.05        # <5% of background grid-line pixels may remain
+REAL_RESIDUAL_MAX_FRAC = 0.03        # <3% of background grid-line pixels may remain
 
 
 def _flat():
@@ -97,48 +97,160 @@ def _sample_paths():
     for c in SAMPLE_COURSES:
         d = GOLF_ROOT / c / "Images"
         if d.is_dir():
-            out += sorted(d.glob("*.png"))
+            out += [q for q in sorted(d.glob("*.png")) if not q.stem.endswith(H.DEGRID_SUFFIX)]
     return out
 
 
+NO_GRID_SAMPLES = (                  # GolfLogix / Firefly style screenshots: no baked-in grid
+    ("Firefly", "Firefly Golf Links (14).png"),
+    ("Firefly", "Firefly Golf Links (14a).png"),
+    ("Seabright", "FantasyGolfCourse (5).png"),
+    ("Stanford", "Stanford (Hole 8 gl).png"),
+)
+BIG_SAMPLE = GOLF_ROOT / "Delaveaga" / "Images" / "Delaveaga (Hole 11, 55171) 9 in.png"   # zoomed: 44 px period, ~5 px soft lines
+NEUTRAL_MAX_SPREAD = 40              # same meaning as H.NEUTRAL_SPREAD, kept explicit for the measurement
+FLAT_FLANK_GAP = 6.0                 # measurement: flanks of a background line pixel agree within this
+HEAT_FLANK_GAP = 14.0                # measurement: ...and within this for heat-map pixels
+LINE_MIN_DARKNESS = 2.0              # a pixel darker than its flanks by this is "a line pixel"
+MIN_LINE_PIXELS = 50                 # lines with fewer measurable pixels are skipped
+LINE_RESIDUAL_MAX_FRAC = 0.25        # every single line (major and minor): < this fraction may remain
+HEAT_DEVIATION_RATIO_MAX = 0.5       # median colour deviation along the lines inside the heat map must at least halve
+HEAT_DEVIATION_MAX = 60.0            # deviations beyond this are features, not grid
+MAJOR_OVER_MEDIAN = 1.3              # a line this much darker than the median line is a "major" line
+FEATURE_ALTERED_MAX_FRAC = 0.002     # <0.2% of dark feature pixels may change (outline shoulders at lattice crossings)
+ARROW_GRAY_MAX = 70.0                # navy arrows / black outline: grey below this
+WIDE_PERIOD, WIDE_HALF_WIDTH = 44, 3  # synthetic zoomed grid: soft 7 px wide lines
+
+
+def _measure_lines(img, out, info):
+    """Per line, on the INPUT's flanks: (axis, lo, mean_darkness, residual_frac, n) for the
+    page-background pixels, and (median colour deviation before, after, n) for heat-map pixels."""
+    g, spread = H._gray_spread(img)
+    g_out, _ = H._gray_spread(out)
+    c_in, c_out = img.astype(np.float32), out.astype(np.float32)
+    bg_rows, heat_before, heat_after = [], [], []
+    for transposed, key in ((False, H.INFO_X), (True, H.INFO_Y)):
+        gi, si, go, ci, co = (g.T, spread.T, g_out.T, c_in.swapaxes(0, 1), c_out.swapaxes(0, 1)) if transposed \
+            else (g, spread, g_out, c_in, c_out)
+        for lo, hi in info[key][H.INFO_LINES]:
+            c = (lo + hi) // 2
+            flank = (gi[:, lo - 1] + gi[:, hi + 1]) / 2
+            neutral = (si[:, c] <= NEUTRAL_MAX_SPREAD) & (si[:, lo - 1] <= NEUTRAL_MAX_SPREAD) & (si[:, hi + 1] <= NEUTRAL_MAX_SPREAD)
+            sel = neutral & (np.abs(gi[:, lo - 1] - gi[:, hi + 1]) <= FLAT_FLANK_GAP) & (flank - gi[:, c] >= LINE_MIN_DARKNESS)
+            if sel.sum() >= MIN_LINE_PIXELS:
+                bg_rows.append((key, lo, float((flank - gi[:, c])[sel].mean()),
+                                float(((flank - go[:, c])[sel] >= LINE_MIN_DARKNESS).mean()), int(sel.sum())))
+            cl, cr = ci[:, lo - 1], ci[:, hi + 1]
+            fm = (cl + cr) / 2
+            hs = (~neutral) & (np.abs(cl - cr).max(axis=1) <= HEAT_FLANK_GAP)
+            before = np.abs(fm - ci[:, c]).max(axis=1)
+            after = np.abs(fm - co[:, c]).max(axis=1)
+            hs &= before <= HEAT_DEVIATION_MAX
+            heat_before += list(before[hs]); heat_after += list(after[hs])
+    return bg_rows, np.array(heat_before), np.array(heat_after)
+
+
+def _need_samples():
+    if not _sample_paths():
+        pytest.skip("no real heat-map samples in repo")
+
+
+def test_wide_soft_lines_removed_synthetic():
+    """A zoomed screenshot draws SOFT lines far wider than the old 3 px flank distance."""
+    flat = _flat()
+    img = flat.copy()
+    bg = (flat == BG).all(axis=2)
+    profile = np.array([-3, 3, 18, 32, 18, 3, -3], float)     # soft bar with sharpening ringing
+    for x in range(10, FIX_W - 10, WIDE_PERIOD):
+        for k, d in enumerate(profile):
+            xx = x + k - WIDE_HALF_WIDTH
+            img[:, xx][bg[:, xx]] = BG - d
+    for y in range(12, FIX_H - 10, WIDE_PERIOD):
+        for k, d in enumerate(profile):
+            yy = y + k - WIDE_HALF_WIDTH
+            img[yy][bg[yy]] = np.minimum(img[yy][bg[yy]], BG - d)
+    out, info = H.degrid(img, return_info=True)
+    assert info[H.INFO_FOUND]
+    assert abs(info[H.INFO_X][H.INFO_PERIOD] - WIDE_PERIOD) < 0.5
+    diff = np.abs(out.astype(int) - flat.astype(int)).max(axis=2)
+    feat = (flat != BG).any(axis=2)
+    near_feat = cv2.dilate(feat.astype(np.uint8), np.ones((H.FEATURE_PROTECT_KSIZE + H.MIN_RUN_PX,) * 2, np.uint8)).astype(bool)
+    assert diff[~near_feat].max() <= TOLERANCE + 2
+
+
+@pytest.mark.skipif(not BIG_SAMPLE.exists(), reason="9 in sample missing")
+def test_big_sample_major_and_minor_lines_removed():
+    img = cv2.imread(str(BIG_SAMPLE))
+    out, info = H.degrid(img, return_info=True)
+    assert info[H.INFO_FOUND]
+    assert abs(info[H.INFO_X][H.INFO_PERIOD] - info[H.INFO_Y][H.INFO_PERIOD]) < 0.5
+    rows, _, _ = _measure_lines(img, out, info)
+    darkness = np.array([r[2] for r in rows])
+    major = darkness > MAJOR_OVER_MEDIAN * np.median(darkness)
+    assert major.sum() >= 2 and (~major).sum() >= 10, "sample should contain both major and minor lines"
+    for (key, lo, dark, resid, n), is_major in zip(rows, major):
+        assert resid < LINE_RESIDUAL_MAX_FRAC, f"{key} line at {lo} ({'major' if is_major else 'minor'}): {resid:.0%} remains"
+    total = sum(r[3] * r[4] for r in rows) / sum(r[4] for r in rows)
+    assert total < REAL_RESIDUAL_MAX_FRAC, f"{total:.1%} of line pixels remain"
+
+
+@pytest.mark.skipif(not BIG_SAMPLE.exists(), reason="9 in sample missing")
+def test_through_heatmap_line_contrast_reduced():
+    img = cv2.imread(str(BIG_SAMPLE))
+    out, info = H.degrid(img, return_info=True)
+    _, before, after = _measure_lines(img, out, info)
+    assert len(before) > 5000, "expected many line pixels inside the heat map"
+    assert np.median(before) > 3 * H.HEAT_MIN_DEVIATION
+    assert np.median(after) <= HEAT_DEVIATION_RATIO_MAX * np.median(before)
+    assert (after >= H.HEAT_MIN_DEVIATION).mean() < 0.5 * (before >= H.HEAT_MIN_DEVIATION).mean()
+
+
+@pytest.mark.skipif(not BIG_SAMPLE.exists(), reason="9 in sample missing")
+def test_features_preserved_and_changes_confined_to_lattice():
+    img = cv2.imread(str(BIG_SAMPLE))
+    out, info = H.degrid(img, return_info=True)
+    h, w = img.shape[:2]
+    on_lattice = np.zeros((h, w), dtype=bool)
+    for lo, hi in info[H.INFO_X][H.INFO_LINES]:
+        on_lattice[:, lo:hi + 1] = True
+    for lo, hi in info[H.INFO_Y][H.INFO_LINES]:
+        on_lattice[lo:hi + 1, :] = True
+    changed = (img != out).any(axis=2)
+    assert changed.any() and not (changed & ~on_lattice).any(), "pixels changed OFF the grid lattice"
+    gray, _ = H._gray_spread(img)
+    dark_feature = gray < ARROW_GRAY_MAX             # navy arrows, black outline and label strokes
+    assert dark_feature.sum() > 10000
+    altered = (changed & dark_feature).sum() / dark_feature.sum()
+    assert altered < FEATURE_ALTERED_MAX_FRAC, f"{altered:.2%} of arrow / outline / label pixels were altered"
+    # faint contour lines inside the heat map: their pixels (colour-different from the local
+    # background) off the lattice are untouched by construction; on the lattice the changed
+    # fraction stays small, i.e. no wholesale repaint of the heat map
+    assert changed.mean() < 0.2
+
+
 @pytest.mark.skipif(not _sample_paths(), reason="no real heat-map samples in repo")
-def test_real_samples_lines_removed():
-    checked = 0
+def test_all_real_samples_lines_removed():
+    found = 0
     for path in _sample_paths():
         img = cv2.imread(str(path))
-        if img is None:
-            continue
         out, info = H.degrid(img, return_info=True)
         if not info[H.INFO_FOUND]:
             continue
-        checked += 1
-        g_in = img.astype(np.float32).mean(axis=2)
-        g_out = out.astype(np.float32).mean(axis=2)
-        dark_in = H._darkening(g_in)
-        dark_out = H._darkening(g_out)
-        w = img.shape[1]
-        cols = [int(round(p)) for p in H._lattice_positions(info[H.INFO_X][H.INFO_PERIOD], info[H.INFO_X][H.INFO_OFFSET], w)
-                if 0 <= int(round(p)) < w]
-        # bg-flanked grid pixels on the vertical lines before/after
-        spread = img.astype(np.float32).max(axis=2) - img.astype(np.float32).min(axis=2)
-        cand = H._axis_candidates(g_in, spread)
-        sel = np.zeros_like(cand); sel[:, cols] = True
-        sel &= cand
-        assert sel.sum() > 0
-        remaining = (dark_out[sel] >= H.MIN_DARKEN).mean()
-        assert remaining < REAL_RESIDUAL_MAX_FRAC, f"{path.name}: {remaining:.1%} of grid-line pixels remain"
-        if checked >= 2:
-            break
-    assert checked >= 1, "no sample had a detectable grid"
+        found += 1
+        rows, before, after = _measure_lines(img, out, info)
+        total = sum(r[3] * r[4] for r in rows) / sum(r[4] for r in rows)
+        assert total < REAL_RESIDUAL_MAX_FRAC, f"{path.name}: {total:.1%} of line pixels remain"
+        assert max(r[3] for r in rows) < LINE_RESIDUAL_MAX_FRAC, f"{path.name}: a line mostly remains"
+        assert np.median(after) <= HEAT_DEVIATION_RATIO_MAX * np.median(before), f"{path.name}: heat-map lines remain"
+    assert found >= 10, "expected the Delaveaga + Stanford StrackaLine samples to have a detectable grid"
 
 
-@pytest.mark.skipif(not _sample_paths(), reason="no real heat-map samples in repo")
-def test_golflogix_style_screenshot_has_no_grid():
-    # Firefly (GolfLogix screenshot) has no baked-in grid -> untouched
-    p = GOLF_ROOT / "Firefly" / "Images" / "Firefly Golf Links (14).png"
+@pytest.mark.parametrize("course,name", NO_GRID_SAMPLES)
+def test_no_grid_real_screenshots_pass_through(course, name):
+    p = GOLF_ROOT / course / "Images" / name
     if not p.exists():
-        pytest.skip("Firefly sample missing")
-    img = cv2.imread(str(p))
+        pytest.skip(f"{name} missing")
+    img = cv2.imread(str(p), cv2.IMREAD_UNCHANGED)
     out, info = H.degrid(img, return_info=True)
     assert not info[H.INFO_FOUND] and out is img
 
@@ -210,6 +322,35 @@ def test_detection_input_follows_flag(client, monkeypatch):
         c.post("/api/detect_boundaries", json={"image": "hole.png", "course": "TestCourse", "imageCourse": "TestCourse"})
         assert seen, "detect_boundaries did not read the image"
         assert seen[0].endswith(H.DEGRID_SUFFIX + H.DEGRID_EXT) == flag
+
+
+def test_cache_invalidated_when_algo_version_changes(client, monkeypatch):
+    A, c, img_dir = client
+    cached = img_dir / ("hole" + H.DEGRID_SUFFIX + H.DEGRID_EXT)
+    c.post("/api/degrid_image", json={"image": "hole.png", "imageCourse": "TestCourse"})
+    assert H.png_algo_version(str(cached)) == H.DEGRID_ALGO_VERSION
+    first = cached.read_bytes()
+    # fresh cache is reused: same bytes, not rewritten
+    marker = cached.stat().st_mtime_ns
+    c.post("/api/degrid_image", json={"image": "hole.png", "imageCourse": "TestCourse"})
+    assert cached.stat().st_mtime_ns == marker
+    # a newer algorithm makes the (newer-than-source) cache stale -> regenerated + restamped
+    monkeypatch.setattr(H, "DEGRID_ALGO_VERSION", H.DEGRID_ALGO_VERSION + 1)
+    r = c.post("/api/degrid_image", json={"image": "hole.png", "imageCourse": "TestCourse"}).get_json()
+    assert r["found"]
+    assert H.png_algo_version(str(cached)) == H.DEGRID_ALGO_VERSION
+    assert cached.stat().st_mtime_ns != marker
+
+
+def test_unstamped_legacy_cache_is_regenerated(client):
+    A, c, img_dir = client
+    cached = img_dir / ("hole" + H.DEGRID_SUFFIX + H.DEGRID_EXT)
+    cv2.imwrite(str(cached), _gridded(_flat()))          # old-style file: no version stamp
+    assert H.png_algo_version(str(cached)) is None
+    assert not H.cache_is_fresh(str(img_dir / "hole.png"), str(cached))
+    c.post("/api/degrid_image", json={"image": "hole.png", "imageCourse": "TestCourse"})
+    assert H.png_algo_version(str(cached)) == H.DEGRID_ALGO_VERSION
+    assert cv2.imread(str(cached)) is not None            # still a valid PNG
 
 
 # ---- editor wiring ----------------------------------------------------------

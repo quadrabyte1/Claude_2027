@@ -1,0 +1,212 @@
+{
+  "course": "Delaveaga",
+  "hole": "11, 55171",
+  "image": "Delaveaga (Hole 11, 55171) 9 in.png",
+  "imageCourse": "Delaveaga",
+  "imageSize": {
+    "width": 1296,
+    "height": 1660
+  },
+  "contourStep": 0.5,
+  "grassAmplitude": 0.5,
+  "grassSpacing": 0.05,
+  "greenStyle": "terraced",
+  "elevationRange": 14.5,
+  "zScale": 1,
+  "greenScale": 1.0065,
+  "fringeEdgeHeight": 10,
+  "baseThicknessMm": 1.5,
+  "includeBoundaryRegion": false,
+  "applyFringeFrameCap": true,
+  "includeFringeWithoutGrass": false,
+  "flagOffsetXMm": 0,
+  "flagOffsetYMm": 0,
+  "polygons": [
+    {
+      "name": "Green",
+      "type": "green",
+      "closed": true,
+      "points": [
+        {
+          "x": 526,
+          "y": 77
+        },
+        {
+          "x": 163,
+          "y": 411
+        },
+        {
+          "x": 204,
+          "y": 982
+        },
+        {
+          "x": 207,
+          "y": 1484
+        },
+        {
+          "x": 644,
+          "y": 1551
+        },
+        {
+          "x": 1082,
+          "y": 1324
+        },
+        {
+          "x": 1173,
+          "y": 881
+        },
+        {
+          "x": 876,
+          "y": 463
+        }
+      ]
+    },
+    {
+      "name": "Trap 1",
+      "type": "trap",
+      "closed": true,
+      "points": [
+        {
+          "x": 1079,
+          "y": 117
+        },
+        {
+          "x": 1008,
+          "y": 148
+        },
+        {
+          "x": 989,
+          "y": 223
+        },
+        {
+          "x": 1012,
+          "y": 296
+        },
+        {
+          "x": 1043,
+          "y": 367
+        },
+        {
+          "x": 1075,
+          "y": 436
+        },
+        {
+          "x": 1115,
+          "y": 503
+        },
+        {
+          "x": 1174,
+          "y": 553
+        },
+        {
+          "x": 1249,
+          "y": 573
+        },
+        {
+          "x": 1295,
+          "y": 541
+        },
+        {
+          "x": 1295,
+          "y": 458
+        },
+        {
+          "x": 1295,
+          "y": 375
+        },
+        {
+          "x": 1295,
+          "y": 292
+        },
+        {
+          "x": 1282,
+          "y": 226
+        },
+        {
+          "x": 1215,
+          "y": 189
+        },
+        {
+          "x": 1152,
+          "y": 139
+        }
+      ]
+    },
+    {
+      "name": "Trap 2",
+      "type": "trap",
+      "closed": true,
+      "points": [
+        {
+          "x": 0,
+          "y": 574
+        },
+        {
+          "x": 0,
+          "y": 618
+        },
+        {
+          "x": 0,
+          "y": 662
+        },
+        {
+          "x": 0,
+          "y": 707
+        },
+        {
+          "x": 0,
+          "y": 751
+        },
+        {
+          "x": 0,
+          "y": 796
+        },
+        {
+          "x": 0,
+          "y": 840
+        },
+        {
+          "x": 0,
+          "y": 884
+        },
+        {
+          "x": 27,
+          "y": 878
+        },
+        {
+          "x": 56,
+          "y": 846
+        },
+        {
+          "x": 72,
+          "y": 808
+        },
+        {
+          "x": 68,
+          "y": 766
+        },
+        {
+          "x": 59,
+          "y": 725
+        },
+        {
+          "x": 48,
+          "y": 685
+        },
+        {
+          "x": 37,
+          "y": 645
+        },
+        {
+          "x": 23,
+          "y": 607
+        }
+      ]
+    }
+  ],
+  "tee_hole": {
+    "x_mm": 40,
+    "y_mm": 40
+  },
+  "gridResolution": 40
+}

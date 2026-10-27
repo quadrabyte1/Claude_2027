@@ -57,7 +57,7 @@ def test_wiring():
     assert "_gridRampMode" in EDITOR[j:j + 1500]
 
 
-# ───────── v5.19 single-level grid-cell undo (single edit, Ctrl+drag set-all, ramp) ─────────
+# ───────── grid-cell undo entries (single edit, Ctrl+drag set-all, ramp) -- v5.77: pushed on the unified history ─────────
 def _method(name):
     m = re.search(r"\n    (%s\(.*?\n    \}),\n" % name, EDITOR, re.S)
     assert m, name + " missing"
@@ -70,12 +70,12 @@ def _undo_run(script):
           if False else _fn() + "\n") + """
 const o = {gridMode:'delta', gridCellHeights:{1:2, 2:5}, _gridActiveCell:{idx:1}, _gridInputValue:'',
   _gridMultiSelect:null, _gridMultiSelectAnchor:null, _gridRampMode:false, _gridRampFirst:'', _gridRampLast:'',
-  _gridUndo:null, saves:0, draws:0, flashes:[],
+  undoHistory:[], redoStack:[], maxUndo:100, gridN:20, saves:0, draws:0, flashes:[],
   draw(){this.draws++}, autoSave(){this.saves++}, flash(m){this.flashes.push(m)}};
 const M = {%s};
 for (const k in M) o[k] = M[k];
-""" % ",\n".join(_method(n) for n in ["gridUndoSnapshot", "gridUndo", "commitGridCell", "commitGridRamp",
-                                       "cancelGridRamp", "cancelGridCell"]) + script
+""" % ",\n".join(_method(n) for n in ["gridUndoSnapshot", "pushGridUndo", "_trimUndo", "undo", "_undoGridEntry",
+                                       "commitGridCell", "commitGridRamp", "cancelGridRamp", "cancelGridCell", "_untouchedExplicitZero"]) + script
     out = subprocess.run([node, "-e", js], capture_output=True, text=True)
     assert out.returncode == 0, out.stderr
     return json.loads(out.stdout)
@@ -84,17 +84,17 @@ for (const k in M) o[k] = M[k];
 @pytest.mark.skipif(not node, reason="node not installed")
 def test_undo_single_cell_edit():
     r = _undo_run("""o._gridInputValue='7'; o.commitGridCell();
-      const after = JSON.stringify(o.gridCellHeights); const had = !!o._gridUndo;
-      o.gridUndo(); console.log(JSON.stringify({after, had, back:o.gridCellHeights, saves:o.saves, undo:o._gridUndo}));""")
+      const after = JSON.stringify(o.gridCellHeights); const had = o.undoHistory.length === 1;
+      o.undo(); console.log(JSON.stringify({after, had, back:o.gridCellHeights, saves:o.saves, undo:o.undoHistory.length}));""")
     assert json.loads(r["after"]) == {"1": 7, "2": 5} and r["had"]
-    assert r["back"] == {"1": 2, "2": 5} and r["undo"] is None
+    assert r["back"] == {"1": 2, "2": 5} and r["undo"] == 0
     assert r["saves"] == 2          # commit + undo both autosave
 
 
 @pytest.mark.skipif(not node, reason="node not installed")
 def test_undo_ctrl_drag_set_all_restores_exactly_touched_cells():
     r = _undo_run("""o._gridMultiSelect=new Set([1,3,4]); o._gridInputValue='9'; o.commitGridCell();
-      const mid = JSON.stringify(o.gridCellHeights); o.gridUndo();
+      const mid = JSON.stringify(o.gridCellHeights); o.undo();
       console.log(JSON.stringify({mid, back:o.gridCellHeights}));""")
     assert json.loads(r["mid"]) == {"1": 9, "2": 5, "3": 9, "4": 9}
     assert r["back"] == {"1": 2, "2": 5}            # empty cells deleted again, cell 2 untouched
@@ -104,7 +104,7 @@ def test_undo_ctrl_drag_set_all_restores_exactly_touched_cells():
 def test_undo_ramp_fill_and_label_and_absolute_mode():
     r = _undo_run("""o.gridMode='absolute'; o._gridRampMode=true; o._gridMultiSelect=new Set([1,5,6,7]);
       o._gridRampFirst='3'; o._gridRampLast='10'; o.commitGridRamp();
-      const mid = JSON.stringify(o.gridCellHeights); const label = o._gridUndo.label; o.gridUndo();
+      const mid = JSON.stringify(o.gridCellHeights); const label = o.undoHistory[0].label; o.undo();
       console.log(JSON.stringify({mid, label, back:o.gridCellHeights}));""")
     assert json.loads(r["mid"]) == {"1": 3, "2": 5, "5": 5.3, "6": 7.7, "7": 10}
     assert r["label"] == "ramp fill (4 cells)"
@@ -112,30 +112,31 @@ def test_undo_ramp_fill_and_label_and_absolute_mode():
 
 
 @pytest.mark.skipif(not node, reason="node not installed")
-def test_second_undo_is_noop_and_new_edit_replaces_snapshot():
-    r = _undo_run("""o._gridInputValue='7'; o.commitGridCell(); o.gridUndo();
-      const s1 = o.saves; const again = o.gridUndo(); const noop = {again, same: s1===o.saves, h:{...o.gridCellHeights}};
+def test_second_undo_is_noop_and_new_edit_stacks_on_history():
+    r = _undo_run("""o._gridInputValue='7'; o.commitGridCell(); o.undo();
+      const s1 = o.saves; const again = o.undo(); const noop = {again, same: s1===o.saves, h:{...o.gridCellHeights}};
       o._gridActiveCell={idx:2}; o._gridInputValue='1'; o.commitGridCell();   // edit A
-      o._gridActiveCell={idx:1}; o._gridInputValue='8'; o.commitGridCell();   // edit B replaces snapshot
-      o.gridUndo(); const afterB = {...o.gridCellHeights}; const second = o.gridUndo();
+      o._gridActiveCell={idx:1}; o._gridInputValue='8'; o.commitGridCell();   // edit B stacks on A
+      o.undo(); const afterB = {...o.gridCellHeights}; const second = o.undo();
       console.log(JSON.stringify({noop, afterB, second, final:o.gridCellHeights}));""")
     assert r["noop"] == {"again": False, "same": True, "h": {"1": 2, "2": 5}}
-    assert r["afterB"] == {"1": 2, "2": 1}          # only B undone; A stays
-    assert r["second"] is False and r["final"] == {"1": 2, "2": 1}
+    assert r["afterB"] == {"1": 2, "2": 1}          # only B undone first
+    # v5.77: history is a stack, so the second undo steps back through edit A too
+    assert r["second"] is True and r["final"] == {"1": 2, "2": 5}
 
 
 @pytest.mark.skipif(not node, reason="node not installed")
 def test_undo_refuses_after_mode_change():
-    r = _undo_run("""o._gridInputValue='7'; o.commitGridCell(); o.gridMode='absolute'; o.gridUndo();
-      console.log(JSON.stringify({h:o.gridCellHeights, u:o._gridUndo}));""")
-    assert r["h"] == {"1": 7, "2": 5} and r["u"] is None
+    r = _undo_run("""o._gridInputValue='7'; o.commitGridCell(); o.gridMode='absolute'; o.undo();
+      console.log(JSON.stringify({h:o.gridCellHeights, u:o.undoHistory.length}));""")
+    assert r["h"] == {"1": 7, "2": 5} and r["u"] == 0     # refused, entry consumed
 
 
 def test_undo_wiring():
-    assert re.search(r"_gridUndo\s*=\s*null", EDITOR)
+    # v5.77: one unified history; Cmd+Z calls undo() (grid + polygon entries), no separate grid-undo path
+    assert "_gridUndo" not in EDITOR and "this.undoStack" not in EDITOR
     h = EDITOR[EDITOR.index("// Undo: Cmd+Z / Ctrl+Z"):][:900]
-    assert "tagName === 'INPUT'" in h and h.index("tagName === 'INPUT'") < h.index("this.gridUndo()")
-    assert h.index("this.gridUndo()") < h.index("this.undo()")      # grid snapshot first, polygon stack second
-    assert 'data-testid="grid-undo-btn"' in EDITOR and ':disabled="!_gridUndo"' in EDITOR
-    # snapshot cleared on project load / new project
-    assert EDITOR.count("this._gridUndo") >= 5
+    assert "tagName === 'INPUT'" in h and h.index("tagName === 'INPUT'") < h.index("this.undo()")
+    assert 'data-testid="undo-btn"' in EDITOR and ':disabled="!canUndo()"' in EDITOR
+    # history cleared on project load / new project / reset
+    assert len(re.findall(r"this\.undoHistory\s*=\s*\[\]", EDITOR)) >= 3

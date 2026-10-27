@@ -1,0 +1,53 @@
+{
+  "event_id": "2026-10-26-0800-buy-english-muffins-graham-crackers",
+  "schedule": [
+    {
+      "event_id": "2026-10-26-0800-buy-english-muffins-graham-crackers",
+      "kind": "heads_up_30",
+      "fire_at": "2026-10-26T07:30:00-04:00",
+      "tz": "America/New_York",
+      "body": "In 30 minutes: buy English muffins, graham crackers at 8:00 AM.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-26-0800-buy-english-muffins-graham-crackers",
+      "kind": "pre_5",
+      "fire_at": "2026-10-26T07:55:00-04:00",
+      "tz": "America/New_York",
+      "body": "5 minutes: buy English muffins, graham crackers at 8:00 AM.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-26-0800-buy-english-muffins-graham-crackers",
+      "kind": "strike_0",
+      "fire_at": "2026-10-26T08:00:00-04:00",
+      "tz": "America/New_York",
+      "body": "buy English muffins, graham crackers is starting now. Tap OK when you see this.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-26-0800-buy-english-muffins-graham-crackers",
+      "kind": "strike_5",
+      "fire_at": "2026-10-26T08:05:00-04:00",
+      "tz": "America/New_York",
+      "body": "Still on? buy English muffins, graham crackers started 5 minutes ago. Tap OK.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-26-0800-buy-english-muffins-graham-crackers",
+      "kind": "strike_10",
+      "fire_at": "2026-10-26T08:10:00-04:00",
+      "tz": "America/New_York",
+      "body": "Reminder: buy English muffins, graham crackers \u2014 10 minutes ago. Tap OK.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-26-0800-buy-english-muffins-graham-crackers",
+      "kind": "strike_15",
+      "fire_at": "2026-10-26T08:15:00-04:00",
+      "tz": "America/New_York",
+      "body": "Final reminder. buy English muffins, graham crackers. Tap OK or I'll log it as missed.",
+      "status": "pending"
+    }
+  ]
+}

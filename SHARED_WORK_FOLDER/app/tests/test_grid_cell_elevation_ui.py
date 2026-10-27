@@ -222,28 +222,7 @@ class TestGridDeleteClears:
         ), "Delete key not handled for grid cells"
 
 
-# ---------------------------------------------------------------------------
-# T8 — Status strip shows "N cells set", hidden when 0
-# ---------------------------------------------------------------------------
-
-class TestGridStatusStrip:
-    """T8 — Status strip text and visibility."""
-
-    def test_cells_set_text_present(self):
-        html = _html()
-        # The text may be inside an x-text JS expression — look for "set" near gridCellHeights
-        assert re.search(r"'s'\s*\)\s*\+\s*'?\s*set'|set.*gridCellHeights|gridCellHeights.*set", html, re.IGNORECASE), (
-            '"cells set" expression not found near gridCellHeights in editor.html'
-        )
-
-    def test_status_strip_hidden_when_zero(self):
-        html = _html()
-        # x-show with Object.keys check
-        assert re.search(
-            r'x-show.*Object\.keys.*gridCellHeights|'
-            r'Object\.keys.*gridCellHeights.*length',
-            html, re.DOTALL
-        ), "Status strip not wired to Object.keys(gridCellHeights).length"
+# T8 ("N cells set" status strip) removed in editor v5.80.
 
 
 # ---------------------------------------------------------------------------

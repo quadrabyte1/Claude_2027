@@ -1,3 +1,11 @@
+# v0.27 — 2026-10-26 Topo — Cell-owned, fringe-carved bunker floors (APP_VERSION v5.82).
+#         Set grid cells FULLY inside a bunker belong to that bunker only (bunker_owned_cells);
+#           the fringe TPS/ceilings are built without them (fringe_grid_cell_heights).
+#         build_fringe_mesh exposes the fringe continued across bunker areas
+#           (mesh.bunker_fringe_field); export_trap_stls carves each bunker from it:
+#           floor = fringe - BUNKER_DROP_BELOW_FRINGE_MM + TPS offset (zero at the rim),
+#           rake centred on that floor.  Bunkers with no owned cell stay flat (unchanged).
+#         Removed: red controlling-cell ring helpers, _resolve_trap_height_from_grid, _trap_grid_override.
 # v0.26 — 2026-10-20 Topo — Fix missing sand trap (Delaveaga H5 Trap 1).
 #         export_trap_stls swallowed "apply_sand_texture produced non-watertight trap
 #           mesh" and the trap vanished from the 3MF.  Cause: for a long ring chord
@@ -297,6 +305,7 @@ from scipy.spatial import cKDTree
 from scipy.ndimage import gaussian_filter, uniform_filter, median_filter
 from scipy.interpolate import splprep, splev
 import trimesh
+from dependency_preflight import check_dependencies, MissingDependencyError
 from shapely.geometry import Polygon as ShapelyPolygon, box as shapely_box, MultiPolygon as ShapelyMultiPolygon
 from skimage import measure
 
@@ -368,6 +377,7 @@ VERTEX_MERGE_DIGITS: int = 6        # trimesh merge_vertices(digits_vertex=)
 BOOLEAN_ENGINES: tuple = ("manifold", "blender")   # tried in order by trimesh.boolean.difference
 TRIANGULATE_ENGINE_TRIANGLE: str = "triangle"      # trimesh extrude_polygon engines
 TRIANGULATE_ENGINE_EARCUT: str = "earcut"
+LOG_TAG_NO_FALLBACK = "[NO-FALLBACK]"  # loud marker for genuine-edge-case fallbacks that remain
 TRIANGLE_MIN_ANGLE_DEG: int = 30    # Triangle quality flag q<deg> in triangle_args "pq<deg>a<area>"
 SPLINE_MIN_POINTS: int = 8          # _spline_smooth_closed: fewer points -> return input unchanged
 SPLINE_MIN_OUTPUT_POINTS: int = 64  # _spline_smooth_closed: minimum resampled vertex count
@@ -2669,6 +2679,31 @@ def _build_heightmap_mesh(
     return mesh
 
 
+class FringeTriangulationError(RuntimeError):
+    """Triangle-engine fringe extrusion failed; generation stops (no earcut fallback)."""
+
+
+def _boolean_difference(meshes: list, label: str):
+    """Boolean difference over BOOLEAN_ENGINES; returns result or None.
+
+    A missing engine package (ImportError) raises MissingDependencyError
+    instead of degrading; a genuine geometry failure on every engine returns
+    None so the caller can apply its (loudly logged) edge-case fallback.
+    """
+    for engine in BOOLEAN_ENGINES:
+        try:
+            result = trimesh.boolean.difference(meshes, engine=engine)
+            if result is not None and len(result.faces) > 0:
+                print(f"  {label} boolean difference succeeded (engine='{engine}')")
+                return result
+        except ImportError as exc:
+            from dependency_preflight import find_missing
+            raise MissingDependencyError(find_missing()) from exc
+        except Exception as exc:
+            print(f"  {LOG_TAG_NO_FALLBACK} {label} boolean engine '{engine}' failed: {exc}")
+    return None
+
+
 def drill_flag_hole(
     mesh: "trimesh.Trimesh",
     diameter: float = 2.5,
@@ -2720,21 +2755,12 @@ def drill_flag_hole(
     cylinder.apply_translation([cx, cy, cyl_center_z])
 
     # --- Boolean difference: try manifold3d first, then blender, then fallback ---
-    result = None
-    for engine in BOOLEAN_ENGINES:
-        try:
-            result = trimesh.boolean.difference([mesh, cylinder], engine=engine)
-            if result is not None and len(result.faces) > 0:
-                print(f"  Boolean difference succeeded (engine='{engine}')")
-                break
-        except Exception as exc:
-            print(f"  Boolean engine '{engine}' failed: {exc}")
-            result = None
+    result = _boolean_difference([mesh, cylinder], "Flag-hole")
 
     if result is None or len(result.faces) == 0:
         # Fallback: remove faces whose centroid XY is within radius of center.
         # This is imprecise (open mesh, no wall cap) but better than nothing.
-        print("  WARNING: Boolean backends unavailable — using face-removal fallback "
+        print(f"  {LOG_TAG_NO_FALLBACK} WARNING: boolean failed on every engine (geometry problem) — using face-removal fallback "
               "(hole will be open, not capped).")
         centroids = mesh.triangles_center  # (N, 3)
         dist_xy = np.sqrt((centroids[:, 0] - cx) ** 2 + (centroids[:, 1] - cy) ** 2)
@@ -2801,21 +2827,12 @@ def drill_fringe_hole(
 
     # --- Boolean difference: try manifold3d first, then blender, then fallback ---
     # Use the repaired copy so the boolean engine receives a watertight (or closer-to-watertight) mesh
-    result = None
-    for engine in BOOLEAN_ENGINES:
-        try:
-            result = trimesh.boolean.difference([mesh_repaired, cylinder], engine=engine)
-            if result is not None and len(result.faces) > 0:
-                print(f"  Fringe boolean difference succeeded (engine='{engine}')")
-                break
-        except Exception as exc:
-            print(f"  Fringe boolean engine '{engine}' failed: {exc}")
-            result = None
+    result = _boolean_difference([mesh_repaired, cylinder], "Fringe")
 
     if result is None or len(result.faces) == 0:
         # Fallback: remove faces whose centroid XY is within radius of center.
         # This is imprecise (open mesh, no wall cap) but better than nothing.
-        print("  WARNING: Boolean backends unavailable even after repair — using face-removal fallback "
+        print(f"  {LOG_TAG_NO_FALLBACK} WARNING: boolean failed on every engine even after repair (geometry problem) — using face-removal fallback "
               "(fringe hole will be open, not capped).")
         print("  NOTE: If this persists, consider Approach B: exclude hole region during build_fringe_mesh().")
         centroids = mesh.triangles_center  # (N, 3)
@@ -3520,17 +3537,16 @@ def _replace_fringe_with_watertight_extrusion(
             bottom_poly, height=float(fringe_max_z),
             engine=TRIANGULATE_ENGINE_TRIANGLE, triangle_args=_tri_args,
         )
+    except ImportError as exc_ex:
+        # Missing `triangle` must never degrade to a flat earcut fringe (v5.75).
+        from dependency_preflight import find_missing
+        raise MissingDependencyError(find_missing()) from exc_ex
     except Exception as exc_ex:
-        print(f"  [{label} watertight-rewrite] extrude with triangle FAILED ({exc_ex}) "
-              f"→ falling back to earcut (no interior verts, flat top)")
-        try:
-            new_mesh = trimesh.creation.extrude_polygon(
-                bottom_poly, height=float(fringe_max_z), engine=TRIANGULATE_ENGINE_EARCUT,
-            )
-        except Exception as exc_earcut:
-            print(f"  [{label} watertight-rewrite] earcut fallback ALSO FAILED "
-                  f"({exc_earcut}) — returning old mesh unchanged.")
-            return old_mesh
+        raise FringeTriangulationError(
+            f"Fringe triangulation failed in the '{TRIANGULATE_ENGINE_TRIANGLE}' engine "
+            f"({label}): {exc_ex}. Refusing to fall back to a flat earcut fringe "
+            f"(it would lose grid heights and grass)."
+        ) from exc_ex
 
     print(f"  [{label} watertight-rewrite] extruded mesh: "
           f"verts={len(new_mesh.vertices)} faces={len(new_mesh.faces)} "
@@ -4063,7 +4079,21 @@ def build_fringe_mesh(
     # are now ADDITIVE OFFSETS, not absolute Z values, so we cannot use the
     # raw values as a ceiling.  Overshoot is harmless — the ceiling only
     # prevents false clipping; a too-high ceiling costs nothing.
-    _grid_heights = (egm_data or {}).get(EGM_KEY_GRID_CELL_HEIGHTS) or {}
+    # v5.82: cells fully inside a bunker belong to that bunker, not the fringe --
+    # the fringe topology (TPS, ceilings) is computed from every set cell EXCEPT those.
+    _hole_pipe_circle = None
+    if holes:
+        from shapely.geometry import Point as _ShapelyPointOwn
+        _hole_pipe_circle = _ShapelyPointOwn(holes[0][0], holes[0][1]).buffer(holes[0][2])
+    _bunker_owned = bunker_owned_cells(egm_data, green_boundary_px, _hole_pipe_circle)
+    _egm_fringe = egm_data
+    if _bunker_owned:
+        _egm_fringe = dict(egm_data)
+        _egm_fringe[EGM_KEY_GRID_CELL_HEIGHTS] = fringe_grid_cell_heights(
+            egm_data, green_boundary_px, _hole_pipe_circle, owned=_bunker_owned)
+        print(f"  [bunker-cells] {sum(len(c) for _f, c in _bunker_owned.values())} set cell(s) fully "
+              f"inside {len(_bunker_owned)} bunker(s) excluded from the fringe TPS")
+    _grid_heights = (_egm_fringe or {}).get(EGM_KEY_GRID_CELL_HEIGHTS) or {}
     _max_positive_delta = 0.0
     if _grid_heights:
         try:
@@ -4456,7 +4486,7 @@ def build_fringe_mesh(
     # Call the 400-cell TPS builder.  It reads bnd_z for Poisson defaults and
     # egm_data["gridCellHeights"] for user overrides.
     _z_tps_grid = _build_tps_grid_height_field(
-        egm_data=egm_data,
+        egm_data=_egm_fringe,
         green_bnd_mm=gbnd,
         bnd_z=bnd_z,
         grid_x=GX_fringe,
@@ -4486,6 +4516,89 @@ def build_fringe_mesh(
     # overlap tests below.  The grid is uniform (linspace), so the step is
     # constant across the entire grid.
     _fringe_half_step = float(xs_mm[1] - xs_mm[0]) / 2.0 if fringe_grid_res > 1 else 0.0
+
+    def _cell_fringe_z(r, c, x, y):
+        """Fringe top Z for grid cell (r, c) at (x, y) -- pre-median, pre-seam."""
+        # Nearest point on the green boundary — used to derive
+        # d_to_green (horizontal distance from the green polygon), which
+        # drives the plateau-taper (task #506).
+        d_to_green, nx, ny = _min_dist_to_polyline(x, y, gbnd)
+
+        # Task 704 (Topo 2026-10-04): TPS grid-cell height field.
+        # Look up the pre-computed TPS grid (_z_tps_grid): for this fringe cell,
+        # green_edge_h is the TPS surface value at (x, y).  The TPS fits over
+        # 400 cell centres with Poisson-derived defaults (and user-set overrides
+        # from gridCellHeights), so it naturally matches the green boundary Z
+        # at unset cells and locally reflects user overrides at set cells.
+        # Seam-reseat (below) still overrides the innermost ring from g_bdry_arr.
+        green_edge_h = float(_z_tps_grid[r, c])
+
+        # ── TPS fallback (edge-case robustness) ──────────────────────────
+        # _z_tps_grid should always be finite (it is clamped in
+        # _build_tps_grid_height_field).  Guard against rare degenerate
+        # surfaces by falling back to the IDW path.
+        if not math.isfinite(green_edge_h) or green_edge_h == 0.0:
+            dists_b, idxs_b = gbnd_kd_lerp.query([x, y], k=K_BND_IDW)
+            dists_b = np.atleast_1d(np.asarray(dists_b, dtype=np.float64))
+            idxs_b = np.atleast_1d(np.asarray(idxs_b, dtype=np.int64))
+            if float(dists_b.min()) < EPS_ZERO_LENGTH:
+                green_edge_h = float(bnd_z[idxs_b[int(np.argmin(dists_b))]])
+            else:
+                w = 1.0 / (dists_b ** 2)
+                w /= w.sum()
+                green_edge_h = float(np.dot(w, bnd_z[idxs_b]))
+
+        # Task #506: plateau-taper. When green_edge_h exceeds the boundary
+        # cap, project a decaying blend of green_edge_h → BOUNDARY_HEIGHT_CAP_MM
+        # over FRINGE_GREEN_EDGE_TAPER_MM of XY distance from the green
+        # boundary. Weight is 0 at the boundary (seam matches green exactly)
+        # and 1 once we are FRINGE_GREEN_EDGE_TAPER_MM or more away. For
+        # gentle greens (green_edge_h <= cap) the target equals the source,
+        # so this reduces to the pre-#506 behaviour: no change.
+        # v5.17 clipping fix: when the user has explicitly set a grid cell
+        # above BOUNDARY_HEIGHT_CAP_MM (9 mm), the taper must not pull that
+        # TPS-propagated peak back down toward the cap as d_to_green grows.
+        # Raise the effective cap to the user's own ceiling; natural low
+        # fringe (green_edge_h <= 9) is unaffected because the branch is
+        # gated on green_edge_h > _cap_target.
+        _effective_boundary_cap_mm = max(BOUNDARY_HEIGHT_CAP_MM, _effective_z_ceiling_mm)
+        _cap_target = min(green_edge_h, _effective_boundary_cap_mm)
+        if FRINGE_GREEN_EDGE_TAPER_MM > 0 and green_edge_h > _cap_target:
+            _weight = min(1.0, max(0.0, d_to_green / FRINGE_GREEN_EDGE_TAPER_MM))
+            green_edge_h = (1.0 - _weight) * green_edge_h + _weight * _cap_target
+
+        # Task 717 (Topo, 2026-09-03): plateau breaker.  When many fringe
+        # cells hit the same clamp value BASE_THICKNESS_MM (1.5 mm), they
+        # form a dead-flat horizontal plateau at that z.  Bambu Studio's
+        # layer sectioner slices this plateau ambiguously — at layer 8
+        # (z ~ 1.5–1.6 mm on 0.2 mm layers) the intersection polygon
+        # degenerates into ~25 tiny polylines and the slicer emits
+        # "conflicts of gcode paths at layer 8 (geometry_0 ↔ geometry_1)"
+        # even when green and fringe never actually share any XY.
+        #
+        # Fix: lift the fringe floor by FRINGE_PLATEAU_MARGIN_MM AND add
+        # a small per-cell tilt so no two grid cells clamp to the exact
+        # same z-value.  The tilt is a smooth ramp along +x+y — 0 at
+        # cell (0, 0), max at cell (N-1, N-1) — with a peak-to-peak
+        # amplitude of 0.10 mm.  That's much smaller than the layer
+        # height (0.2 mm) so the print visually reads as flat, but the
+        # slicer never sees a truly horizontal plateau at any single z,
+        # eliminating the layer-aligned degenerate section.
+        #
+        # Verified DeLaveaga #11 [210]: z=1.60 fringe area = 21867 mm²
+        # (correct, matches z=0.5 baseline), overlap with green = 0.00
+        # (was 5036 mm² at [208]).  Cell counts, top-surface topology,
+        # seam-match, and trap/water cutouts all unchanged.
+        FRINGE_PLATEAU_MARGIN_MM = 0.30  # 1.5 → 1.8 mm floor on default BASE
+        FRINGE_PLATEAU_TILT_MM = 0.10    # 0.10 mm peak-to-peak XY ramp
+        _tilt = FRINGE_PLATEAU_TILT_MM * (r + c) / (2 * (fringe_grid_res - 1))
+        _floor = BASE_THICKNESS_MM + FRINGE_PLATEAU_MARGIN_MM + _tilt
+        z_fringe = max(_floor, min(green_edge_h, _effective_z_ceiling_mm))
+        return z_fringe
+
+    # v5.82: fringe Z at carve-out cells (bunker areas), so bunkers can be carved from
+    # the finished fringe 'as if it continued there'.  Only computed when a bunker owns cells.
+    Z_virtual = np.full((fringe_grid_res, fringe_grid_res), np.nan) if _bunker_owned else None
 
     for r in range(fringe_grid_res):
         for c in range(fringe_grid_res):
@@ -4517,6 +4630,8 @@ def build_fringe_mesh(
                     x + _fringe_half_step, y + _fringe_half_step,
                 )
                 if _cell_box.intersects(traps_union):
+                    if Z_virtual is not None:
+                        Z_virtual[r, c] = _cell_fringe_z(r, c, x, y)
                     continue
 
             # Must be OUTSIDE all baked holes
@@ -4529,81 +4644,7 @@ def build_fringe_mesh(
                 if in_hole:
                     continue
 
-            # Nearest point on the green boundary — used to derive
-            # d_to_green (horizontal distance from the green polygon), which
-            # drives the plateau-taper (task #506).
-            d_to_green, nx, ny = _min_dist_to_polyline(x, y, gbnd)
-
-            # Task 704 (Topo 2026-10-04): TPS grid-cell height field.
-            # Look up the pre-computed TPS grid (_z_tps_grid): for this fringe cell,
-            # green_edge_h is the TPS surface value at (x, y).  The TPS fits over
-            # 400 cell centres with Poisson-derived defaults (and user-set overrides
-            # from gridCellHeights), so it naturally matches the green boundary Z
-            # at unset cells and locally reflects user overrides at set cells.
-            # Seam-reseat (below) still overrides the innermost ring from g_bdry_arr.
-            green_edge_h = float(_z_tps_grid[r, c])
-
-            # ── TPS fallback (edge-case robustness) ──────────────────────────
-            # _z_tps_grid should always be finite (it is clamped in
-            # _build_tps_grid_height_field).  Guard against rare degenerate
-            # surfaces by falling back to the IDW path.
-            if not math.isfinite(green_edge_h) or green_edge_h == 0.0:
-                dists_b, idxs_b = gbnd_kd_lerp.query([x, y], k=K_BND_IDW)
-                dists_b = np.atleast_1d(np.asarray(dists_b, dtype=np.float64))
-                idxs_b = np.atleast_1d(np.asarray(idxs_b, dtype=np.int64))
-                if float(dists_b.min()) < EPS_ZERO_LENGTH:
-                    green_edge_h = float(bnd_z[idxs_b[int(np.argmin(dists_b))]])
-                else:
-                    w = 1.0 / (dists_b ** 2)
-                    w /= w.sum()
-                    green_edge_h = float(np.dot(w, bnd_z[idxs_b]))
-
-            # Task #506: plateau-taper. When green_edge_h exceeds the boundary
-            # cap, project a decaying blend of green_edge_h → BOUNDARY_HEIGHT_CAP_MM
-            # over FRINGE_GREEN_EDGE_TAPER_MM of XY distance from the green
-            # boundary. Weight is 0 at the boundary (seam matches green exactly)
-            # and 1 once we are FRINGE_GREEN_EDGE_TAPER_MM or more away. For
-            # gentle greens (green_edge_h <= cap) the target equals the source,
-            # so this reduces to the pre-#506 behaviour: no change.
-            # v5.17 clipping fix: when the user has explicitly set a grid cell
-            # above BOUNDARY_HEIGHT_CAP_MM (9 mm), the taper must not pull that
-            # TPS-propagated peak back down toward the cap as d_to_green grows.
-            # Raise the effective cap to the user's own ceiling; natural low
-            # fringe (green_edge_h <= 9) is unaffected because the branch is
-            # gated on green_edge_h > _cap_target.
-            _effective_boundary_cap_mm = max(BOUNDARY_HEIGHT_CAP_MM, _effective_z_ceiling_mm)
-            _cap_target = min(green_edge_h, _effective_boundary_cap_mm)
-            if FRINGE_GREEN_EDGE_TAPER_MM > 0 and green_edge_h > _cap_target:
-                _weight = min(1.0, max(0.0, d_to_green / FRINGE_GREEN_EDGE_TAPER_MM))
-                green_edge_h = (1.0 - _weight) * green_edge_h + _weight * _cap_target
-
-            # Task 717 (Topo, 2026-09-03): plateau breaker.  When many fringe
-            # cells hit the same clamp value BASE_THICKNESS_MM (1.5 mm), they
-            # form a dead-flat horizontal plateau at that z.  Bambu Studio's
-            # layer sectioner slices this plateau ambiguously — at layer 8
-            # (z ~ 1.5–1.6 mm on 0.2 mm layers) the intersection polygon
-            # degenerates into ~25 tiny polylines and the slicer emits
-            # "conflicts of gcode paths at layer 8 (geometry_0 ↔ geometry_1)"
-            # even when green and fringe never actually share any XY.
-            #
-            # Fix: lift the fringe floor by FRINGE_PLATEAU_MARGIN_MM AND add
-            # a small per-cell tilt so no two grid cells clamp to the exact
-            # same z-value.  The tilt is a smooth ramp along +x+y — 0 at
-            # cell (0, 0), max at cell (N-1, N-1) — with a peak-to-peak
-            # amplitude of 0.10 mm.  That's much smaller than the layer
-            # height (0.2 mm) so the print visually reads as flat, but the
-            # slicer never sees a truly horizontal plateau at any single z,
-            # eliminating the layer-aligned degenerate section.
-            #
-            # Verified DeLaveaga #11 [210]: z=1.60 fringe area = 21867 mm²
-            # (correct, matches z=0.5 baseline), overlap with green = 0.00
-            # (was 5036 mm² at [208]).  Cell counts, top-surface topology,
-            # seam-match, and trap/water cutouts all unchanged.
-            FRINGE_PLATEAU_MARGIN_MM = 0.30  # 1.5 → 1.8 mm floor on default BASE
-            FRINGE_PLATEAU_TILT_MM = 0.10    # 0.10 mm peak-to-peak XY ramp
-            _tilt = FRINGE_PLATEAU_TILT_MM * (r + c) / (2 * (fringe_grid_res - 1))
-            _floor = BASE_THICKNESS_MM + FRINGE_PLATEAU_MARGIN_MM + _tilt
-            z_fringe = max(_floor, min(green_edge_h, _effective_z_ceiling_mm))
+            z_fringe = _cell_fringe_z(r, c, x, y)
 
             fringe_mask[r, c] = True
             Z_fringe[r, c] = z_fringe
@@ -5000,6 +5041,14 @@ def build_fringe_mesh(
     final_spikes = _count_fringe_spikes(Z_final_top, fringe_mask, FRINGE_SPIKE_THRESHOLD_MM)
     print(f"  FINAL fringe top surface (Z_fringe + seam_override) "
           f"spikes >{FRINGE_SPIKE_THRESHOLD_MM}mm above 8-nbr median: {final_spikes}")
+
+    # v5.82: fringe height field handed to the bunker carver (export_trap_stls):
+    # real fringe cells (post-median, seam-pinned) + the virtual fringe continued
+    # across the bunker areas.  None when no bunker owns a cell.
+    _bunker_fringe_field = None
+    if Z_virtual is not None:
+        _z_comb = np.where(fringe_mask, Z_final_top, Z_virtual)
+        _bunker_fringe_field = (xs_mm.copy(), ys_mm.copy(), _z_comb)
 
     # --- Build mesh using the same grid-triangulation approach as _build_heightmap_mesh ---
     # We reuse that function by passing our fringe grid and mask.
@@ -5767,10 +5816,14 @@ def build_fringe_mesh(
             )
             if _new_mesh is not None and len(_new_mesh.faces) > 0:
                 mesh = _new_mesh
+        except (MissingDependencyError, FringeTriangulationError):
+            raise  # v5.75: never degrade to the legacy/flat fringe silently
         except Exception as _exc_wr:
             print(f"  [fringe watertight-rewrite] pass FAILED ({_exc_wr}) — "
                   f"keeping legacy assembly")
 
+    if _bunker_fringe_field is not None:
+        mesh.bunker_fringe_field = _bunker_fringe_field   # consumed by export_trap_stls (v5.82)
     return mesh
 
 
@@ -6125,6 +6178,13 @@ PRINT_TOLERANCE_MM: float = 0.03125  # inset each piece for easier fit
 # request: trap now sits 4 mm below the fringe rim instead of 2 mm.
 TRAP_FRINGE_BOUNDARY_BAND_MM: float = 6.0   # XY band width around trap perimeter to sample fringe Z
 TRAP_FRINGE_OFFSET_MM:        float = -2.0  # mm offset applied to fringe boundary min → trap height
+# v5.82 -- sloped bunker floors carved from the finished fringe
+BUNKER_DROP_BELOW_FRINGE_MM:           float = 1.0  # base floor = fringe surface at that XY minus this (rim sits ~1 mm below the fringe)
+BUNKER_MIN_CLEARANCE_BELOW_FRINGE_MM:  float = 0.3  # rake crests may never rise closer than this to the fringe
+BUNKER_FLOOR_MIN_MM:                   float = BASE_THICKNESS_MM  # rake valleys may never sink below the plate base
+BUNKER_MIN_SOLID_MM:                   float = 0.6  # absolute last-resort solid under the valleys (very low fringe)
+SAND_RAKE_AMPLITUDE_MM:                float = 1.0  # rake peak-to-valley (apply_sand_texture default)
+BUNKER_EDGE_ANCHOR_SPACING_MM:         float = 2.0  # spacing of zero-offset TPS anchors along the bunker boundary
                                             # v0.04: -2.0 (max), v0.05–v0.09: -4.0 (max),
                                             # v0.11: -2.0 (min) — full circle per Thomas.
 # Task v0.11 (Topo, 2026-09-30): flat scalar surface was default.
@@ -6440,39 +6500,12 @@ def _normalize_grid_mode(mode) -> str:
     return m if m in GRID_MODES else DEFAULT_GRID_MODE
 
 
-def _resolve_trap_height_from_grid(
-    trap_poly_mm, grid_cell_heights, grid_mode, default_height,
-    cell_side, half, grid_size=GRID_N_DEFAULT,
-):
-    """Resolve a trap's flat slab height from user-set grid cells, honouring gridMode.
-
-    off      -> None (overrides disabled; default fringe-based height).
-    delta    -> default_height + the HIGHEST in-trap cell delta (v5.12; was MEAN).
-    absolute -> the HIGHEST in-trap cell value (clamped 0..30, floored at
-                BASE_THICKNESS_MM) is the trap Z.  Max, not mean: other set
-                cells that merely shape terrain often fall inside a trap and
-                must not dilute an explicit trap height (Delaveaga 5f [1484]).
-    Returns None when no override applies.
-    """
-    mode = _normalize_grid_mode(grid_mode)
-    if mode == GRID_MODE_OFF or not grid_cell_heights:
-        return None
-    if mode == GRID_MODE_DELTA:
-        delta = _trap_grid_override(trap_poly_mm, grid_cell_heights, cell_side, half, grid_size)
-        if delta is None:
-            return None
-        return max(BASE_THICKNESS_MM, default_height + delta)
-    _cells = _trap_inside_cells(trap_poly_mm, grid_cell_heights, cell_side, half, grid_size)
-    if not _cells:
-        return None
-    return max(BASE_THICKNESS_MM, min(GRID_ABSOLUTE_MAX_MM, max(v for _, v in _cells)))
-
-
 def _trap_inside_cells(trap_poly_mm, grid_cell_heights, cell_side, half, grid_size=GRID_N_DEFAULT):
-    """[(cell_index, value)] for set (non-zero) cells whose WHOLE square lies within
+    """[(cell_index, value)] for set cells (key present; an explicit 0 is a real value since editor v5.80) whose WHOLE square lies within
     the trap footprint (Shapely ``covers``; v5.13 -- was centre-in-polygon).
-    Half-in/half-out cells are ignored.  Single source of the 'inside the trap'
-    test used by absolute AND delta trap heights and the editor's red ring."""
+    Half-in/half-out cells are ignored (they belong to the fringe).  Single source
+    of the 'fully inside the bunker' ownership test (v5.82): used to exclude those
+    cells from the fringe TPS and to drive the bunker floor."""
     from shapely.geometry import box as _box
     out = []
     for k, mm in (grid_cell_heights or {}).items():
@@ -6480,23 +6513,13 @@ def _trap_inside_cells(trap_poly_mm, grid_cell_heights, cell_side, half, grid_si
             ci = int(k); v = float(mm)
         except (TypeError, ValueError):
             continue
-        if v == 0 or ci < 0 or ci >= grid_size * grid_size:   # 0 = empty cell (editor v5.10)
+        if ci < 0 or ci >= grid_size * grid_size:   # key present = set cell; an explicit 0 counts (editor v5.80)
             continue
         r, c = divmod(ci, grid_size)
         x0 = -half + c * cell_side; y0 = -half + r * cell_side
         if trap_poly_mm.covers(_box(x0, y0, x0 + cell_side, y0 + cell_side)):
             out.append((ci, v))
     return out
-
-
-def controlling_cells_for_trap(trap_poly_mm, grid_cell_heights, cell_side, half, grid_size=GRID_N_DEFAULT):
-    """Absolute mode: indices of the in-trap cell(s) holding the max value (ties
-    all returned).  Zero/empty cells are not set cells.  [] if none."""
-    cells = _trap_inside_cells(trap_poly_mm, grid_cell_heights, cell_side, half, grid_size)
-    if not cells:
-        return []
-    m = max(v for _, v in cells)
-    return sorted(i for i, v in cells if v == m)
 
 
 def _build_trap_footprint(trap_poly, scale, centroid_px, pipe_circle, label="Trap"):
@@ -6517,30 +6540,25 @@ def _build_trap_footprint(trap_poly, scale, centroid_px, pipe_circle, label="Tra
     return sp
 
 
-def compute_trap_controlling_cells(egm_data: dict) -> dict:
-    """For the editor: {'mode', 'traps': [{'trap': n, 'cells': [idx,...]}]}.
+def bunker_owned_cells(egm_data, green_boundary_px, pipe_circle=None):
+    """Cell ownership (v5.82): {trap_number (1-based): (footprint_mm, [(cell_index, value), ...])}.
 
-    Mirrors export_trap_stls + _resolve_trap_height_from_grid.  'off' returns none;
-    delta and absolute both have a single controlling (highest) cell per trap."""
-    import copy
+    A SET cell whose whole square lies inside a bunker footprint belongs to that
+    bunker ONLY.  Partly-inside cells stay with the fringe.  Traps with no such
+    cell are omitted (they stay flat, exactly as before).  gridMode 'off' or an
+    empty gridCellHeights -> {}.  Footprints are built by _build_trap_footprint,
+    the same builder export_trap_stls uses, so both stages agree on ownership.
+    """
     mode = _normalize_grid_mode(egm_data.get(EGM_KEY_GRID_MODE))
-    out = {"mode": mode, "traps": []}
     gch = egm_data.get(EGM_KEY_GRID_CELL_HEIGHTS) or {}
+    out = {}
     if mode == GRID_MODE_OFF or not gch:
         return out
-    data = copy.deepcopy(egm_data)
-    green_poly = next((p for p in data.get(EGM_KEY_POLYGONS, []) if p.get(EGM_KEY_TYPE) == POLY_TYPE_GREEN), None)
-    if green_poly is None:
-        return out
-    green_boundary_px = _prepare_egm_geometry(data, green_poly)
-    scale, centroid_px = _compute_px_to_mm(green_boundary_px, data)
+    scale, centroid_px = _compute_px_to_mm(green_boundary_px, egm_data)
     half = FRINGE_HALF_MM
     grid_n = _normalize_grid_resolution(egm_data.get(EGM_KEY_GRID_RESOLUTION))
     side = (2.0 * half) / grid_n
-    pipe_circle = None
-    if ENABLE_MOUNT_BORE:
-        pipe_circle = _build_pipe_circle(-half + MOUNT_BORE_INSET_MM, half - MOUNT_BORE_INSET_MM)
-    traps = [p for p in data.get(EGM_KEY_POLYGONS, []) if p.get(EGM_KEY_TYPE) == POLY_TYPE_TRAP]
+    traps = [p for p in egm_data.get(EGM_KEY_POLYGONS, []) if p.get(EGM_KEY_TYPE) == POLY_TYPE_TRAP]
     for i, tp in enumerate(traps, start=1):
         try:
             fp = _build_trap_footprint(tp, scale, centroid_px, pipe_circle, f"Trap {i}")
@@ -6548,66 +6566,119 @@ def compute_trap_controlling_cells(egm_data: dict) -> dict:
             fp = None
         if fp is None:
             continue
-        cells = controlling_cells_for_trap(fp, gch, side, half, grid_n)
+        cells = _trap_inside_cells(fp, gch, side, half, grid_n)
         if cells:
-            out["traps"].append({"trap": i, "cells": cells})
+            out[i] = (fp, cells)
     return out
 
 
-def _trap_grid_override(
-    trap_poly_mm: "ShapelyPolygon",
-    grid_cell_heights: dict,
-    cell_side: float,
-    half: float,
-    grid_size: int = GRID_N_DEFAULT,
-) -> "float | None":
-    """Return the HIGHEST (v5.12; was mean) user-set grid-cell value whose centre is inside the trap
-    polygon, or ``None`` if no user-set cells fall inside the polygon.
+def fringe_grid_cell_heights(egm_data, green_boundary_px, pipe_circle=None, owned=None) -> dict:
+    """gridCellHeights minus every cell owned by a bunker (v5.82).
 
-    Only cells explicitly listed in ``grid_cell_heights`` (the user-set sparse
-    dict from ``egm["gridCellHeights"]``) are tested.  Cells that are absent
-    carry Poisson-default Z values and must **not** trigger the override —
-    otherwise every trap would always be overridden.
+    This is the dict the fringe topology (TPS + ceilings) must see: the fringe is
+    computed first, from all set cells EXCEPT those fully inside a bunker.  The
+    excluded cells revert to their Poisson default.  Returns the original dict
+    object, untouched, when no bunker owns a cell."""
+    gch = egm_data.get(EGM_KEY_GRID_CELL_HEIGHTS) or {}
+    if owned is None:
+        owned = bunker_owned_cells(egm_data, green_boundary_px, pipe_circle)
+    if not owned:
+        return gch
+    owned_idx = {ci for _fp, cells in owned.values() for ci, _v in cells}
+    kept = {}
+    for k, v in gch.items():
+        try:
+            if int(k) in owned_idx:
+                continue
+        except (TypeError, ValueError):
+            pass
+        kept[k] = v
+    return kept
 
-    Cell-centre coordinates (world mm, origin at centre of frame):
 
-        cx = -half + (col + 0.5) * cell_side
-        cy = -half + (row + 0.5) * cell_side
+def contains_xy_poly(poly, xy) -> np.ndarray:
+    """Boolean mask: which rows of ``xy`` (N,2) lie inside the Shapely polygon."""
+    from shapely import contains_xy
+    return contains_xy(poly, xy[:, 0], xy[:, 1])
 
-    where ``half = PRINT_SIZE_MM/2 + FRINGE_XY_EXPANSION_MM/2`` and
-    ``cell_side = (2 * half) / grid_size``.
 
-    Containment uses Shapely's ``Polygon.contains(Point)`` which is strict
-    interior — cell centres exactly on the polygon boundary are excluded.
+def _make_fringe_field_sampler(field):
+    """(xs_mm, ys_mm, Z[r, c]) -> f(xy (N,2)) -> fringe Z (N,) by bilinear sampling.
+    NaN cells (green / mount hole) are filled from the nearest valid cell."""
+    from scipy.interpolate import RegularGridInterpolator
+    from scipy.ndimage import distance_transform_edt
+    xs, ys, Z = field
+    Z = np.asarray(Z, dtype=np.float64)
+    bad = ~np.isfinite(Z)
+    if bad.any():
+        idx = distance_transform_edt(bad, return_distances=False, return_indices=True)
+        Z = Z[tuple(idx)]
+    interp = RegularGridInterpolator((ys, xs), Z, method="linear",
+                                     bounds_error=False, fill_value=None)
 
-    Parameters
-    ----------
-    trap_poly_mm : ShapelyPolygon
-        Trap footprint in world mm coords (may be pre-inset or raw; caller
-        decides; export_trap_stls passes the raw shapely_trap so that the
-        geometric test is on the full footprint, consistent with the editor).
-    grid_cell_heights : dict
-        Sparse dict of ``{str(cell_index): mm_value}`` from
-        ``egm["gridCellHeights"]``.  Empty dict → returns None immediately.
-    cell_side : float
-        Side length (mm) of each square grid cell.
-    half : float
-        Half-frame size in mm: ``PRINT_SIZE_MM/2 + FRINGE_XY_EXPANSION_MM/2``.
-    grid_size : int
-        Number of cells per axis (default GRID_N_DEFAULT = 20 → 20×20 = 400 cells).
+    def _f(xy):
+        xy = np.asarray(xy, dtype=np.float64).reshape(-1, 2)
+        return interp(np.column_stack([xy[:, 1], xy[:, 0]]))
+    return _f
 
-    Returns
-    -------
-    float or None
-        Mean of the contained cell values, or None when no user-set cell falls
-        inside the trap polygon.  As of v5.19 (project-grid-cell-elevation-
-        mechanism), ``gridCellHeights`` values are **signed delta offsets** (mm)
-        relative to the fringe-based default trap height — not absolute Z values.
+
+def _build_bunker_floor_fn(footprint, owned_cells, grid_mode, fringe_z_fn, cell_side, half, grid_n):
+    """Sloped bunker floor (v5.82).  Returns (floor_fn(xy)->z, info dict).
+
+    floor(x, y) = fringe(x, y) - BUNKER_DROP_BELOW_FRINGE_MM + offset(x, y), then
+    clamped so rake valleys (floor - A/2) stay >= BUNKER_FLOOR_MIN_MM and rake crests
+    (floor + A/2, A = SAND_RAKE_AMPLITUDE_MM) stay >= BUNKER_MIN_CLEARANCE_BELOW_FRINGE_MM
+    under the fringe.  The returned floor is the MEAN surface: the rake is applied
+    centred on it, so the rim sits BUNKER_DROP_BELOW_FRINGE_MM below the fringe on average.
+
+    offset(x, y) is a thin-plate spline (same method as the fringe) through
+      * one constraint per fully-inside set cell (cell-centre XY), and
+      * ZERO-valued anchors every BUNKER_EDGE_ANCHOR_SPACING_MM along the
+        bunker boundary, so the offset field vanishes at the rim and the rim
+        sits exactly BUNKER_DROP_BELOW_FRINGE_MM under the fringe.
+    delta mode:    cell constraint = value (mm, clamped to +-GRID_DELTA).
+    absolute mode: cell constraint = value - (fringe - drop) at the cell centre, so the
+                   floor passes through the literal value (clamped 0..30 and floored at
+                   BASE_THICKNESS_MM) at the cell, and still returns to fringe - drop at the rim.
     """
-    cells = _trap_inside_cells(trap_poly_mm, grid_cell_heights, cell_side, half, grid_size)
-    if not cells:
-        return None
-    return float(max(v for _, v in cells))   # v5.12: highest delta controls (was mean)
+    from scipy.interpolate import RBFInterpolator
+    cx = np.array([-half + (ci % grid_n + 0.5) * cell_side for ci, _ in owned_cells])
+    cy = np.array([-half + (ci // grid_n + 0.5) * cell_side for ci, _ in owned_cells])
+    cxy = np.column_stack([cx, cy])
+    vals = np.array([v for _, v in owned_cells], dtype=np.float64)
+    if grid_mode == GRID_MODE_ABSOLUTE:
+        lit = np.maximum(BASE_THICKNESS_MM,
+                         np.clip(vals, GRID_ABSOLUTE_MIN_MM, GRID_ABSOLUTE_MAX_MM))
+        offs = lit - (fringe_z_fn(cxy) - BUNKER_DROP_BELOW_FRINGE_MM)
+    else:
+        offs = np.clip(vals, GRID_DELTA_MIN_MM, GRID_DELTA_MAX_MM)
+    # zero anchors along every ring of the footprint
+    anchors = []
+    rings = [footprint.exterior] + list(footprint.interiors) if hasattr(footprint, "exterior") else \
+        [r for g in footprint.geoms for r in [g.exterior] + list(g.interiors)]
+    for ring in rings:
+        n = max(8, int(math.ceil(ring.length / BUNKER_EDGE_ANCHOR_SPACING_MM)))
+        for t in np.linspace(0.0, 1.0, n, endpoint=False):
+            pt = ring.interpolate(t, normalized=True)
+            anchors.append((pt.x, pt.y))
+    anchors = np.asarray(anchors, dtype=np.float64)
+    pts = np.vstack([cxy, anchors])
+    zs = np.concatenate([offs, np.zeros(len(anchors))])
+    tps = RBFInterpolator(pts, zs, kernel="thin_plate_spline", smoothing=0.0)
+
+    half_rake = SAND_RAKE_AMPLITUDE_MM / 2.0
+
+    def _floor(xy):
+        """MEAN floor surface; the rake oscillates +-half_rake around it."""
+        xy = np.asarray(xy, dtype=np.float64).reshape(-1, 2)
+        fr = fringe_z_fn(xy)
+        z = fr - BUNKER_DROP_BELOW_FRINGE_MM + tps(xy)
+        z = np.maximum(z, BUNKER_FLOOR_MIN_MM + half_rake)               # valleys stay above the plate base
+        z = np.minimum(z, fr - half_rake - BUNKER_MIN_CLEARANCE_BELOW_FRINGE_MM)  # crests stay below the fringe
+        return np.maximum(z, half_rake + BUNKER_MIN_SOLID_MM)            # last resort on a very low fringe
+    return _floor, {"n_cells": len(owned_cells), "n_anchors": len(anchors),
+                    "cell_offsets": offs}
+
 
 
 def _compute_trap_height_from_fringe(
@@ -7025,26 +7096,49 @@ def export_trap_stls(
                 else:
                     print(f"  Trap {i}: no fringe mesh — using fixed height {trap_height:.2f} mm")
 
-            # Task v0.20 (Topo, 2026-10-05): grid-cell altitude override.
-            # If any user-set gridCellHeights entry has its cell centre inside
-            # this trap polygon, use mean(values) as the flat trap Z.
-            # Only applies on the flat path (TRAP_SURFACE_CURVED=False).
-            # The curved path sets trap_height per-point above; override not applied.
-            if not TRAP_SURFACE_CURVED:
-                _gch = egm_data.get(EGM_KEY_GRID_CELL_HEIGHTS) or {}
+            # v5.82 (Topo, 2026-10-26): cell-owned, fringe-carved bunker floor.
+            # Set cells fully inside this bunker belong to it ONLY (the fringe was
+            # built without them).  The floor is the finished fringe surface at each
+            # XY minus BUNKER_DROP_BELOW_FRINGE_MM, plus a TPS offset field from
+            # the owned cells that returns to 0 at the rim (see _build_bunker_floor_fn).
+            # A bunker with NO owned cell keeps the flat height computed above.
+            # Replaces the v5.12-v5.81 "highest inside cell sets the flat slab" rule.
+            _bunker_floor_fn = None
+            _grid_mode_t = _normalize_grid_mode(egm_data.get(EGM_KEY_GRID_MODE))
+            _gch = egm_data.get(EGM_KEY_GRID_CELL_HEIGHTS) or {}
+            if not TRAP_SURFACE_CURVED and _gch and _grid_mode_t != GRID_MODE_OFF:
                 _grid_half = FRINGE_HALF_MM
                 _grid_n = _normalize_grid_resolution(egm_data.get(EGM_KEY_GRID_RESOLUTION))
                 _grid_cell_side = (2.0 * _grid_half) / _grid_n
-                _trap_grid_mode = _normalize_grid_mode(egm_data.get(EGM_KEY_GRID_MODE))
-                _new_height = _resolve_trap_height_from_grid(
-                    shapely_trap, _gch, _trap_grid_mode, trap_height,
-                    _grid_cell_side, _grid_half, _grid_n,
-                )
-                if _new_height is not None:
-                    print(f"  Trap {i}: grid-cell override active (mode={_trap_grid_mode}) — "
-                          f"height {trap_height:.2f} mm -> {_new_height:.2f} mm")
-                    trap_height = _new_height
-                    _trap_base_z_map = None  # override is flat scalar; discard curved map
+                _owned = _trap_inside_cells(shapely_trap, _gch, _grid_cell_side, _grid_half, _grid_n)
+                _field = getattr(fringe_mesh, "bunker_fringe_field", None) if fringe_mesh is not None else None
+                if _owned and _field is None:
+                    print(f"  Trap {i}: {len(_owned)} owned grid cell(s) but no fringe field "
+                          f"available — staying flat")
+                elif _owned:
+                    try:
+                        _bunker_floor_fn, _binfo = _build_bunker_floor_fn(
+                            shapely_trap, _owned, _grid_mode_t,
+                            _make_fringe_field_sampler(_field),
+                            _grid_cell_side, _grid_half, _grid_n,
+                        )
+                    except Exception as _exc_floor:
+                        _bunker_floor_fn = None
+                        print(f"  Trap {i}: sloped floor failed ({_exc_floor}) — staying flat")
+            if _bunker_floor_fn is not None:
+                _ins = contains_xy_poly(shapely_inset, _grid_xy)
+                import shapely as _shapely_mod
+                _pts_in = np.vstack([_grid_xy[_ins], _shapely_mod.get_coordinates(shapely_inset)])
+                _fz = _bunker_floor_fn(_pts_in)
+                trap_height = float(_fz.max())
+                # The rake (0..SAND_RAKE_AMPLITUDE_MM above its base) is centred on the floor:
+                # texture base = floor - A/2, so the mean rim sits BUNKER_DROP below the fringe.
+                _trap_base_z_map = (lambda _xy, _f=_bunker_floor_fn:
+                                    _f(_xy) - SAND_RAKE_AMPLITUDE_MM / 2.0)   # callable: smooth per-point base
+                print(f"  Trap {i}: SLOPED floor from {_binfo['n_cells']} owned cell(s) "
+                      f"(mode={_grid_mode_t}, rim = fringe - {BUNKER_DROP_BELOW_FRINGE_MM:.1f} mm, "
+                      f"{_binfo['n_anchors']} edge anchors) — floor Z "
+                      f"{float(_fz.min()):.2f}..{trap_height:.2f} mm")
 
             # Build slab at the (possibly curved) maximum height.
             mesh = _build_slab_from_shapely(shapely_inset, trap_height)
@@ -8404,7 +8498,7 @@ def _polygon_long_axis(poly) -> "tuple[np.ndarray, float]":
 
 def apply_sand_texture(
     mesh: "trimesh.Trimesh",
-    amplitude: float = 1.0,
+    amplitude: float = SAND_RAKE_AMPLITUDE_MM,
     grain_spacing: float = 1.125,
     trap_index: int = 0,
     base_z_map: "tuple[np.ndarray, np.ndarray] | None" = None,
@@ -8468,7 +8562,7 @@ def apply_sand_texture(
     grain_spacing: centre-to-centre distance between rake-line peaks in mm
                    (default 1.5 mm).
     trap_index   : integer — reserved; chunk RNG removed (task 708).
-    base_z_map   : tuple (base_xy, base_z) or None.  When provided, supplies
+    base_z_map   : callable f(xy)->z (v5.82 sloped bunker floor), or tuple (base_xy, base_z) or None.  When provided, supplies
                    a curved base surface; grid points sample from it via
                    nearest-neighbor lookup.  When None, the flat z_max is used
                    (flat-slab behaviour, same as before).
@@ -8721,7 +8815,11 @@ def apply_sand_texture(
     # of the uniform z_max.  This makes the trap surface follow the fringe
     # topology (4 mm below it everywhere).
     # ------------------------------------------------------------------
-    if base_z_map is not None:
+    if callable(base_z_map):
+        # v5.82: smooth per-point floor (sloped bunker) -- evaluated directly, no NN staircase.
+        def _base_z_at(xy_arr: np.ndarray) -> np.ndarray:
+            return np.asarray(base_z_map(xy_arr), dtype=np.float64)
+    elif base_z_map is not None:
         from scipy.spatial import cKDTree as _cKDTree_sand
         _bmap_xy, _bmap_z = base_z_map
         _bmap_xy = np.asarray(_bmap_xy, dtype=np.float64)
@@ -10403,6 +10501,8 @@ def run_pipeline(
 
     Returns the absolute path to the generated .3mf file.
     """
+    # Fail fast, before any heavy work, if a required package is missing (v5.75).
+    check_dependencies()
     PIPELINE_WARNINGS.clear()
     print(LOG_RULE)
     print("Gradient Surface Diagnostic")
@@ -10804,6 +10904,8 @@ def run_pipeline(
         # Keep an in-memory reference to the flat (untextured) fringe for
         # trap height sampling, before grass texture displaces seam vertices.
         fringe_mesh_flat = copy.deepcopy(fringe_mesh)
+        # v5.82: trimesh copies drop ad-hoc attributes; carry the bunker fringe field over.
+        fringe_mesh_flat.bunker_fringe_field = getattr(fringe_mesh, "bunker_fringe_field", None)
         # Apply grass texture to fringe top surface.  IMPORTANT: the green
         # surface added to the 3MF is the untextured (flat) version, so any
         # grass bump applied to a fringe seam vertex opens a visible gap
@@ -10907,6 +11009,8 @@ def run_pipeline(
                       f"{len(_sample_fringe.vertices)} vertices, "
                       f"{len(_sample_fringe.faces)} faces")
                 fringe_no_grass_sample = _sample_fringe
+            except (MissingDependencyError, FringeTriangulationError):
+                raise  # v5.75: stop, never ship a degraded model
             except Exception as _exc_sample:
                 print(f"  [plate-2] ERROR building smooth fringe sample: {_exc_sample}")
                 import traceback; traceback.print_exc()
@@ -10984,6 +11088,8 @@ def run_pipeline(
         except Exception as exc_pipe:
             print(f"  ERROR building/merging mount pipe: {exc_pipe}")
             import traceback; traceback.print_exc()
+    except (MissingDependencyError, FringeTriangulationError):
+        raise  # v5.75: stop, never ship a degraded model
     except Exception as exc:
         print(f"  ERROR building fringe mesh: {exc}")
         import traceback; traceback.print_exc()
@@ -11036,7 +11142,10 @@ def run_pipeline(
             # The cap still protects natural fringe near the frame (vertices
             # with z <= effective cap are never touched by the above_cap gate).
             _user_grid_max_mm = 0.0
-            _user_grid_heights = (_egm_data or {}).get(EGM_KEY_GRID_CELL_HEIGHTS) or {}
+            # v5.82: bunker-owned cells do not count toward the fringe cap ceiling.
+            _user_grid_heights = fringe_grid_cell_heights(
+                _egm_data, green_boundary_px,
+                pipe_circle)
             if _user_grid_heights:
                 try:
                     _user_grid_max_mm = max(float(v) for v in _user_grid_heights.values())

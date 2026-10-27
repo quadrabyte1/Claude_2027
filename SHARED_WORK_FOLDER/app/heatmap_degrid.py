@@ -1,71 +1,116 @@
 """heatmap_degrid.py -- erase the baked-in background grid from StrackaLine /
-Golf Intelligence heat-map PNGs.
+Golf Intelligence heat-map PNGs, on the page background AND where it shows
+through the semi-transparent heat map.
 
-What the grid looks like (Delaveaga / Stanford samples): 1-2 px axis-aligned
-lines, slightly darker than the flat light-grey page (RGB 226 -> ~150-200), on a
-perfectly regular lattice (period ~27.7 px on Delaveaga, ~20.7 px on Stanford,
-i.e. it scales with the screenshot) with every 5th line (Delaveaga) darker.  The
-heat map, outline, arrows and labels are drawn on top of the grid, so the grid is
-only visible on the background.
+What the grid looks like (Delaveaga / Stanford samples): axis-aligned lines,
+slightly darker than the flat light-grey page (RGB 226), on a perfectly regular
+lattice.  EVERYTHING scales with the screenshot zoom: the period is ~28 px on an
+809 px wide Delaveaga shot but ~44 px on the 1296 px "9 in" shot, and the line
+itself is ~3 px wide on the small shots but a soft ~6 px wide anti-aliased bar on
+the big ones (its flanks are NOT 3 px away).  Delaveaga also draws every 5th line
+darker.  The heat map, outline, arrows and labels are drawn over the grid, so the
+grid is plainly visible on the background and only faintly through the heat map.
 
-Method (structural, not a colour threshold):
-  1. "Line-ness" map per axis: a pixel is a vertical-line candidate when it is
-     slightly darker than BOTH its left and right neighbours FLANK_PX away, those
-     neighbours agree with each other (the line sits on a flat patch) and all
-     three are neutral grey/beige (never heat-map colours).
-  2. Column profile = fraction of candidate pixels.  The grid shows up as a
-     periodic comb; the period comes from the profile's autocorrelation and the
-     lattice (period + offset) is fitted by least squares over the strong peaks,
-     so lines hidden under the heat map still land on the lattice.
-  3. Mask = candidates inside a +/-BAND_PX band around each lattice line, minus
-     pixels near strongly dark features (outline/arrows/text), minus short blips
-     (< MIN_RUN_PX) and pixels much darker than that lattice line's own core.
-  4. Fill: each masked pixel is linearly interpolated from the nearest unmasked
-     pixels on either side (exact for a flat background).
-  Vertical lines are removed first; horizontal lines are then detected on the
-  vertically-cleaned image so line crossings leave no "+" stubs.
+Method (per axis; vertical lines first, horizontal on the vertically-cleaned image):
+  1. Background profile: per column, the MEDIAN grey of the neutral (grey/white)
+     pixels only; ``darkness = page level - profile``.  Medians ignore heat map,
+     arrows and text, so every line (major and minor) shows up as a clean dip.
+  2. Lattice: period from the profile's autocorrelation, refined with a comb
+     search; (period, offset) then least-squares fitted to the dips.  A lattice is
+     accepted only if most predicted line positions really show a dip (so the
+     irregular edges of a GolfLogix screenshot are never mistaken for a grid).
+     Lines hidden under the heat map still land on the lattice.
+  3. Per-line extent: the measured width of that line's dip (soft edges included).
+     Each pixel of the extent is compared with the linear interpolation between the
+     two pixels just outside the extent on the same row.
+       * background pixel: masked when it is darker than that interpolation by at
+         least MIN_DARKEN and no more than this line's own core darkness (+margin);
+       * heat-map pixel (coloured): masked when the darkening is small, in the
+         expected range, and consistent with the line's darkening just above/below
+         (rolling median along the line) -- so arrows, outline, labels and the faint
+         contour lines (all localised, not line-shaped) are left alone.
+     Pixels near strongly dark features and short blips are never masked.
+  4. Fill: masked pixels are linearly interpolated from the nearest unmasked pixels
+     on either side (exact for a flat background, tracks the heat-map gradient).
 
 If no grid lattice is found on both axes the input array is returned unchanged.
 """
 from __future__ import annotations
 
 import os
+import struct
+import zlib
 
 import cv2
 import numpy as np
 
-# -- detection / fill constants (all tunables live here) ----------------------
-FLANK_PX = 3                 # px from the line centre to the flank samples
-BAND_PX = 2                  # lattice half-width (px) in which candidates are accepted
-MIN_DARKEN = 2.0             # min gray darkening vs flanks
-MAX_DARKEN = 130.0           # max gray darkening (darker = a real feature, not grid)
-FLANK_TOL = 6.0              # flanks must agree within this (flat background)
-NEUTRAL_SPREAD = 40.0        # max channel spread (max-min) of a grid pixel / its flanks
+# -- version of the algorithm ---------------------------------------------------
+# Bump whenever the output for the same input could change.  The value is embedded
+# in every cached "__degridded.png" (PNG tEXt chunk); a cached file with a
+# different/missing version is regenerated by the route.
+DEGRID_ALGO_VERSION = 2
+PNG_TEXT_KEY = "DegridAlgoVersion"
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+PNG_CHUNK_HEADER_BYTES = 8           # length (4) + type (4)
+PNG_CHUNK_CRC_BYTES = 4
+PNG_CHUNK_TEXT = b"tEXt"
+PNG_CHUNK_IHDR = b"IHDR"
+PNG_CHUNK_IEND = b"IEND"
+PNG_TEXT_SEPARATOR = b"\x00"
+
+# -- background profile / lattice detection ---------------------------------------
+PROFILE_SPREAD_MAX = 4.0     # max channel spread (max-min) of a "neutral" profile pixel
+PROFILE_MIN_GRAY = 100.0     # neutral pixels darker than this are outline/text, ignored
+PROFILE_MIN_FRAC = 0.03      # a column needs this fraction of neutral rows to have a profile
+MIN_PEAK_DARKNESS = 6.0      # weakest dip (grey levels) accepted as a grid line
+PEAK_SMOOTH_PX = 3           # box width used to smooth the profile for the autocorrelation
+MIN_PERIOD_PX = 8
+MAX_PERIOD_PX = 200
+MIN_PROFILE_PERIODS = 3      # image must span at least this many periods
+AUTOCORR_MIN = 0.15          # minimum autocorrelation for a period candidate
+AUTOCORR_REL = 0.5           # ...and this fraction of the strongest lag
+PERIOD_PAD = 2               # period search must have this many lags of room
+COMB_PERIOD_RANGE = 0.8      # comb search: +/- this many px around the integer period guess
+COMB_PERIOD_STEP = 0.02
+COMB_OFFSET_STEPS_PER_PX = 4
+MATCH_HALF_PX = 2            # a predicted line matches a dip this close to it
+CENTROID_HALF_PX = 2         # half-window for the sub-pixel dip centroid
+FIT_ITERATIONS = 3
+FIT_RESIDUAL_PX = 1.5        # dips further than this from the fitted lattice are dropped
+MIN_LINES = 4                # lattice lines confirmed per axis
+MIN_COVERAGE = 0.6           # fraction of predictable lattice lines that must show a dip
+LATTICE_EDGE_SLACK_PX = 1    # lattice positions this far outside the image still count
+
+# -- per-line extent -----------------------------------------------------------------
+EXTENT_MIN_DARKNESS = 1.0    # profile darkness that still counts as "part of the line"
+EXTENT_MAX_FRAC = 0.2        # a line is never wider (each side) than this x the period
+EXTENT_MAX_MIN_PX = 2        # ...but always allowed at least this many px per side
+DEFAULT_HALF_WIDTH_PX = 2    # extent half-width when a line has no background profile
+
+# -- mask constants -----------------------------------------------------------------
+MIN_DARKEN = 2.0             # background: min grey darkening vs the interpolated flanks
+FLANK_TOL = 6.0              # background: flanks must agree within this (flat page)
+NEUTRAL_SPREAD = 40.0        # max channel spread of a "background" pixel and its flanks
+PROFILE_MATCH_TOL = 3.0      # background: a pixel this close to the line's median cross-section is grid
+BG_LEVEL_TOL = 15.0          # background: the flanks must be at the page level (not an outline's shoulder)
+LINE_LIMIT_RATIO = 1.5       # background: darkening up to this x the line core...
+LINE_LIMIT_ADD = 10.0        # ...or core + this, whichever is larger
+HEAT_MIN_DEVIATION = 1.5     # heat map: min per-channel deviation from the interpolated flanks
+HEAT_MAX_DEVIATION = 60.0    # heat map: max deviation of a see-through grid line
+HEAT_FLANK_TOL = 14.0        # heat map: flanks may differ this much (colour gradient)
+HEAT_CONSISTENCY = 3.0       # heat map: darkening must be within this of the along-line median
+HEAT_ROLL_PX = 41            # heat map: rolling-median window along the line (ODD)
 FEATURE_DARKEN = 130.0       # a pixel this much darker than its local median is a real feature
 FEATURE_MEDIAN_KSIZE = 9     # median-blur kernel for the feature test
 FEATURE_PROTECT_KSIZE = 5    # dilation kernel: protect radius around features
-MIN_RUN_PX = 7               # min continuous run (px) of a grid-line pixel column (ODD: symmetric opening kernel)
-LINE_CORE_PERCENTILE = 90    # percentile of a line's darkening taken as its "core" darkness
-LINE_LIMIT_RATIO = 1.5       # accept darkening up to this x the line core...
-LINE_LIMIT_ADD = 10.0        # ...or core + this, whichever is larger
-MIN_PERIOD_PX = 8
-MAX_PERIOD_PX = 200
-MIN_LINES = 4                # lattice lines confirmed per axis
-MIN_PROFILE_PEAK = 0.05      # weakest comb the detector will believe (fraction of pixels)
-PEAK_SMOOTH_PX = 3           # box width used to smooth the profile before peak picking
-PEAK_CUTOFF_RATIO = 0.4      # a peak must reach this fraction of the strongest peak
-CENTROID_HALF_PX = 2         # half-window for sub-pixel peak centroid
-AUTOCORR_MIN = 0.15          # minimum autocorrelation for a period candidate
-AUTOCORR_REL = 0.5           # ...and this fraction of the strongest lag
-PERIOD_FIT_ITERATIONS = 3
-FIT_RESIDUAL_PX = 1.5        # peaks further than this from the fitted lattice are dropped
-MIN_PROFILE_PERIODS = 3      # image must span at least this many periods
+GAP_MAX_DEVIATION = 100.0    # a gap pixel may be bridged only if within this of the interpolated flanks
+GAP_MAX_DARKEN = 40.0        # ...and not darker (grey) than the interpolation by more than this (arrow edges are)
+GAP_CLOSE_PX = 9             # bridge gaps up to this long (ODD) along a grid line (contour crossings)
+MIN_RUN_PX = 5               # min continuous run (px) of a grid-line pixel column (ODD)
 ROUND_HALF = 0.5             # rounding offset
 GRAY_MAX = 255
-LATTICE_EDGE_SLACK_PX = 1    # lattice positions this far outside the image still count
-PERIOD_PAD = 2               # period search must have this many lags of room
 
-# -- file / info-dict naming ---------------------------------------------------
+# -- file / info-dict naming ---------------------------------------------------------
 DEGRID_SUFFIX = "__degridded"        # cleaned copy: "<stem>__degridded.png"
 DEGRID_EXT = ".png"
 INFO_FOUND = "found"
@@ -74,6 +119,7 @@ INFO_Y = "y"
 INFO_MASKED = "masked_px"
 INFO_PERIOD = "period"
 INFO_OFFSET = "offset"
+INFO_LINES = "lines"
 INFO_WRITTEN = "written"
 INFO_ERROR = "error"
 ERR_UNREADABLE = "unreadable"
@@ -85,41 +131,93 @@ def degridded_path(src_path: str) -> str:
     return stem + DEGRID_SUFFIX + DEGRID_EXT
 
 
-def _axis_candidates(gray: np.ndarray, spread: np.ndarray) -> np.ndarray:
-    """Vertical-line candidate mask (H, W)."""
+# -- PNG version stamp ------------------------------------------------------------------
+def _png_chunk(kind: bytes, data: bytes) -> bytes:
+    crc = zlib.crc32(kind + data) & 0xFFFFFFFF
+    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", crc)
+
+
+def _stamp_png(png: bytes, version: int) -> bytes:
+    """Insert a tEXt chunk carrying ``version`` right after IHDR."""
+    ihdr_end = len(PNG_SIGNATURE) + PNG_CHUNK_HEADER_BYTES + struct.unpack(
+        ">I", png[len(PNG_SIGNATURE):len(PNG_SIGNATURE) + 4])[0] + PNG_CHUNK_CRC_BYTES
+    text = PNG_TEXT_KEY.encode() + PNG_TEXT_SEPARATOR + str(version).encode()
+    return png[:ihdr_end] + _png_chunk(PNG_CHUNK_TEXT, text) + png[ihdr_end:]
+
+
+def png_algo_version(path: str):
+    """Algorithm version stamped in the PNG at ``path``, or None (missing/unstamped/unreadable)."""
+    try:
+        with open(path, "rb") as fh:
+            data = fh.read()
+    except OSError:
+        return None
+    if not data.startswith(PNG_SIGNATURE):
+        return None
+    pos = len(PNG_SIGNATURE)
+    key = PNG_TEXT_KEY.encode() + PNG_TEXT_SEPARATOR
+    while pos + PNG_CHUNK_HEADER_BYTES <= len(data):
+        (length,) = struct.unpack(">I", data[pos:pos + 4])
+        kind = data[pos + 4:pos + PNG_CHUNK_HEADER_BYTES]
+        body = data[pos + PNG_CHUNK_HEADER_BYTES:pos + PNG_CHUNK_HEADER_BYTES + length]
+        if kind == PNG_CHUNK_TEXT and body.startswith(key):
+            try:
+                return int(body[len(key):])
+            except ValueError:
+                return None
+        if kind == PNG_CHUNK_IEND:
+            break
+        pos += PNG_CHUNK_HEADER_BYTES + length + PNG_CHUNK_CRC_BYTES
+    return None
+
+
+def cache_is_fresh(src_path: str, cached_path: str) -> bool:
+    """True when ``cached_path`` exists, is not older than the source image and was
+    made by the CURRENT algorithm version."""
+    return (os.path.isfile(cached_path)
+            and os.path.getmtime(cached_path) >= os.path.getmtime(src_path)
+            and png_algo_version(cached_path) == DEGRID_ALGO_VERSION)
+
+
+# -- lattice detection ------------------------------------------------------------------
+def _background_profile(gray: np.ndarray, spread: np.ndarray) -> np.ndarray:
+    """Per-column darkness (page level - median neutral grey); 0 where undefined.
+    Returns a (3, W) array: darkness, defined mask (0/1), page level (constant row)."""
     h, w = gray.shape
-    cand = np.zeros((h, w), dtype=bool)
-    f = FLANK_PX
-    if w <= 2 * f + 1:
-        return cand
-    c = gray[:, f:w - f]
-    left = gray[:, 0:w - 2 * f]
-    right = gray[:, 2 * f:w]
-    dark = (left + right) / 2.0 - c
-    ok = (np.abs(left - right) <= FLANK_TOL) & (dark >= MIN_DARKEN) & (dark <= MAX_DARKEN)
-    ok &= (spread[:, 0:w - 2 * f] <= NEUTRAL_SPREAD) & (spread[:, 2 * f:w] <= NEUTRAL_SPREAD) \
-        & (spread[:, f:w - f] <= NEUTRAL_SPREAD)
-    cand[:, f:w - f] = ok
-    return cand
+    neutral = (spread <= PROFILE_SPREAD_MAX) & (gray >= PROFILE_MIN_GRAY)
+    ok = neutral.sum(axis=0) >= PROFILE_MIN_FRAC * h
+    prof = np.full(w, np.nan, dtype=np.float32)
+    for x in np.where(ok)[0]:
+        prof[x] = np.median(gray[neutral[:, x], x])
+    if not ok.any():
+        return np.zeros((3, w), dtype=np.float32)
+    level = float(np.median(prof[ok]))
+    dark = np.where(ok, level - prof, 0.0)
+    return np.vstack([dark, ok.astype(np.float32), np.full(w, level)]).astype(np.float32)
 
 
-def _darkening(gray: np.ndarray) -> np.ndarray:
-    """Per-pixel (flank mean - pixel) for vertical lines; 0 at the image edges."""
-    h, w = gray.shape
-    f = FLANK_PX
-    out = np.zeros((h, w), dtype=np.float32)
-    if w > 2 * f + 1:
-        out[:, f:w - f] = (gray[:, 0:w - 2 * f] + gray[:, 2 * f:w]) / 2.0 - gray[:, f:w - f]
-    return out
+def _positions(period: float, offset: float, n: int):
+    k0 = int(np.floor(-offset / period)) - 1
+    k1 = int(np.ceil((n - offset) / period)) + 1
+    return [offset + k * period for k in range(k0, k1 + 1)
+            if -LATTICE_EDGE_SLACK_PX <= offset + k * period <= n]
 
 
-def _fit_lattice(profile: np.ndarray):
-    """Return (period, offset) of the periodic comb in ``profile`` or None."""
-    n = len(profile)
+def _comb_score(smooth: np.ndarray, period: float, offset: float) -> float:
+    n = len(smooth)
+    pos = np.round(offset + period * np.arange(int(np.ceil((n - offset) / period)) + 1)).astype(int)
+    pos = pos[(pos >= 0) & (pos < n)]
+    return float(smooth[pos].sum())
+
+
+def _fit_lattice(dark: np.ndarray, defined: np.ndarray):
+    """Return (period, offset) of the periodic comb of dips in ``dark`` or None."""
+    n = len(dark)
     if n < MIN_PROFILE_PERIODS * MIN_PERIOD_PX:
         return None
-    smooth = np.convolve(profile, np.ones(PEAK_SMOOTH_PX), mode="same")
-    if smooth.max() < MIN_PROFILE_PEAK:
+    prof = np.clip(dark, 0, None)
+    smooth = np.convolve(prof, np.ones(PEAK_SMOOTH_PX) / PEAK_SMOOTH_PX, mode="same")
+    if smooth.max() < MIN_PEAK_DARKNESS:
         return None
     x = smooth - smooth.mean()
     ac = np.correlate(x, x, mode="full")[n - 1:]
@@ -128,49 +226,94 @@ def _fit_lattice(profile: np.ndarray):
     if hi <= MIN_PERIOD_PX + PERIOD_PAD:
         return None
     seg = ac[MIN_PERIOD_PX:hi]
-    best = None
+    guess = None
     thr = max(AUTOCORR_MIN, AUTOCORR_REL * seg.max())
     for i in range(1, len(seg) - 1):   # first strong local max (avoids multiples)
         if seg[i] >= thr and seg[i] >= seg[i - 1] and seg[i] >= seg[i + 1]:
-            best = i + MIN_PERIOD_PX
+            guess = i + MIN_PERIOD_PX
             break
-    if best is None:
+    if guess is None:
         return None
-    cut = PEAK_CUTOFF_RATIO * smooth.max()
-    peaks = []
-    for i in range(1, n - 1):
-        if smooth[i] >= cut and smooth[i] >= smooth[i - 1] and smooth[i] > smooth[i + 1]:
-            lo, up = max(0, i - CENTROID_HALF_PX), min(n, i + CENTROID_HALF_PX + 1)
-            wts = profile[lo:up]
-            if wts.sum() <= 0:
+    # comb search: the (period, offset) whose lattice collects the most darkness
+    best, best_score = None, -1.0
+    for period in np.arange(guess - COMB_PERIOD_RANGE, guess + COMB_PERIOD_RANGE + COMB_PERIOD_STEP, COMB_PERIOD_STEP):
+        for offset in np.arange(0, period, 1.0 / COMB_OFFSET_STEPS_PER_PX):
+            score = _comb_score(smooth, float(period), float(offset))
+            if score > best_score:
+                best, best_score = (float(period), float(offset)), score
+    period, offset = best
+    # refine on the dips themselves
+    for _ in range(FIT_ITERATIONS):
+        ks, xs = [], []
+        for pos in _positions(period, offset, n):
+            c = int(round(pos))
+            lo, up = max(0, c - MATCH_HALF_PX), min(n, c + MATCH_HALF_PX + 1)
+            if up - lo < 2 or not defined[lo:up].any():
                 continue
-            peaks.append(float((np.arange(lo, up) * wts).sum() / wts.sum()))
-    if len(peaks) < MIN_LINES:
-        return None
-    peaks = np.sort(np.array(peaks))
-    period = float(best)
-    a = None
-    for _ in range(PERIOD_FIT_ITERATIONS):
-        # cumulative integer index from successive gaps (tolerates a rough period)
-        k = np.concatenate([[0.0], np.cumsum(np.maximum(1.0, np.round(np.diff(peaks) / period)))])
-        design = np.vstack([np.ones_like(k), k]).T
-        (a, period), *_ = np.linalg.lstsq(design, peaks, rcond=None)
-        keep = np.abs(peaks - (a + period * k)) < FIT_RESIDUAL_PX
+            seg_p = prof[lo:up]
+            j = lo + int(np.argmax(seg_p))
+            if prof[j] < MIN_PEAK_DARKNESS:
+                continue
+            a, b = max(0, j - CENTROID_HALF_PX), min(n, j + CENTROID_HALF_PX + 1)
+            wts = prof[a:b]
+            ks.append(round((pos - offset) / period))
+            xs.append(float((np.arange(a, b) * wts).sum() / wts.sum()))
+        if len(ks) < MIN_LINES:
+            return None
+        ks, xs = np.array(ks, dtype=float), np.array(xs)
+        (offset, period), *_ = np.linalg.lstsq(np.vstack([np.ones_like(ks), ks]).T, xs, rcond=None)
+        keep = np.abs(xs - (offset + period * ks)) < FIT_RESIDUAL_PX
         if keep.sum() < MIN_LINES:
             return None
-        peaks = peaks[keep]
+        (offset, period), *_ = np.linalg.lstsq(np.vstack([np.ones(keep.sum()), ks[keep]]).T, xs[keep], rcond=None)
     if not (MIN_PERIOD_PX <= period <= MAX_PERIOD_PX):
         return None
-    return float(period), float(a)
+    # coverage: most predictable lattice lines must really show a dip
+    predictable = hit = 0
+    for pos in _positions(period, offset, n):
+        c = int(round(pos))
+        lo, up = max(0, c - MATCH_HALF_PX), min(n, c + MATCH_HALF_PX + 1)
+        if up <= lo or not defined[lo:up].any():
+            continue
+        predictable += 1
+        hit += int(prof[lo:up].max() >= MIN_PEAK_DARKNESS)
+    if predictable < MIN_LINES or hit < MIN_COVERAGE * predictable:
+        return None
+    return float(period), float(offset)
 
 
-def _lattice_positions(period: float, offset: float, n: int):
-    k0 = int(np.floor(-offset / period)) - 1
-    k1 = int(np.ceil((n - offset) / period)) + 1
-    return [offset + k * period for k in range(k0, k1 + 1)
-            if -LATTICE_EDGE_SLACK_PX <= offset + k * period <= n]
+def _line_extents(dark: np.ndarray, defined: np.ndarray, period: float, offset: float, n: int):
+    """[(lo, hi, core)] column extent (inclusive) and core darkness of every lattice line."""
+    max_half = max(EXTENT_MAX_MIN_PX, int(round(EXTENT_MAX_FRAC * period)))
+    found, halves, cores = [], [], []
+    for pos in _positions(period, offset, n):
+        c = int(round(pos))
+        lo_s, up_s = max(0, c - MATCH_HALF_PX), min(n, c + MATCH_HALF_PX + 1)
+        if up_s > lo_s and defined[lo_s:up_s].any() and dark[lo_s:up_s].max() >= MIN_PEAK_DARKNESS:
+            j = lo_s + int(np.argmax(dark[lo_s:up_s]))
+            lo = hi = j
+            while lo > 0 and j - lo < max_half and dark[lo - 1] >= EXTENT_MIN_DARKNESS:
+                lo -= 1
+            while hi < n - 1 and hi - j < max_half and dark[hi + 1] >= EXTENT_MIN_DARKNESS:
+                hi += 1
+            found.append((pos, lo, hi, float(dark[j])))
+            halves.append(max(j - lo, hi - j))
+            cores.append(float(dark[j]))
+        else:
+            found.append((pos, None, None, None))
+    half = int(np.median(halves)) if halves else DEFAULT_HALF_WIDTH_PX
+    core_default = max(cores) if cores else MIN_PEAK_DARKNESS   # unseen lines may be major (darkest) ones
+    out = []
+    for pos, lo, hi, core in found:
+        if lo is None:
+            c = int(round(pos))
+            lo, hi, core = c - half, c + half, core_default
+        if lo - 1 >= 0 and hi + 1 <= n - 1:
+            out.append((lo, hi, core))
+    return out
 
 
+# -- masking ----------------------------------------------------------------------------
 def _protect_features(gray: np.ndarray) -> np.ndarray:
     """Pixels near a strongly dark feature (outline, arrow, text): never touched."""
     g8 = np.clip(gray, 0, GRAY_MAX).astype(np.uint8)
@@ -186,34 +329,82 @@ def _keep_long_runs(mask: np.ndarray, min_run: int) -> np.ndarray:
     return cv2.dilate(cv2.erode(m8, kernel), kernel).astype(bool)
 
 
-def _axis_mask(gray: np.ndarray, protect: np.ndarray, spread: np.ndarray):
+def _rolling_median(a: np.ndarray, window: int) -> np.ndarray:
+    """Rolling median down axis 0 (edge-padded), same shape as ``a``."""
+    pad = window // 2
+    padded = np.pad(a, ((pad, pad), (0, 0)), mode="edge")
+    view = np.lib.stride_tricks.sliding_window_view(padded, window, axis=0)
+    return np.median(view, axis=-1)
+
+
+def _line_mask(color, gray, spread, protect, lo, hi, core, cross_rows, level, prof_dark):
+    """(mask, bridgeable): boolean (H, hi-lo+1) arrays for the line occupying columns lo..hi:
+    grid pixels, and pixels a short gap-bridge may repaint (unprotected, not too different).
+    ``color`` is the float (H, W, C) image, ``gray``/``spread`` its grey and channel spread.
+    ``cross_rows`` (H,) marks rows that lie on a line of the OTHER axis: at those
+    crossing nodes the deviation is naturally different from the rest of the line, so
+    the along-line consistency test is waived there."""
+    left, right = gray[:, lo - 1], gray[:, hi + 1]
+    t = (np.arange(lo, hi + 1) - (lo - 1)) / float(hi + 1 - (lo - 1))
+
+    # --- page background: the line is DARKER than the interpolated flanks
+    expected = left[:, None] + (right - left)[:, None] * t[None, :]
+    darken = expected - gray[:, lo:hi + 1]
+    neutral = ((spread[:, lo - 1] <= NEUTRAL_SPREAD) & (spread[:, hi + 1] <= NEUTRAL_SPREAD))[:, None] \
+        & (spread[:, lo:hi + 1] <= NEUTRAL_SPREAD)
+    cap_bg = max(LINE_LIMIT_RATIO * core, core + LINE_LIMIT_ADD)
+    bg = neutral & (np.abs(left - right)[:, None] <= FLANK_TOL) & (darken >= MIN_DARKEN) & (darken <= cap_bg) \
+        & ((np.abs(expected - level) <= BG_LEVEL_TOL) | cross_rows[:, None])
+    # flanks spoiled by a nearby outline: accept a neutral pixel that matches the line's
+    # own cross-section value (page level - profile darkness) at this column
+    cross = level - prof_dark[lo:hi + 1][None, :]
+    on_profile = (spread[:, lo:hi + 1] <= NEUTRAL_SPREAD) & (np.abs(gray[:, lo:hi + 1] - cross) <= PROFILE_MATCH_TOL) \
+        & ((level - gray[:, lo:hi + 1]) >= MIN_DARKEN)
+    bg = bg | on_profile
+
+    # --- through the heat map: the grid is a semi-transparent grey overlay, so the
+    # pixel differs from the interpolated flanks in COLOUR (it can be lighter or
+    # darker per channel); use the largest per-channel deviation.
+    cl, cr = color[:, lo - 1, :], color[:, hi + 1, :]
+    exp_c = cl[:, None, :] + (cr - cl)[:, None, :] * t[None, :, None]
+    diff = exp_c - color[:, lo:hi + 1, :]
+    dev = np.abs(diff).max(axis=2)
+    flank_gap = np.abs(cl - cr).max(axis=1)[:, None]
+    roll = np.stack([_rolling_median(np.where(neutral, 0.0, diff[:, :, ch]), HEAT_ROLL_PX)
+                     for ch in range(diff.shape[2])], axis=2)
+    consistent = (np.abs(diff - roll).max(axis=2) <= HEAT_CONSISTENCY) | cross_rows[:, None]
+    heat = (~neutral) & (flank_gap <= HEAT_FLANK_TOL) & (dev >= HEAT_MIN_DEVIATION) \
+        & (dev <= HEAT_MAX_DEVIATION) & consistent
+    ok = ~protect[:, lo:hi + 1]
+    return (bg | heat) & ok, ok & (dev <= GAP_MAX_DEVIATION) & (darken <= GAP_MAX_DARKEN)
+
+
+def _axis_mask(color: np.ndarray, gray: np.ndarray, protect: np.ndarray, spread: np.ndarray,
+               cross_rows: np.ndarray | None = None):
     """Boolean mask of grid pixels for VERTICAL lines + lattice info, or (None, None)."""
-    cand = _axis_candidates(gray, spread)
-    lat = _fit_lattice(cand.mean(axis=0))
+    w = gray.shape[1]
+    dark, defined, level_row = _background_profile(gray, spread)
+    level = float(level_row[0])
+    lat = _fit_lattice(dark, defined > 0)
     if lat is None:
         return None, None
     period, offset = lat
-    w = gray.shape[1]
-    positions = _lattice_positions(period, offset, w)
-    band = np.zeros(w, dtype=bool)
-    for p in positions:
-        lo = int(np.floor(p - BAND_PX))
-        hi = int(np.ceil(p + BAND_PX))
-        band[max(lo, 0):min(hi, w - 1) + 1] = True
-    mask = cand & band[None, :] & ~protect
+    if cross_rows is None:
+        cross_rows = np.zeros(gray.shape[0], dtype=bool)
+    mask = np.zeros(gray.shape, dtype=bool)
+    bridgeable = np.zeros(gray.shape, dtype=bool)
+    lines = _line_extents(dark, defined > 0, period, offset, w)
+    for lo, hi, core in lines:
+        m, b = _line_mask(color, gray, spread, protect, lo, hi, core, cross_rows, level, dark)
+        mask[:, lo:hi + 1] |= m
+        bridgeable[:, lo:hi + 1] |= b
     mask = _keep_long_runs(mask, MIN_RUN_PX)
-    if mask.any():
-        dark = _darkening(gray)
-        for p in positions:
-            lo = max(int(np.floor(p - BAND_PX)), 0)
-            hi = min(int(np.ceil(p + BAND_PX)), w - 1) + 1
-            sub = mask[:, lo:hi]
-            if not sub.any():
-                continue
-            core = float(np.percentile(dark[:, lo:hi][sub], LINE_CORE_PERCENTILE))
-            lim = max(LINE_LIMIT_RATIO * core, core + LINE_LIMIT_ADD)
-            mask[:, lo:hi] = sub & (dark[:, lo:hi] <= lim)
-    return mask, {INFO_PERIOD: period, INFO_OFFSET: offset}
+    # bridge the short gaps where a contour line / dark edge crosses a grid line (they
+    # would otherwise leave a dot), but never through protected features
+    gap_kernel = np.ones((GAP_CLOSE_PX, 1), np.uint8)
+    closed = cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_CLOSE, gap_kernel).astype(bool)
+    mask = mask | (closed & bridgeable)
+    return mask, {INFO_PERIOD: period, INFO_OFFSET: offset, INFO_LINES: [(lo, hi) for lo, hi, _ in lines]}
 
 
 def _fill_rows(img: np.ndarray, mask: np.ndarray) -> np.ndarray:
@@ -246,6 +437,17 @@ def _fill_rows(img: np.ndarray, mask: np.ndarray) -> np.ndarray:
     return out
 
 
+def _crossing_rows(gray: np.ndarray, spread: np.ndarray) -> np.ndarray:
+    """(H,) bool: rows occupied by a horizontal grid line (detected on the raw image)."""
+    rows = np.zeros(gray.shape[0], dtype=bool)
+    dark, defined, _ = _background_profile(gray.T, spread.T)
+    lat = _fit_lattice(dark, defined > 0)
+    if lat is not None:
+        for lo, hi, _ in _line_extents(dark, defined > 0, lat[0], lat[1], gray.shape[0]):
+            rows[lo:hi + 1] = True
+    return rows
+
+
 def _gray_spread(work: np.ndarray):
     f = work.astype(np.float32)
     if f.ndim == 3:
@@ -262,7 +464,7 @@ def degrid(img: np.ndarray, return_info: bool = False):
 
     Returns the cleaned image (a copy), or the INPUT UNCHANGED (same object) when
     no grid lattice is found on both axes.  With ``return_info`` returns
-    ``(img, info)``; info = {found, x:{period,offset}|None, y:{...}|None, masked_px}.
+    ``(img, info)``; info = {found, x:{period,offset,lines}|None, y:{...}|None, masked_px}.
     """
     info = {INFO_FOUND: False, INFO_X: None, INFO_Y: None, INFO_MASKED: 0}
 
@@ -276,17 +478,21 @@ def degrid(img: np.ndarray, return_info: bool = False):
     protect = _protect_features(gray)
 
     # pass 1: vertical lines on the original
-    mx, ix = _axis_mask(gray, protect, spread)
+    work_f = work.astype(np.float32)
+    cross_rows = _crossing_rows(gray, spread)
+    mx, ix = _axis_mask(work_f if work_f.ndim == 3 else work_f[:, :, None], gray, protect, spread, cross_rows)
     if mx is None:
         return _ret(img)
-    after_v = _fill_rows(work.astype(np.float32), mx)
+    after_v = _fill_rows(work_f, mx)
 
     # pass 2: horizontal lines on the vertically-cleaned image (transposed)
     gray2, spread2 = _gray_spread(np.clip(after_v + ROUND_HALF, 0, GRAY_MAX).astype(np.uint8))
-    my_t, iy = _axis_mask(_transpose(gray2), _transpose(protect), _transpose(spread2))
+    after_t = _transpose(after_v)
+    my_t, iy = _axis_mask(after_t if after_t.ndim == 3 else after_t[:, :, None],
+                          _transpose(gray2), _transpose(protect), _transpose(spread2))
     if my_t is None:
         return _ret(img)
-    out = _transpose(_fill_rows(_transpose(after_v), my_t))
+    out = _transpose(_fill_rows(after_t, my_t))
 
     fixed = np.clip(out + ROUND_HALF, 0, GRAY_MAX).astype(np.uint8)
     result = img.copy()
@@ -301,8 +507,9 @@ def degrid(img: np.ndarray, return_info: bool = False):
 
 def degrid_file(src_path: str, dst_path: str | None = None) -> dict:
     """Read ``src_path`` and write the degridded copy to ``dst_path`` (default:
-    ``degridded_path(src_path)``).  The original is never modified; if no grid is
-    found nothing is written.  Returns the info dict plus ``written``."""
+    ``degridded_path(src_path)``), stamped with DEGRID_ALGO_VERSION.  The original is
+    never modified; if no grid is found nothing is written.  Returns the info dict
+    plus ``written``."""
     dst_path = dst_path or degridded_path(src_path)
     img = cv2.imread(src_path, cv2.IMREAD_UNCHANGED)
     if img is None:
@@ -310,6 +517,9 @@ def degrid_file(src_path: str, dst_path: str | None = None) -> dict:
     cleaned, info = degrid(img, return_info=True)
     info[INFO_WRITTEN] = False
     if info[INFO_FOUND]:
-        cv2.imwrite(dst_path, cleaned)
-        info[INFO_WRITTEN] = True
+        ok, buf = cv2.imencode(DEGRID_EXT, cleaned)
+        if ok:
+            with open(dst_path, "wb") as fh:
+                fh.write(_stamp_png(buf.tobytes(), DEGRID_ALGO_VERSION))
+            info[INFO_WRITTEN] = True
     return info

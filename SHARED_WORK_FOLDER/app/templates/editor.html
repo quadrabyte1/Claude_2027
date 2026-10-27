@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{# Boundary Editor v5.70 — Named-constants refactor (CLAUDE.md Coding Standard), no behavior change: every tunable, color, size, threshold, API URL, storage key, mode name and repeated UI string now lives in one EDITOR CONSTANTS block at the top of the script (CSS custom properties for markup-only values); tests read the constants via tests/editor_constants.py. v5.69 — Create New Project: the heat-map PNG's baked-in background grid is erased for display (server-side heatmap_degrid.py; cleaned copy saved next to the original, original untouched) with an Original/Degridded view toggle; boundary detection still runs on the original; Open Project is unaffected. v5.68 — Grid resolution switch (20x20 default / 40x40) next to the Grid mode switch; confirm dialog then erases all cell values; saved as EGM `gridResolution` (absent = 20); drawing, hit-testing, overlays and the server TPS/controlling-cell code honour it. v5.21 — Default tee-hole position moved to (40, 40) mm (was 30, 30); saved positions untouched. v5.20 — Grid cell value labels are plain black (delta) with no white outline; absolute keeps orange. v5.19 — Ctrl+Option(Alt)+drag selects cells along the drag path (visit order); popup has first/last boxes, Tab/Enter from the last box spreads first->last linearly (0.1 mm precision). v5.18 — Grid cell value labels/tooltip no longer show a leading '+' on positives (negatives keep '-'). v5.17 — Geo-ref setup dialog removed (orphaned after the GPS panel ⚙ opener was removed); courseGeoRef data still loads/saves untouched. v5.16 — GPS controls removed from the UI (JS state/load/save kept so any EGM gpsBackend block still round-trips). v5.15 — Mouse wheel steps the open grid value box (0.1 mm, Shift = 1.0; no clamp; commit still Enter/Tab). v5.14 — Grid cells colored by value (matplotlib 'terrain', auto-scaled; view-only toggle in localStorage). v5.13 — Only cells FULLY inside a bunker can control it (partial cells ignored). v5.12 — Ring now in delta AND absolute (not off); delta = default + highest cell (was mean). v5.11 — Absolute mode: red ring around the grid cell(s) that control each trap's height (server-computed, mirrors generator). v5.10 — Grid value 0 = empty cell (deleted on commit, dropped on load). Grid lines recolored to indigo; Cmd+drag multi-cell selection with shared-value edit (task 726) #}
+{# Boundary Editor v5.82 — Bunkers are now carved from the finished fringe: set cells FULLY inside a bunker belong to that bunker only (the fringe is built without them; partly-inside cells still shape the fringe); the bunker floor is the fringe surface minus 1 mm, and its fully-inside cells shape it smoothly (delta = offsets, absolute = floor height in mm) with the rim always 1 mm below the fringe; a bunker with no set cells stays flat. The red controlling-cell ring overlay and its server route are removed. v5.81 — Fix: the canvas could be sized from a container width measured before the paint palette laid out (palette shows/hides with Grid mode), leaving it wider than its frame so the right edge of the image/polygons was clipped; the canvas now re-measures via a ResizeObserver whenever its container width changes. v5.80 — Removed the -15/+15 colour legend gradient next to "Color cells by height" (the left palette shows the scale) and the "N cells set" badge from the Grid row. A 0 painted with the paint-mode BRUSH is now a REAL value: stored in gridCellHeights (key present = set; explicit 0), drawn with its normal scale colour (delta: the pale-yellow midpoint) and labelled 0.0, kept on reload, and used by the generator like any set cell (TPS constraint, trap controlling cell). The Eraser empties a cell; typing 0 in the value box, right-click and Delete still empty it; undo restores empty vs explicit 0 exactly. Old EGMs (never stored zeros) are unaffected. v5.79 — Below-canvas controls reorganised into labelled groups (Project / Shapes / Image / Output on one row with Generate at the right end; Grid row: mode, resolution, Paint, Undo, colour-by-height) with consistent 32px controls and segmented switches; Remove T Hole gets a subtle danger style; Undo moved from the top bar into the Grid group; the tee-hole Side Left/Right picker (and its dead setTeeHoleSide / teeHoleSide / TEE_SIDE_* code) removed — drag the marker instead. Layout and styling only. v5.78 — Cell value labels scale with the actual cell pixel width on the 40x40 grid (clamped min/max; 20x20 unchanged) so labels like -12.5 fit one cell; with "Color cells by height" on, empty cells (0 / unset) are left uncoloured — only set, non-zero cells get a fill. v5.77 — Paint mode: left-margin colour palette (31 swatches on the fixed v5.76 scale + Eraser; delta +15..-15, absolute 30..0), Paint button / B key / swatch click to enter, Esc / B / button / Grid Off to exit; mouse-down + drag paints cells (interpolated along the drag, 20x20 and 40x40) with a brush-tinted paintbrush cursor (eraser has its own); one stroke = one undo step; undo is now ONE chronological history (max 50 grid steps) shared by grid edits and polygon/contour edits, so polygon edits no longer wipe grid undo. v5.76 — Cell colours use a FIXED scale (colormap matplotlib RdYlBu_r, blue low -> red high): delta -15..+15 mm, absolute 0..30 mm on the same colours; values outside clamp to the end colours; legend shows the fixed ends; auto-scaling (and the 400-cell rule) removed. v5.75 — Generate stops with a clear message when a required Python package (e.g. triangle) is missing instead of producing a degraded model. v5.70 — Named-constants refactor (CLAUDE.md Coding Standard), no behavior change: every tunable, color, size, threshold, API URL, storage key, mode name and repeated UI string now lives in one EDITOR CONSTANTS block at the top of the script (CSS custom properties for markup-only values); tests read the constants via tests/editor_constants.py. v5.69 — Create New Project: the heat-map PNG's baked-in background grid is erased for display (server-side heatmap_degrid.py; cleaned copy saved next to the original, original untouched) with an Original/Degridded view toggle; boundary detection still runs on the original; Open Project is unaffected. v5.68 — Grid resolution switch (20x20 default / 40x40) next to the Grid mode switch; confirm dialog then erases all cell values; saved as EGM `gridResolution` (absent = 20); drawing, hit-testing, overlays and the server TPS/controlling-cell code honour it. v5.21 — Default tee-hole position moved to (40, 40) mm (was 30, 30); saved positions untouched. v5.20 — Grid cell value labels are plain black (delta) with no white outline; absolute keeps orange. v5.19 — Ctrl+Option(Alt)+drag selects cells along the drag path (visit order); popup has first/last boxes, Tab/Enter from the last box spreads first->last linearly (0.1 mm precision). v5.18 — Grid cell value labels/tooltip no longer show a leading '+' on positives (negatives keep '-'). v5.17 — Geo-ref setup dialog removed (orphaned after the GPS panel ⚙ opener was removed); courseGeoRef data still loads/saves untouched. v5.16 — GPS controls removed from the UI (JS state/load/save kept so any EGM gpsBackend block still round-trips). v5.15 — Mouse wheel steps the open grid value box (0.1 mm, Shift = 1.0; no clamp; commit still Enter/Tab). v5.14 — Grid cells colored by value (matplotlib 'terrain', auto-scaled; view-only toggle in localStorage). v5.13 — Only cells FULLY inside a bunker can control it (partial cells ignored). v5.12 — Ring now in delta AND absolute (not off); delta = default + highest cell (was mean). v5.11 — Absolute mode: red ring around the grid cell(s) that control each trap's height (server-computed, mirrors generator). v5.10 — Grid value 0 = empty cell (deleted on commit, dropped on load). Grid lines recolored to indigo; Cmd+drag multi-cell selection with shared-value edit (task 726) #}
 {% block title %}Boundary Editor — AI Team Workspace{% endblock %}
 {% block content_width %}max-w-6xl{% endblock %}
 {% block content %}
@@ -14,7 +14,37 @@
     --editor-canvas-min-height: 400px;
     --editor-teehole-color: #D94F1F;
     --editor-teehole-fill: rgba(255,255,255,0.55);
+    --editor-shape-trap: #EF4444;
+    --editor-shape-water: #EAB308;
+    --editor-ctl-h: 2rem;
+    --editor-ctl-border: #E5E7EB;
+    --editor-ctl-text: #37352F;
+    --editor-ctl-hover: #F3F4F6;
+    --editor-ctl-indigo: #4F46E5;
+    --editor-ctl-orange: #F97316;
+    --editor-ctl-gray: #4B5563;
+    --editor-ctl-danger: #BE123C;
+    --editor-ctl-danger-bg: #FFF1F2;
+    --editor-ctl-danger-border: #FDA4AF;
   }
+  /* v5.79 — below-canvas control bar */
+  .eb-group { display:flex; flex-direction:column; gap:0.25rem; }
+  .eb-cap { font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; color:#9B9A97; line-height:1; }
+  .eb-btn { display:inline-flex; align-items:center; justify-content:center; gap:0.4rem; height:var(--editor-ctl-h);
+            padding:0 0.75rem; font-size:0.8125rem; font-weight:500; white-space:nowrap; border-radius:0.375rem;
+            border:1px solid var(--editor-ctl-border); background:#fff; color:var(--editor-ctl-text); transition:all 150ms ease-in-out; }
+  .eb-btn:hover:not(:disabled) { background:var(--editor-ctl-hover); }
+  .eb-btn:disabled { opacity:0.4; cursor:not-allowed; }
+  .eb-btn.eb-btn-danger { color:var(--editor-ctl-danger); background:var(--editor-ctl-danger-bg); border-color:var(--editor-ctl-danger-border); }
+  .eb-btn.eb-btn-danger:hover:not(:disabled) { background:#FFE4E6; }
+  .eb-dot { width:0.5rem; height:0.5rem; border-radius:9999px; flex:none; }
+  .eb-seg { display:inline-flex; height:var(--editor-ctl-h); border:1px solid var(--editor-ctl-border); border-radius:0.375rem; overflow:hidden; background:#fff; }
+  .eb-seg-btn { padding:0 0.75rem; font-size:0.8125rem; font-weight:500; white-space:nowrap; color:var(--editor-ctl-text); background:#fff; transition:all 150ms ease-in-out; }
+  .eb-seg-btn + .eb-seg-btn { border-left:1px solid var(--editor-ctl-border); }
+  .eb-seg-btn:hover { background:var(--editor-ctl-hover); }
+  .eb-seg-on-indigo, .eb-seg-on-indigo:hover, .eb-btn.eb-seg-on-indigo:hover:not(:disabled) { background:var(--editor-ctl-indigo); color:#fff; border-color:var(--editor-ctl-indigo); }
+  .eb-seg-on-orange, .eb-seg-on-orange:hover { background:var(--editor-ctl-orange); color:#fff; }
+  .eb-seg-on-gray, .eb-seg-on-gray:hover { background:var(--editor-ctl-gray); color:#fff; }
 </style>
 
 <div x-data="polygonEditor()" x-init="init()" class="space-y-4 pb-16" @keydown.window="handleKey($event)">
@@ -33,13 +63,6 @@
             title="Start a new hole project from a source image (course, hole number, image)."
             class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md bg-notion-accent hover:bg-blue-600 text-white transition-default">
       New Project
-    </button>
-
-    <button @click="gridUndo()" :disabled="!_gridUndo"
-            data-testid="grid-undo-btn"
-            :title="_gridUndo ? ('Undo ' + _gridUndo.label + ' (Cmd+Z)') : 'Nothing to undo (grid cell edits)'"
-            class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md bg-white border border-notion-border hover:bg-notion-hover text-notion-text transition-default disabled:opacity-40 disabled:cursor-not-allowed">
-      Undo
     </button>
 
     <button @click="openProjectDialog()"
@@ -359,8 +382,35 @@
   </div>
   {# /open dialog #}
 
+  {# ── Palette + canvas row ─────────────────────────────────── #}
+  <div class="flex items-start gap-2">
+
+  {# ── Paint palette (v5.77): vertical strip in the LEFT margin.  31 swatches (top = highest value) from the fixed
+     cell-colour scale + Eraser.  Labels: delta +15..-15, absolute 30..0.  Hidden when Grid is Off.  Sticky so it
+     stays on screen while the page scrolls; swatch height scales with the viewport so everything fits. #}
+  <div x-show="paletteVisible" x-cloak data-testid="paint-palette"
+       class="shrink-0 sticky top-2 self-start flex flex-col select-none bg-white border border-notion-border rounded-lg p-1 shadow-sm"
+       :style="'font-size:' + PALETTE_LABEL_FONT_PX + 'px;'">
+    <template x-for="step in paletteSteps()" :key="step">
+      <button type="button" data-testid="palette-swatch" :data-step="step"
+              @click="selectBrush(step)"
+              :title="paletteLabel(step, gridMode) + ' mm'"
+              class="flex items-center gap-1 rounded-sm px-0.5 leading-none"
+              :style="'height:' + paletteSwatchPx + 'px;' + (paintBrush === step ? 'outline:2px solid ' + COLOR_PALETTE_SELECTED + ';outline-offset:0;background:#eef2ff;' : '')">
+        <span class="block rounded-sm border border-black/20" data-testid="palette-color"
+              :style="'width:' + PALETTE_SWATCH_WIDTH_PX + 'px;height:100%;background:' + paletteColor(step)"></span>
+        <span class="tabular-nums text-notion-text w-6 text-right" x-text="paletteLabel(step, gridMode)"></span>
+      </button>
+    </template>
+    <button type="button" data-testid="palette-eraser"
+            @click="selectBrush(PAINT_BRUSH_ERASER)"
+            :title="TIP_PALETTE_ERASER"
+            class="mt-1 flex items-center justify-center rounded-sm border border-notion-border font-medium text-notion-text"
+            :style="'height:' + (paletteSwatchPx + PALETTE_ERASER_ROW_EXTRA_PX) + 'px;background:' + COLOR_PALETTE_ERASER_BG + ';' + (paintBrush === PAINT_BRUSH_ERASER ? 'outline:2px solid ' + COLOR_PALETTE_SELECTED + ';' : '')">Eraser</button>
+  </div>
+
   {# ── Canvas ─────────────────────────────────────────────── #}
-  <div class="border border-notion-border rounded-lg overflow-hidden bg-gray-100 relative" style="min-height:var(--editor-canvas-min-height);">
+  <div class="flex-1 min-w-0 border border-notion-border rounded-lg overflow-hidden bg-gray-100 relative" style="min-height:var(--editor-canvas-min-height);">
     <canvas x-ref="canvas"
             @mousedown="onMouseDown($event)"
             @mousemove="onMouseMove($event)"
@@ -381,7 +431,7 @@
        computed from mm on the fly (see teeHoleImgPx()). #}
     <template x-if="teeHole && imgLoaded">
       <div class="absolute select-grab active:cursor-grabbing"
-           :style="(() => { const p = teeHoleImgPx(); const sz = (TEE_HOLE_MARKER_MM * (imgW && printSizeMm ? Math.max(imgW, imgH) / printSizeMm : 1)) * scale; return `left:${p.x * scale + offsetX}px; top:${p.y * scale + offsetY}px; width:${sz}px; height:${sz}px; transform:translate(-50%,-50%); z-index:var(--editor-z-teehole);`; })()"
+           :style="(() => { const p = teeHoleImgPx(); const sz = (TEE_HOLE_MARKER_MM * (imgW && printSizeMm ? Math.max(imgW, imgH) / printSizeMm : 1)) * scale; return `left:${p.x * scale + offsetX}px; top:${p.y * scale + offsetY}px; width:${sz}px; height:${sz}px; transform:translate(-50%,-50%); z-index:var(--editor-z-teehole);${paintMode ? 'pointer-events:none;' : ''}`; })()"
            @pointerdown="teeHolePointerDown($event)"
            title="Tee hole — drag to reposition. Stored in mm from print top-left.">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
@@ -471,169 +521,188 @@
          x-text="_gridHoveredCell ? (gridCellHeights[_gridHoveredCell.idx] + (gridMode === GRID_MODE_ABSOLUTE ? GRID_HOVER_SUFFIX_ABSOLUTE : GRID_HOVER_SUFFIX_DELTA)) : ''">
     </div>
   </div>
+  </div>{# /palette + canvas row #}
 
-  {# ── Below-canvas action row ─────────────────────────────── #}
-  <div class="flex items-center gap-3 flex-nowrap overflow-x-auto">
-    <button @click="generateSTL()"
-            :disabled="!(polygons.length > 0 && courseName && holeName) || generating"
-            :class="(polygons.length > 0 && courseName && holeName) && !generating ? 'bg-teal-600 hover:bg-teal-700' : 'bg-teal-600/40 cursor-not-allowed'"
-            class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md text-white transition-default"
-            :title="'Run the render pipeline for this hole and produce a 3MF (and STL) output file. Typically takes ' + GENERATE_ETA_TEXT + '.'">
-      <svg x-show="generating" xmlns="http://www.w3.org/2000/svg" class="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-        <path d="M12 3a9 9 0 1 0 9 9" />
-      </svg>
-      <span x-text="generating ? ('Generating… ' + generatingElapsed + 's') : 'Generate'"></span>
-    </button>
+  {# ── Below-canvas control bar (v5.79) ─────────────────────────────────────
+     Labelled groups, consistent 32px controls, segmented switches.  Layout/styling only — every
+     binding, testid, tooltip and handler is unchanged.
+       Row 1: Project | Shapes | Image | Output (Generate, right end)
+       Row 2: Grid (mode, resolution, Paint, Undo, colour-by-height)
+       Row 3: status flash (only while a message is showing) #}
+  <div data-testid="below-canvas-bar"
+       class="bg-white border border-notion-border rounded-lg px-4 py-3 space-y-3">
 
-    <label class="inline-flex items-center gap-1.5 text-sm text-notion-text cursor-pointer select-none">
-      <input type="checkbox" x-model="openInSlicer" class="rounded border-notion-border">
-      Open in default slicer
-    </label>
+    <div class="flex flex-wrap items-end gap-x-6 gap-y-3">
 
-    <button @click="addTrap()"
-            :disabled="!imgLoaded"
-            :class="imgLoaded ? 'bg-amber-500 hover:bg-amber-600' : 'bg-amber-500/40 cursor-not-allowed'"
-            class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md text-white transition-default"
-            title="Add a new sand-trap polygon (red) to the canvas — drag its vertices to shape it.">
-      Add Trap
-    </button>
+      {# ── Project ── #}
+      <div x-show="courseName && holeName" class="eb-group min-w-0">
+        <span class="eb-cap">Project</span>
+        <div class="flex items-center gap-2 h-8 min-w-0">
+          <span class="text-sm text-notion-text font-medium truncate max-w-[16rem]"
+                :title="courseName + ' — Hole ' + holeName"
+                x-text="courseName + ' — Hole ' + holeName"></span>
+          <!-- v4.48 — unsaved-changes badge, shows when autoSave() was blocked by a guard -->
+          <span x-show="_pendingAutoSave" x-transition
+                title="A change is queued and will save automatically once the image finishes loading."
+                class="shrink-0 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+            unsaved
+          </span>
+        </div>
+      </div>
 
-    <button @click="addWater()"
-            :disabled="!imgLoaded"
-            :class="imgLoaded ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-yellow-500/40 cursor-not-allowed'"
-            class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md text-white transition-default"
-            title="Add a new water polygon (yellow) to the canvas — drag its vertices to shape it.">
-      Add Water
-    </button>
+      {# ── Shapes ── #}
+      <div class="eb-group">
+        <span class="eb-cap">Shapes</span>
+        <div class="flex items-center gap-2">
+          <button @click="addTrap()"
+                  :disabled="!imgLoaded"
+                  class="eb-btn"
+                  title="Add a new sand-trap polygon (red) to the canvas — drag its vertices to shape it.">
+            <span class="eb-dot" style="background:var(--editor-shape-trap)"></span>Add Trap
+          </button>
 
-    <button @click="toggleTeeHole()"
-            :disabled="!imgLoaded"
-            :class="!imgLoaded ? 'bg-rose-600/40 cursor-not-allowed' : (teeHole ? 'bg-rose-700 hover:bg-rose-800' : 'bg-rose-600 hover:bg-rose-700')"
-            class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md text-white transition-default"
-            :title="teeHole ? 'Remove the tee-hole marker from this hole.' : 'Add a tee-hole marker (default ' + TEE_HOLE_DEFAULT_X_MM + ' mm in from the top-left of the print bounds). Drag to reposition.'">
-      <span x-text="teeHole ? 'Remove T Hole' : 'Add T Hole'"></span>
-    </button>
+          <button @click="addWater()"
+                  :disabled="!imgLoaded"
+                  class="eb-btn"
+                  title="Add a new water polygon (yellow) to the canvas — drag its vertices to shape it.">
+            <span class="eb-dot" style="background:var(--editor-shape-water)"></span>Add Water
+          </button>
 
-    {# Side picker — only visible when the tee-hole marker exists. Mirrors the
-       x_mm around the print-center on toggle. Reflects the current side even
-       when the user drags across center (bind is via computed teeHoleSide). #}
-    <div x-show="teeHole" x-transition
-         class="inline-flex items-center gap-2 pl-1 pr-2 py-1 rounded-md border border-notion-border bg-stone-50/70">
-      <span class="text-xs text-notion-muted font-medium tracking-wide uppercase">Side</span>
-      <label class="inline-flex items-center gap-1 text-sm text-notion-text cursor-pointer select-none">
-        <input type="radio" name="tee-hole-side" value="left"
-               :checked="teeHoleSide === TEE_SIDE_LEFT"
-               @change="setTeeHoleSide(TEE_SIDE_LEFT)"
-               class="h-3.5 w-3.5 text-rose-600 border-notion-border focus:ring-rose-500 focus:ring-offset-0">
-        <span>Left</span>
-      </label>
-      <label class="inline-flex items-center gap-1 text-sm text-notion-text cursor-pointer select-none">
-        <input type="radio" name="tee-hole-side" value="right"
-               :checked="teeHoleSide === TEE_SIDE_RIGHT"
-               @change="setTeeHoleSide(TEE_SIDE_RIGHT)"
-               class="h-3.5 w-3.5 text-rose-600 border-notion-border focus:ring-rose-500 focus:ring-offset-0">
-        <span>Right</span>
-      </label>
+          <button @click="toggleTeeHole()"
+                  :disabled="!imgLoaded"
+                  :class="teeHole ? 'eb-btn-danger' : ''"
+                  class="eb-btn"
+                  :title="teeHole ? 'Remove the tee-hole marker from this hole.' : 'Add a tee-hole marker (default ' + TEE_HOLE_DEFAULT_X_MM + ' mm in from the top-left of the print bounds). Drag to reposition.'">
+            <span class="eb-dot" style="background:var(--editor-teehole-color)"></span>
+            <span x-text="teeHole ? 'Remove T Hole' : 'Add T Hole'"></span>
+          </button>
+        </div>
+      </div>
+
+      {# ── Image — Heat-map view toggle (v5.69): only after Create New Project found a baked-in grid ── #}
+      <div x-show="degridUrls" x-cloak data-testid="degrid-view-switch"
+           class="eb-group"
+           :title="DEGRID_TOGGLE_TIP">
+        <span class="eb-cap" x-text="DEGRID_LABEL_TITLE"></span>
+        <div class="eb-seg">
+          <button type="button" data-testid="degrid-view-original"
+                  @click="setImageView(DEGRID_VIEW_ORIGINAL)"
+                  :class="imageView === DEGRID_VIEW_ORIGINAL ? 'eb-seg-on-indigo' : ''"
+                  class="eb-seg-btn"
+                  x-text="DEGRID_LABEL_ORIGINAL"></button>
+          <button type="button" data-testid="degrid-view-clean"
+                  @click="setImageView(DEGRID_VIEW_CLEAN)"
+                  :class="imageView === DEGRID_VIEW_CLEAN ? 'eb-seg-on-indigo' : ''"
+                  class="eb-seg-btn"
+                  x-text="DEGRID_LABEL_CLEAN"></button>
+        </div>
+      </div>
+
+      {# ── Output — Generate is the primary action, kept at the right end ── #}
+      <div class="eb-group ml-auto">
+        <span class="eb-cap">Output</span>
+        <div class="flex items-center gap-3">
+          <label class="inline-flex items-center gap-1.5 text-xs text-notion-text cursor-pointer select-none whitespace-nowrap"
+                 title="After generation finishes, open the 3MF in the default slicer.">
+            <input type="checkbox" x-model="openInSlicer" class="rounded border-notion-border">
+            Open in default slicer
+          </label>
+          <button @click="generateSTL()"
+                  :disabled="!(polygons.length > 0 && courseName && holeName) || generating"
+                  :class="(polygons.length > 0 && courseName && holeName) && !generating ? 'bg-teal-600 hover:bg-teal-700' : 'bg-teal-600/40 cursor-not-allowed'"
+                  class="inline-flex items-center justify-center gap-1.5 h-8 text-sm font-semibold px-5 rounded-md text-white whitespace-nowrap shadow-sm transition-default"
+                  :title="'Run the render pipeline for this hole and produce a 3MF (and STL) output file. Typically takes ' + GENERATE_ETA_TEXT + '.'">
+            <svg x-show="generating" xmlns="http://www.w3.org/2000/svg" class="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+              <path d="M12 3a9 9 0 1 0 9 9" />
+            </svg>
+            <span x-text="generating ? ('Generating… ' + generatingElapsed + 's') : 'Generate'"></span>
+          </button>
+        </div>
+      </div>
     </div>
 
-    <span x-show="courseName && holeName" class="text-sm text-notion-text font-medium"
-          x-text="courseName + ' — Hole ' + holeName"></span>
+    {# ── Grid ── #}
+    <div class="flex flex-wrap items-end gap-x-6 gap-y-3 pt-3 border-t border-notion-border">
+      <div class="eb-group">
+        <span class="eb-cap">Grid mode</span>
+        {# Grid-mode 3-position switch (v5.34, task 774).  Delta = additive ±20 mm (indigo); Absolute = replaces Poisson default, 0–30 mm (orange); Off = overlays hidden, stored values preserved. #}
+        <div class="eb-seg" :title="GRID_TIP_SWITCH">
+          <button type="button"
+                  @click="gridMode = GRID_MODE_DELTA; autoSave(); draw();"
+                  :class="gridMode === GRID_MODE_DELTA ? 'eb-seg-on-indigo' : ''"
+                  class="eb-seg-btn"
+                  :title="GRID_TIP_BTN_DELTA">Delta</button>
+          <button type="button"
+                  @click="gridMode = GRID_MODE_ABSOLUTE; autoSave(); draw();"
+                  :class="gridMode === GRID_MODE_ABSOLUTE ? 'eb-seg-on-orange' : ''"
+                  class="eb-seg-btn"
+                  :title="GRID_TIP_BTN_ABSOLUTE">Absolute</button>
+          <button type="button"
+                  @click="gridMode = GRID_MODE_OFF; exitPaintMode(); autoSave(); draw();"
+                  :class="gridMode === GRID_MODE_OFF ? 'eb-seg-on-gray' : ''"
+                  class="eb-seg-btn"
+                  :title="GRID_TIP_BTN_OFF">Off</button>
+        </div>
+      </div>
 
-    <!-- v4.48 — unsaved-changes badge, shows when autoSave() was blocked by a guard -->
-    <span x-show="_pendingAutoSave" x-transition
-          title="A change is queued and will save automatically once the image finishes loading."
-          class="text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
-      unsaved
-    </span>
+      {# Grid resolution switch (v5.22) — 20x20 (default) / 40x40. Switching erases all cell values. #}
+      <div class="eb-group" data-testid="grid-resolution-switch"
+           title="Grid resolution (cells per side). Switching resolutions erases all grid cell values.">
+        <span class="eb-cap">Resolution</span>
+        <div class="eb-seg">
+          <button type="button" data-testid="grid-res-20"
+                  @click="setGridResolution(GRID_N_DEFAULT)"
+                  :class="gridN === GRID_N_DEFAULT ? 'eb-seg-on-indigo' : ''"
+                  class="eb-seg-btn"
+                  :title="GRID_TIP_RES_DEFAULT" x-text="GRID_LABEL_RES_DEFAULT"></button>
+          <button type="button" data-testid="grid-res-40"
+                  @click="setGridResolution(GRID_N_FINE)"
+                  :class="gridN === GRID_N_FINE ? 'eb-seg-on-indigo' : ''"
+                  class="eb-seg-btn"
+                  :title="GRID_TIP_RES_FINE" x-text="GRID_LABEL_RES_FINE"></button>
+        </div>
+      </div>
 
-    {# ── Grid cell elevation status strip (v5.00) — hidden when 0 set ── #}
-    <span x-show="Object.keys(gridCellHeights).length > 0"
-          x-text="Object.keys(gridCellHeights).length + ' cell' + (Object.keys(gridCellHeights).length === 1 ? '' : 's') + ' set'"
-          class="text-[11px] font-medium px-1.5 py-0.5 rounded border"
-          :class="gridMode === GRID_MODE_ABSOLUTE ? 'text-orange-700 bg-orange-50 border-orange-200'
-                 : gridMode === GRID_MODE_OFF      ? 'text-gray-600 bg-gray-100 border-gray-300'
-                 :                           'text-indigo-700 bg-indigo-50 border-indigo-200'"
-          :title="gridMode === GRID_MODE_ABSOLUTE ? GRID_TIP_STRIP_ABSOLUTE
-                 : gridMode === GRID_MODE_OFF      ? GRID_TIP_STRIP_OFF
-                 :                                   GRID_TIP_STRIP_DELTA">
-    </span>
+      <div class="eb-group">
+        <span class="eb-cap">Edit</span>
+        <div class="flex items-center gap-2">
+          {# Paint mode toggle (v5.77) — shown pressed while paint mode is on; B key does the same #}
+          <button type="button" data-testid="paint-btn"
+                  @click="togglePaintMode()"
+                  :aria-pressed="paintMode ? 'true' : 'false'"
+                  :class="paintMode ? 'eb-seg-on-indigo shadow-inner' : ''"
+                  class="eb-btn"
+                  :title="TIP_PAINT_BTN">Paint</button>
 
-    {# ── Grid-mode 3-position switch (v5.34, task 774) ───────────────────────
-       Delta  = legacy behavior (additive ±20 mm; indigo UI).
-       Absolute = value REPLACES Poisson default (0–30 mm; orange UI).
-       Off    = overlays hidden, overrides not applied; stored values preserved. #}
-    <div class="inline-flex items-center gap-1 pl-1.5 pr-1 py-0.5 rounded-md border border-notion-border bg-stone-50/70"
-         :title="GRID_TIP_SWITCH">
-      <span class="text-[10px] text-notion-muted font-semibold tracking-wide uppercase pr-0.5">Grid</span>
-      <button type="button"
-              @click="gridMode = GRID_MODE_DELTA; autoSave(); draw();"
-              :class="gridMode === GRID_MODE_DELTA ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white text-notion-text border-notion-border hover:bg-indigo-50'"
-              class="text-[11px] font-medium px-1.5 py-0.5 rounded border transition-default"
-              :title="GRID_TIP_BTN_DELTA">Delta</button>
-      <button type="button"
-              @click="gridMode = GRID_MODE_ABSOLUTE; autoSave(); draw();"
-              :class="gridMode === GRID_MODE_ABSOLUTE ? 'bg-orange-500 text-white border-orange-500 shadow-sm' : 'bg-white text-notion-text border-notion-border hover:bg-orange-50'"
-              class="text-[11px] font-medium px-1.5 py-0.5 rounded border transition-default"
-              :title="GRID_TIP_BTN_ABSOLUTE">Absolute</button>
-      <button type="button"
-              @click="gridMode = GRID_MODE_OFF; autoSave(); draw();"
-              :class="gridMode === GRID_MODE_OFF ? 'bg-gray-600 text-white border-gray-600 shadow-sm' : 'bg-white text-notion-text border-notion-border hover:bg-gray-100'"
-              class="text-[11px] font-medium px-1.5 py-0.5 rounded border transition-default"
-              :title="GRID_TIP_BTN_OFF">Off</button>
+          <button @click="undo()" :disabled="!canUndo()"
+                  data-testid="undo-btn"
+                  :title="undoTooltip()"
+                  class="eb-btn">
+            Undo
+          </button>
+        </div>
+      </div>
+
+      {# Cell-colour toggle (v5.14) — view preference only (localStorage), never saved to the EGM #}
+      <div class="eb-group">
+        <span class="eb-cap">View</span>
+        <div class="flex items-center gap-3 h-8">
+          <label class="inline-flex items-center gap-1.5 text-xs text-notion-text cursor-pointer select-none whitespace-nowrap"
+                 title="Tint each set grid cell by its value (fixed scale: delta -15 to +15 mm, absolute 0 to 30 mm); empty cells stay uncoloured (a brush-painted 0 is a real value and is coloured). View only — not saved in the EGM.">
+            <input type="checkbox" x-model="colorCellsByHeight" @change="setColorCells()" data-testid="color-cells-toggle">
+            Color cells by height
+          </label>
+        </div>
+      </div>
     </div>
 
-    {# ── Heat-map view toggle (v5.69) — only after Create New Project found a baked-in grid ── #}
-    <div x-show="degridUrls" x-cloak data-testid="degrid-view-switch"
-         class="inline-flex items-center gap-1 pl-1.5 pr-1 py-0.5 rounded-md border border-notion-border bg-stone-50/70"
-         :title="DEGRID_TOGGLE_TIP">
-      <span class="text-[10px] text-notion-muted font-semibold tracking-wide uppercase pr-0.5" x-text="DEGRID_LABEL_TITLE"></span>
-      <button type="button" data-testid="degrid-view-original"
-              @click="setImageView(DEGRID_VIEW_ORIGINAL)"
-              :class="imageView === DEGRID_VIEW_ORIGINAL ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white text-notion-text border-notion-border hover:bg-indigo-50'"
-              class="text-[11px] font-medium px-1.5 py-0.5 rounded border transition-default"
-              x-text="DEGRID_LABEL_ORIGINAL"></button>
-      <button type="button" data-testid="degrid-view-clean"
-              @click="setImageView(DEGRID_VIEW_CLEAN)"
-              :class="imageView === DEGRID_VIEW_CLEAN ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white text-notion-text border-notion-border hover:bg-indigo-50'"
-              class="text-[11px] font-medium px-1.5 py-0.5 rounded border transition-default"
-              x-text="DEGRID_LABEL_CLEAN"></button>
-    </div>
-
-    {# ── Grid resolution switch (v5.22) — 20x20 (default) / 40x40. Switching erases all cell values. ── #}
-    <div class="inline-flex items-center gap-1 pl-1.5 pr-1 py-0.5 rounded-md border border-notion-border bg-stone-50/70"
-         data-testid="grid-resolution-switch"
-         title="Grid resolution (cells per side). Switching resolutions erases all grid cell values.">
-      <span class="text-[10px] text-notion-muted font-semibold tracking-wide uppercase pr-0.5">Res</span>
-      <button type="button" data-testid="grid-res-20"
-              @click="setGridResolution(GRID_N_DEFAULT)"
-              :class="gridN === GRID_N_DEFAULT ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white text-notion-text border-notion-border hover:bg-indigo-50'"
-              class="text-[11px] font-medium px-1.5 py-0.5 rounded border transition-default"
-              :title="GRID_TIP_RES_DEFAULT" x-text="GRID_LABEL_RES_DEFAULT"></button>
-      <button type="button" data-testid="grid-res-40"
-              @click="setGridResolution(GRID_N_FINE)"
-              :class="gridN === GRID_N_FINE ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white text-notion-text border-notion-border hover:bg-indigo-50'"
-              class="text-[11px] font-medium px-1.5 py-0.5 rounded border transition-default"
-              :title="GRID_TIP_RES_FINE" x-text="GRID_LABEL_RES_FINE"></button>
-    </div>
-
-    {# ── Cell-color toggle + legend (v5.14) — view preference only (localStorage), never saved to the EGM ── #}
-    <label class="inline-flex items-center gap-1.5 text-[11px] text-notion-text cursor-pointer select-none whitespace-nowrap"
-           title="Tint each grid cell by its value (terrain colormap, auto-scaled to the lowest and highest set cell). View only — not saved in the EGM.">
-      <input type="checkbox" x-model="colorCellsByHeight" @change="setColorCells()" data-testid="color-cells-toggle">
-      Color cells by height
-    </label>
-    <span x-show="colorCellsByHeight && gridMode !== GRID_MODE_OFF && gridRange()" class="inline-flex items-center gap-1 text-[10px] text-notion-muted whitespace-nowrap" data-testid="cell-color-legend">
-      <span x-text="gridRange() ? gridRange().min : ''"></span>
-      <span class="inline-block w-10 h-2 rounded border border-notion-border" :style="'background:' + terrainLegendGradient()"></span>
-      <span x-text="gridRange() ? gridRange().max : ''"></span>
-    </span>
-
-    <div class="ml-auto flex items-center gap-1.5">
+    {# ── Status flash ── #}
+    <div x-show="statusMsg" x-cloak class="flex items-center gap-2 min-w-0 pt-3 border-t border-notion-border">
       <span x-show="statusMsg" x-text="statusMsg" x-transition
             :class="statusOk ? 'text-green-600' : 'text-red-500'"
-            class="text-sm font-medium"></span>
+            class="text-sm font-medium min-w-0"></span>
       <span x-show="statusMsg && statusFilename" x-text="statusFilename" x-transition
-            class="text-sm bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded"></span>
+            class="text-sm bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded truncate min-w-0"></span>
       <button x-show="statusMsg" @click="flashDismiss()"
               title="Dismiss"
               :class="statusOk ? 'text-green-500 hover:text-green-700' : 'text-red-400 hover:text-red-600'"
@@ -649,12 +718,11 @@
 // editor is defined ONCE in this block; the rest of the file (script AND markup) refers to
 // the name.  Tests read this block (tests/editor_constants.py) instead of re-typing values.
 // Older named members of the polygonEditor() object (DEGRID_*, POINT_RADIUS, EDGE_HIT_DIST,
-// GRID_DRAG_THRESHOLD_PX, TEE_HOLE_*, TERRAIN_STOPS, maxUndo) were already constants and stay there.
+// GRID_DRAG_THRESHOLD_PX, TEE_HOLE_*, CELL_COLOR_*, maxUndo) were already constants and stay there.
 // Top-level `const`s are visible to Alpine markup expressions (global lexical scope).
 
 // ── API endpoints (server routes in app.py) ──
 const API_DETECT_BOUNDARIES = '/api/detect_boundaries';
-const API_TRAP_CONTROLLING_CELLS = '/api/trap_controlling_cells';
 const API_BOUNDARIES = '/api/boundaries';                      // POST = autosave
 const API_BOUNDARIES_LIST = '/api/boundaries/list';
 const API_BOUNDARIES_LOAD = '/api/boundaries/load';
@@ -691,7 +759,6 @@ const GRID_ABSOLUTE_MIN_MM = 0;
 const GRID_ABSOLUTE_MAX_MM = 30;
 const GRID_N_DEFAULT = 20;              // cells per axis, legacy default; EGM omits gridResolution
 const GRID_N_FINE = 40;
-const GRID_RANGE_FULL_CELL_COUNT = 400; // v5.14 "all 400 cells" threshold (NOT scaled by gridN; behavior kept as-is)
 const GRID_INPUT_STEP = 'any';
 const GRID_INPUT_MIN_WIDTH_PX = 80;     // value box / ramp boxes width floor (CSS px)
 const GRID_DOT_HIT_MIN_PX = 5;          // hover / right-click hit radius clamp (CSS px)
@@ -711,9 +778,6 @@ const GRID_WHEEL_TIP = `Mouse wheel: +/-${WHEEL_STEP_MM} mm per notch (Shift: ${
 const GRID_INPUT_PLACEHOLDER = `mm (wheel: ${WHEEL_STEP_MM}, Shift: ${WHEEL_STEP_SHIFT_MM})`;
 const GRID_TIP_INPUT_ABSOLUTE = `Enter absolute fringe height in mm (${GRID_ABSOLUTE_MIN_MM} to ${GRID_ABSOLUTE_MAX_MM}). ${GRID_WHEEL_TIP}`;
 const GRID_TIP_INPUT_DELTA = `Enter offset from algorithm in mm (±${GRID_DELTA_MAX_MM}). ${GRID_WHEEL_TIP}`;
-const GRID_TIP_STRIP_ABSOLUTE = `Grid cell values stored in this EGM. In Absolute mode each value REPLACES the Poisson-nearest default (${GRID_ABSOLUTE_MIN_MM}–${GRID_ABSOLUTE_MAX_MM} mm).`;
-const GRID_TIP_STRIP_OFF = 'Grid cell values stored in this EGM. In Off mode overrides are not applied; values are preserved so you can toggle back on.';
-const GRID_TIP_STRIP_DELTA = `Grid cell offsets stored in this EGM. Values are additive deltas (±${GRID_DELTA_MAX_MM} mm) over the algorithm's natural surface.`;
 const GRID_TIP_SWITCH = 'How grid cell values are interpreted. Delta=additive offset (default). Absolute=replace Poisson default. Off=hide and ignore (values preserved).';
 const GRID_TIP_BTN_DELTA = `Delta: value is added to the algorithm's natural surface (±${GRID_DELTA_MAX_MM} mm).`;
 const GRID_TIP_BTN_ABSOLUTE = `Absolute: value REPLACES the algorithm's value at that cell (${GRID_ABSOLUTE_MIN_MM} to ${GRID_ABSOLUTE_MAX_MM} mm).`;
@@ -728,7 +792,11 @@ const MSG_GRID_RESOLUTION_ERASE = 'Switching resolutions will cause all grid set
 // ── Grid canvas drawing ──
 const GRID_LINE_WIDTH = 0.75;
 const GRID_VALUE_FONT_PX = 11;
-const GRID_VALUE_FONT_PX_FINE = 8;      // used when gridN > GRID_N_DEFAULT
+// v5.78 — fine grid (gridN > GRID_N_DEFAULT): label font = cell CSS width x fraction, clamped min..max.
+// 0.30 of the width keeps the widest label ("-12.5", ~5 glyphs at ~0.6em) inside one cell.
+const GRID_VALUE_FONT_FINE_CELL_FRACTION = 0.30;
+const GRID_VALUE_FONT_PX_FINE_MIN = 5;
+const GRID_VALUE_FONT_PX_FINE_MAX = 8;
 const FONT_STACK_UI = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 const COLOR_GRID_LINE = 'rgba(99,102,241,0.40)';            // indigo, softer than value text
 const COLOR_GRID_VALUE_DELTA = '#000';
@@ -739,11 +807,52 @@ const GRID_ACTIVE_LINE_WIDTH = 2;
 const COLOR_GRID_MULTI_FILL = 'rgba(99,102,241,0.10)';
 const COLOR_GRID_MULTI_STROKE = 'rgba(99,102,241,0.90)';
 const GRID_MULTI_LINE_WIDTH = 3.5;
-const CELL_COLOR_ALPHA = 0.5;           // terrain tint over each cell
-const COLOR_TRAP_CTL_RING = '#dc2626';
-const TRAP_CTL_RING_WIDTH = 2.5;
-const TRAP_CTL_RING_RADIUS_FRAC = 0.42; // of a cell width
-const TRAP_CTL_DEBOUNCE_MS = 250;
+const CELL_COLOR_ALPHA = 0.5;           // tint over each cell
+// v5.76 fixed cell-colour scale (never auto-scales): delta -15..+15 mm, absolute 0..30 mm on the same colours.
+const CELL_COLOR_DELTA_MIN_MM = -15;
+const CELL_COLOR_DELTA_MAX_MM = 15;
+const CELL_COLOR_ABSOLUTE_MIN_MM = 0;
+const CELL_COLOR_ABSOLUTE_MAX_MM = 30;
+// CELL_COLOR_STOPS: matplotlib cmap "RdYlBu_r" (blue low -> pale yellow mid -> red high) sampled at 31 evenly spaced points.
+const CELL_COLOR_STOPS = ["#313695", "#374a9f", "#3e60aa", "#4574b3", "#5588be", "#6399c7", "#74add1", "#85bbd9", "#99cae1", "#aad8e9", "#bde2ee", "#cdeaf3", "#e0f3f8", "#eaf7e6", "#f5fbd2", "#fffebe", "#fff5af", "#feea9f", "#fee090", "#fece7f", "#fdbf71", "#fdad60", "#fa9857", "#f7814c", "#f46d43", "#ea5739", "#e14430", "#d62f27", "#c62027", "#b50f26", "#a50026"];
+
+// ── Paint mode, palette, brush cursor (v5.77) ──
+const PAINT_KEY = 'b';                      // toggles paint mode (ignored while typing in an input)
+const PAINT_EXIT_KEY = 'Escape';
+const PAINT_STEP_MM = 1;                    // one palette swatch = 1 mm
+const GRID_TYPED_EMPTY_VALUE = 0;           // v5.80: typing this in the value box (or a ramp end) EMPTIES the cell; the paint brush stores it as a real value
+const PAINT_BRUSH_ERASER = 'eraser';        // brush id that empties cells (colour brushes are palette steps 0..N-1)
+const PAINT_DEFAULT_STEP = CELL_COLOR_STOPS.length - 1;   // first brush: top swatch (+15 delta / 30 absolute)
+const PALETTE_LABEL_MIN_EDGE_PX = 8;        // swatch height floor when the viewport is short
+const PALETTE_SWATCH_MAX_PX = 20;           // swatch height ceiling
+const PALETTE_VIEWPORT_RESERVE_PX = 40;     // breathing room (top + bottom) the palette keeps clear
+const PALETTE_ERASER_ROW_EXTRA_PX = 6;      // eraser row is a bit taller than a swatch + the gap above it
+const PALETTE_SWATCH_WIDTH_PX = 22;
+const PALETTE_LABEL_FONT_PX = 10;
+const PAINT_STROKE_LABEL = 'paint stroke';
+const UNDO_KIND_POLY = 'poly';              // history entry: polygon + contour snapshot
+const UNDO_KIND_GRID = 'grid';              // history entry: pre-edit values of the touched grid cells
+const GRID_UNDO_MAX_STEPS = 50;             // grid entries kept in the unified undo history
+const UNDO_LABEL_POLY_DEFAULT = 'polygon edit';
+const UNDO_LABEL_CELL_EDIT = 'cell edit';
+const UNDO_LABEL_CELL_CLEAR = 'cell clear';
+const MSG_NOTHING_TO_UNDO = 'Nothing to undo';
+const MSG_UNDO_MODE_CHANGED = 'Grid mode changed — nothing to undo';
+const TIP_PAINT_BTN = 'Paint mode (B): pick a colour in the left palette, then click or drag on the grid to paint cells. Esc / B / this button exits.';
+const TIP_PALETTE_ERASER = 'Eraser: paint cells empty';
+const PAINT_CURSOR_SIZE_PX = 32;            // SVG cursor box (CSS px)
+const PAINT_CURSOR_TIP_X = 3;               // brush bristle tip = cursor hotspot (SVG px)
+const PAINT_CURSOR_TIP_Y = 29;
+const ERASER_CURSOR_HOTSPOT_X = 6;          // centre of the eraser's working edge
+const ERASER_CURSOR_HOTSPOT_Y = 26;
+const PAINT_CURSOR_FALLBACK = 'crosshair';  // used if the browser rejects the data-URL cursor
+const COLOR_CURSOR_OUTLINE = '#1f2937';
+const COLOR_CURSOR_HANDLE = '#b45309';
+const COLOR_CURSOR_FERRULE = '#9ca3af';
+const COLOR_CURSOR_ERASER = '#f9a8d4';
+const COLOR_CURSOR_ERASER_SLEEVE = '#e5e7eb';
+const COLOR_PALETTE_SELECTED = '#4f46e5';   // indigo-600 ring around the chosen brush
+const COLOR_PALETTE_ERASER_BG = '#ffffff';
 
 // ── Polygon / contour model ──
 const POLY_TYPE_GREEN = 'green';
@@ -775,8 +884,6 @@ const SPLINE_SEGMENTS_PER_EDGE = 16;
 const SPLINE_TENSION = 0.5;                   // 0.5 = standard Catmull-Rom
 const HIT_SLACK_PX = 2;                       // added to vertex / edge hit radius
 const CONTOUR_ARROW_HIT_RADIUS_PX = 12;
-const TEE_SIDE_LEFT = 'left';                   // tee-hole side picker (print half the marker sits in)
-const TEE_SIDE_RIGHT = 'right';
 const CURSOR_DEFAULT = 'default';
 const CURSOR_GRAB = 'grab';
 const CURSOR_GRABBING = 'grabbing';
@@ -881,6 +988,7 @@ const GPS_MAP_DRAG_DASH = [4, 3];
 const MS_PER_SECOND = 1000;
 const TIMER_TICK_MS = 1000;                   // Generate elapsed counter / footer poll
 const RESIZE_DEBOUNCE_MS = 100;
+const CANVAS_RESIZE_EPSILON_PX = 0.5;       // v5.81: container width change below this does not trigger a canvas re-measure
 const FLASH_OK_MS = 4500;                     // auto-dismiss for info/success
 const FLASH_DEFERRED_SAVE_MS = 4000;
 const FLASH_GENERATE_START_MS = 3500;
@@ -905,6 +1013,85 @@ function polyColorForType(type) {
        : COLOR_POLY_TRAP;
 }
 function isRemovablePolyType(type) { return REMOVABLE_POLY_TYPES.includes(type); }
+// v5.77 palette / brush helpers.  A colour brush is a palette STEP 0..N-1 (0 = lowest colour); the same
+// step means +step-15 mm in delta mode and step mm in absolute mode, so colours match the cell tint scale.
+function paintBrushValue(step, mode) {
+  const lo = mode === GRID_MODE_ABSOLUTE ? CELL_COLOR_ABSOLUTE_MIN_MM : CELL_COLOR_DELTA_MIN_MM;
+  return roundMm(lo + step * PAINT_STEP_MM);
+}
+function paletteLabel(step, mode) {
+  const v = paintBrushValue(step, mode);
+  return (mode !== GRID_MODE_ABSOLUTE && v > 0) ? '+' + v : String(v);
+}
+// Steps top (highest value) -> bottom (lowest), one per CELL_COLOR_STOPS entry.
+function paletteSteps() {
+  const out = [];
+  for (let s = CELL_COLOR_STOPS.length - 1; s >= 0; s--) out.push(s);
+  return out;
+}
+// Swatch height so 31 swatches + eraser fit in `viewportH` (clamped to [MIN, MAX]).
+function paletteSwatchHeight(viewportH) {
+  const rows = CELL_COLOR_STOPS.length;
+  const h = Math.floor((viewportH - PALETTE_VIEWPORT_RESERVE_PX - PALETTE_ERASER_ROW_EXTRA_PX) / (rows + 1));
+  return Math.max(PALETTE_LABEL_MIN_EDGE_PX, Math.min(PALETTE_SWATCH_MAX_PX, h));
+}
+// SVG paintbrush: bristles end in a point at (PAINT_CURSOR_TIP_X, PAINT_CURSOR_TIP_Y) = the hotspot; the bristles
+// are filled with `color` (css colour string).  Everything is positioned relative to the tip.
+function paintCursorSvg(color) {
+  const X = PAINT_CURSOR_TIP_X, Y = PAINT_CURSOR_TIP_Y;
+  const p = (dx, dy) => (X + dx) + ' ' + (Y + dy);
+  const bristle = 'M' + p(0, 0) + ' C' + p(1, -5) + ' ' + p(3, -9) + ' ' + p(7, -11) + ' L' + p(11, -7) + ' C' + p(9, -3) + ' ' + p(5, -1) + ' ' + p(0, 0) + ' Z';
+  const ferrule = 'M' + p(7, -11) + ' L' + p(11, -7) + ' L' + p(14, -10) + ' L' + p(10, -14) + ' Z';
+  const handle = 'M' + p(10, -14) + ' L' + p(14, -10) + ' L' + p(26, -22) + ' L' + p(22, -26) + ' Z';
+  const S = PAINT_CURSOR_SIZE_PX;
+  return '<svg xmlns="http://www.w3.org/2000/svg" width="' + S + '" height="' + S + '" viewBox="0 0 ' + S + ' ' + S + '">'
+    + '<path d="' + handle + '" fill="' + COLOR_CURSOR_HANDLE + '" stroke="' + COLOR_CURSOR_OUTLINE + '" stroke-width="1" stroke-linejoin="round"/>'
+    + '<path d="' + ferrule + '" fill="' + COLOR_CURSOR_FERRULE + '" stroke="' + COLOR_CURSOR_OUTLINE + '" stroke-width="1" stroke-linejoin="round"/>'
+    + '<path data-part="bristles" d="' + bristle + '" fill="' + color + '" stroke="' + COLOR_CURSOR_OUTLINE + '" stroke-width="1" stroke-linejoin="round"/>'
+    + '</svg>';
+}
+function eraserCursorSvg() {
+  const S = PAINT_CURSOR_SIZE_PX, X = ERASER_CURSOR_HOTSPOT_X, Y = ERASER_CURSOR_HOTSPOT_Y;
+  const p = (dx, dy) => (X + dx) + ' ' + (Y + dy);
+  const body = 'M' + p(-3, -3) + ' L' + p(3, 3) + ' L' + p(9, -3) + ' L' + p(3, -9) + ' Z';
+  const sleeve = 'M' + p(3, -9) + ' L' + p(9, -3) + ' L' + p(17, -11) + ' L' + p(11, -17) + ' Z';
+  return '<svg xmlns="http://www.w3.org/2000/svg" width="' + S + '" height="' + S + '" viewBox="0 0 ' + S + ' ' + S + '">'
+    + '<path d="' + sleeve + '" fill="' + COLOR_CURSOR_ERASER_SLEEVE + '" stroke="' + COLOR_CURSOR_OUTLINE + '" stroke-width="1" stroke-linejoin="round"/>'
+    + '<path data-part="eraser" d="' + body + '" fill="' + COLOR_CURSOR_ERASER + '" stroke="' + COLOR_CURSOR_OUTLINE + '" stroke-width="1" stroke-linejoin="round"/>'
+    + '</svg>';
+}
+// CSS `cursor` value (data-URL image + hotspot + fallback keyword).
+function cursorCssFromSvg(svg, hx, hy) {
+  return 'url("data:image/svg+xml;utf8,' + encodeURIComponent(svg) + '") ' + hx + ' ' + hy + ', ' + PAINT_CURSOR_FALLBACK;
+}
+// Cells (integer col, rowFromTop) crossed by the segment (u0,v0)->(u1,v1) given in FRACTIONAL cell units
+// (cell (i,j) spans [i,i+1) x [j,j+1)).  Amanatides-Woo grid traversal: every cell the segment touches is
+// returned once, in visit order, 4-connected -- a fast drag cannot skip a cell.  Cells may lie outside the
+// grid; the caller filters.
+function cellsAlongSegment(u0, v0, u1, v1) {
+  let i = Math.floor(u0), j = Math.floor(v0);
+  const iEnd = Math.floor(u1), jEnd = Math.floor(v1);
+  const out = [[i, j]];
+  const du = u1 - u0, dv = v1 - v0;
+  const stepI = du > 0 ? 1 : -1, stepJ = dv > 0 ? 1 : -1;
+  const tDeltaU = du !== 0 ? Math.abs(1 / du) : Infinity;
+  const tDeltaV = dv !== 0 ? Math.abs(1 / dv) : Infinity;
+  let tMaxU = du === 0 ? Infinity : (du > 0 ? (i + 1 - u0) : (u0 - i)) * tDeltaU;
+  let tMaxV = dv === 0 ? Infinity : (dv > 0 ? (j + 1 - v0) : (v0 - j)) * tDeltaV;
+  const maxSteps = Math.abs(iEnd - i) + Math.abs(jEnd - j);
+  for (let n = 0; n < maxSteps; n++) {
+    if (tMaxU < tMaxV) { i += stepI; tMaxU += tDeltaU; }
+    else { j += stepJ; tMaxV += tDeltaV; }
+    out.push([i, j]);
+  }
+  return out;
+}
+// v5.78 — value-label font size in CSS px for a cell `cellCssW` CSS px wide (20x20 keeps the fixed size).
+function gridValueFontPx(gridN, cellCssW) {
+  if (!(gridN > GRID_N_DEFAULT)) return GRID_VALUE_FONT_PX;
+  const w = Number(cellCssW) || 0;
+  return Math.min(GRID_VALUE_FONT_PX_FINE_MAX, Math.max(GRID_VALUE_FONT_PX_FINE_MIN, w * GRID_VALUE_FONT_FINE_CELL_FRACTION));
+}
 // ═══ EDITOR CONSTANTS — END ═════════════════════════════════════════════════
 
 // v5.19 — Ctrl+Option ramp: spread first->last linearly over cells in the given (visit) order.
@@ -976,8 +1163,12 @@ function polygonEditor() {
     rbShift: false,  // whether shift was held when rubber band started
     preRbSelection: [],  // selection before rubber band started (for shift mode)
 
-    // Undo/redo stacks — each entry is a JSON snapshot of polygons
-    undoStack: [],
+    // v5.77 unified undo: ONE chronological history shared by polygon/contour edits and grid-cell edits.
+    // Entries (oldest first): {kind:'poly', snap:<JSON of polygons+contours BEFORE the edit>, label}
+    //                      or {kind:'grid', cells:{idx:prevValue|undefined}, mode, gridN, label}.
+    // Cmd+Z pops the newest entry whatever its kind.  Caps: maxUndo polygon entries, GRID_UNDO_MAX_STEPS grid entries.
+    // redoStack (polygon snapshots only) is unchanged from before.
+    undoHistory: [],
     redoStack: [],
     maxUndo: 100,
 
@@ -1011,16 +1202,16 @@ function polygonEditor() {
     //   'off'      — overlays hidden, no overrides applied; stored values are preserved for A/B toggling.
     gridMode: DEFAULT_GRID_MODE,
     colorCellsByHeight: true,  // v5.14 view pref (localStorage 'editorColorCells'); not part of the EGM
-    _trapCtlCells: [],       // cell indices circled red = controlling cell(s) per trap (v5.11)
-    _trapCtlSig: '',
-    _trapCtlTimer: null,
-    _trapCtlSeq: 0,
     _gridActiveCell: null,   // {col, row, idx, canvasPx:{x,y}} or null
     _wheelAcc: 0,            // accumulated wheel px for gridWheel (v5.15)
     _gridInputValue: '',     // staging area while input is open
     _gridRampMode: false,    // v5.19: Ctrl+Option+drag ramp popup (first/last boxes)
     _gridRampFirst: '',
-    _gridUndo: null,         // v5.19: single-level grid-cell undo {cells:{idx:prev|undefined}, mode, label}
+    // v5.77 paint mode
+    paintMode: false,
+    paintBrush: PAINT_DEFAULT_STEP,   // palette step (0..30) or PAINT_BRUSH_ERASER; remembered across exits
+    _paintStroke: null,               // {cells:{idx:valueBeforeStroke|undefined}, lastU, lastV} while the mouse is down
+    paletteSwatchPx: PALETTE_SWATCH_MAX_PX,
     _gridRampLast: '',
     _gridHoveredCell: null,  // {idx, canvasPx:{x,y,w,h}} or null — drives dot tooltip (v5.04)
     _gridMouseDownAt: null,  // {x, y, col, row, idx, time} — pending click until drag threshold resolved (v5.05)
@@ -1131,6 +1322,24 @@ function polygonEditor() {
 
     init() {
       try { const c = localStorage.getItem(STORAGE_KEY_COLOR_CELLS); if (c === STORAGE_VALUE_OFF) this.colorCellsByHeight = false; } catch (e) {}
+      // v5.77: palette fits the viewport; Grid Off hides it (and leaves paint mode); the canvas re-measures when it appears/disappears.
+      this.updatePaletteSize();
+      window.addEventListener('resize', () => this.updatePaletteSize());
+      this.$watch('gridMode', (m) => { if (m === GRID_MODE_OFF) this.exitPaintMode(); this.$nextTick(() => this.resizeCanvas()); });
+      this.$watch('imgLoaded', () => this.$nextTick(() => this.resizeCanvas()));
+      // v5.81: the canvas is sized from its container's width, but that width changes when the palette shows/hides
+      // (and with the sidebar / scrollbar).  A one-shot measure taken before the palette laid out left the canvas wider
+      // than its overflow-hidden container, slicing off the right edge.  Re-measure whenever the container width changes.
+      this.$nextTick(() => {
+        const box = this.$refs.canvas && this.$refs.canvas.parentElement;
+        if (!box || typeof ResizeObserver === 'undefined') return;
+        this._canvasBoxW = box.clientWidth;
+        new ResizeObserver(() => {
+          if (Math.abs(box.clientWidth - this._canvasBoxW) <= CANVAS_RESIZE_EPSILON_PX) return;
+          this._canvasBoxW = box.clientWidth;
+          this.resizeCanvas();
+        }).observe(box);
+      });
       if (this.selectedImage) {
         this.loadImage();
       }
@@ -1630,7 +1839,6 @@ function polygonEditor() {
       // ── Grid cell elevation overlay (v5.00) ──────────────────────────────
       // Draw 20×20 cell boundaries over the print area only when an image is
       // loaded (grid origin = lower-left of print frame, axis-aligned).
-      this._scheduleTrapCtl();
       if (this.imgLoaded) {
         const GRID_COLS = this.gridN;
         const GRID_ROWS = this.gridN;
@@ -1685,12 +1893,14 @@ function polygonEditor() {
         if (this.gridMode !== GRID_MODE_OFF) {
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.font = `${(this.gridN > GRID_N_DEFAULT ? GRID_VALUE_FONT_PX_FINE : GRID_VALUE_FONT_PX) * dpr}px ${FONT_STACK_UI}`;
+          const _cw0 = this.imgToCanvas(tl.x, tl.y), _cw1 = this.imgToCanvas(tl.x + cellWpx, tl.y);
+          const _fontCss = gridValueFontPx(this.gridN, Math.abs(_cw1.x - _cw0.x) / dpr);   // v5.78: adapts to cell pixel width
+          ctx.font = `${_fontCss * dpr}px ${FONT_STACK_UI}`;
           ctx.fillStyle = (this.gridMode === GRID_MODE_ABSOLUTE)
             ? COLOR_GRID_VALUE_ABSOLUTE   // tailwind orange-500
             : COLOR_GRID_VALUE_DELTA;  // v5.20: plain black (delta), no outline
           for (const [idxStr, mm] of Object.entries(this.gridCellHeights)) {
-            if (mm === 0) continue;  // zero = empty cell
+            // v5.80: key present = set; an explicit 0 (brush-painted) is a real value and is labelled.
             const idx = Number(idxStr);
             const col = idx % GRID_COLS;
             const row = Math.floor(idx / GRID_COLS);
@@ -1702,27 +1912,6 @@ function polygonEditor() {
             const mmLabel = mmVal.toFixed(GRID_LABEL_DECIMALS);  // v5.59: no leading '+' on positives; negatives keep '-'
             ctx.fillText(mmLabel, cp.x, cp.y);
           }
-        }
-
-        // ── Trap-controlling cell ring (v5.11) ───────────────────────────────
-        // Red ring around the cell whose value sets each trap's height
-        // (delta and absolute; none in off; list computed server-side by the generator's own test).
-        if (this.gridMode !== GRID_MODE_OFF && this._trapCtlCells.length) {
-          ctx.save();
-          ctx.strokeStyle = COLOR_TRAP_CTL_RING;
-          ctx.lineWidth = TRAP_CTL_RING_WIDTH * dpr;
-          ctx.setLineDash([]);
-          for (const idx of this._trapCtlCells) {
-            if (this.gridCellHeights[idx] === undefined || Number(this.gridCellHeights[idx]) === 0) continue;
-            const col = idx % GRID_COLS, row = Math.floor(idx / GRID_COLS);
-            const cp = this.imgToCanvas(tl.x + (col + 0.5) * cellWpx, tl.y + (GRID_ROWS - 1 - row + 0.5) * cellHpx);
-            const edge = this.imgToCanvas(tl.x + (col + 0.5) * cellWpx + cellWpx * TRAP_CTL_RING_RADIUS_FRAC, tl.y + (GRID_ROWS - 1 - row + 0.5) * cellHpx);
-            const rr = Math.abs(edge.x - cp.x);
-            ctx.beginPath();
-            ctx.arc(cp.x, cp.y, rr, 0, Math.PI * 2);
-            ctx.stroke();
-          }
-          ctx.restore();
         }
 
         // Highlight the active cell (if any)
@@ -1883,6 +2072,15 @@ function polygonEditor() {
 
     onMouseDown(e) {
       if (e.button !== 0) return; // left click only
+      // v5.77: in paint mode a click only paints (no selection, no point drag, no value box)
+      if (this.paintMode) {
+        this.paintBegin(e);
+        if (!this._globalMouseUp) {
+          this._globalMouseUp = (ev) => this.onMouseUp(ev);
+          window.addEventListener('mouseup', this._globalMouseUp);
+        }
+        return;
+      }
       const { x, y } = this.canvasToImg(e);
 
       // In contour drawing mode, clicks add points to the draft
@@ -1911,7 +2109,7 @@ function polygonEditor() {
       if (chit) {
         this.selectedContour = chit.contourIdx;
         this.selectedVerts = [{ poly: -1 - chit.contourIdx, idx: chit.pointIdx }];
-        this.pushUndo();
+        this.pushUndo('contour point move');
         this.draggingContour = true;
         this.dragContourIdx = chit.contourIdx;
         this.dragContourPtIdx = chit.pointIdx;
@@ -1932,7 +2130,7 @@ function polygonEditor() {
           this.toggleVertSelection(hit.polyIdx, hit.pointIdx, e.shiftKey);
         }
 
-        this.pushUndo();
+        this.pushUndo('point move');
         this.dragging = true;
         this.dragPolyIdx = hit.polyIdx;
         this.dragPointIdx = hit.pointIdx;
@@ -2001,6 +2199,7 @@ function polygonEditor() {
     },
 
     onMouseMove(e) {
+      if (this.paintMode) { this.paintMove(e); return; }   // v5.77
       const { x, y } = this.canvasToImg(e);
 
       // ── Grid click-vs-drag discrimination (v5.05) ─────────────────────────
@@ -2141,6 +2340,8 @@ function polygonEditor() {
         window.removeEventListener('mouseup', this._globalMouseUp);
         this._globalMouseUp = null;
       }
+      if (this._paintStroke) { this.paintEnd(); return; }   // v5.77: stroke finished = ONE undo step
+      if (this.paintMode) return;
       if (this.draggingContour) {
         this.draggingContour = false;
         this.$refs.canvas.style.cursor = CURSOR_DEFAULT;
@@ -2193,6 +2394,7 @@ function polygonEditor() {
     },
 
     onDblClick(e) {
+      if (this.paintMode) return;   // v5.77
       // In contour mode, double-click finishes the contour
       if (this.contourMode) {
         this.finishContour();
@@ -2205,7 +2407,7 @@ function polygonEditor() {
       // Check for edge hit to insert vertex
       const edge = this.hitTestEdge(x, y);
       if (edge) {
-        this.pushUndo();
+        this.pushUndo('add point');
         const pts = this.polygons[edge.polyIdx].points;
         const newPt = { x: Math.round(x), y: Math.round(y) };
         pts.splice(edge.edgeIdx + 1, 0, newPt);
@@ -2216,6 +2418,7 @@ function polygonEditor() {
     },
 
     onRightClick(e) {
+      if (this.paintMode) return;   // v5.77
       const { x, y } = this.canvasToImg(e);
 
       // ── Grid dot right-click → delete (v5.05) ────────────────────────────
@@ -2239,6 +2442,7 @@ function polygonEditor() {
           const dx = mx - dotCx;
           const dy = my - dotCy;
           if (dx * dx + dy * dy <= dotR * dotR) {
+            this.gridUndoSnapshot([idx], UNDO_LABEL_CELL_CLEAR);
             delete this.gridCellHeights[idx];
             this._gridHoveredCell = null;
             this.draw();
@@ -2255,14 +2459,14 @@ function polygonEditor() {
       if (chit) {
         const pts = this.contours[chit.contourIdx].points;
         if (pts.length > MIN_CONTOUR_POINTS) {
-          this.pushUndo();
+          this.pushUndo('contour point delete');
           pts.splice(chit.pointIdx, 1);
           this.draw();
           this.flash('Contour vertex removed', true);
           this.autoSave();
         } else {
           // Delete the whole contour if only 1 or 2 pts remain
-          this.pushUndo();
+          this.pushUndo('contour delete');
           this.contours.splice(chit.contourIdx, 1);
           this.selectedContour = -1;
           this.draw();
@@ -2277,7 +2481,7 @@ function polygonEditor() {
         // Right-click on a vertex — remove it
         const pts = this.polygons[hit.polyIdx].points;
         if (pts.length > MIN_POLYGON_VERTICES) {
-          this.pushUndo();
+          this.pushUndo('point delete');
           pts.splice(hit.pointIdx, 1);
           this.selectedVerts = this.selectedVerts.filter(v => !(v.poly === hit.polyIdx && v.idx === hit.pointIdx));
           for (const sv of this.selectedVerts) {
@@ -2297,7 +2501,7 @@ function polygonEditor() {
         // Right-click on an edge — insert a vertex and start dragging it
         const edge = this.hitTestEdge(x, y);
         if (edge) {
-          this.pushUndo();
+          this.pushUndo('add point');
           const newIdx = edge.edgeIdx + 1;
           const pts = this.polygons[edge.polyIdx].points;
           const newPt = { x: Math.round(x), y: Math.round(y) };
@@ -2383,7 +2587,7 @@ function polygonEditor() {
         this.draw();
         return;
       }
-      this.pushUndo();
+      this.pushUndo('add contour');
       const ci = this.contours.length + 1;
       this.contours.push({
         name: NAME_PREFIX_CONTOUR + ci,
@@ -2426,11 +2630,34 @@ function polygonEditor() {
       });
     },
 
-    pushUndo() {
-      this.undoStack.push(this.snapshotPolygons());
-      if (this.undoStack.length > this.maxUndo) this.undoStack.shift();
+    // v5.77 — record a polygon/contour edit (call BEFORE mutating).  Grid undo entries are untouched.
+    pushUndo(label) {
+      this.undoHistory.push({ kind: UNDO_KIND_POLY, snap: this.snapshotPolygons(), label: label || UNDO_LABEL_POLY_DEFAULT });
+      this._trimUndo(UNDO_KIND_POLY, this.maxUndo);
       this.redoStack = [];
-      this._gridUndo = null;   // a newer polygon/contour edit supersedes the grid snapshot (Cmd+Z stays 'last edit')
+    },
+
+    // Drop the OLDEST entries of `kind` until at most `cap` remain (other kinds keep their place).
+    _trimUndo(kind, cap) {
+      let n = this.undoHistory.reduce((c, e) => c + (e.kind === kind ? 1 : 0), 0);
+      for (let i = 0; n > cap && i < this.undoHistory.length;) {
+        if (this.undoHistory[i].kind === kind) { this.undoHistory.splice(i, 1); n--; } else i++;
+      }
+    },
+
+    // Record a grid-cell edit: `cells` = {idx: value BEFORE the edit (undefined = was empty)}.
+    pushGridUndo(cells, label) {
+      this.undoHistory.push({ kind: UNDO_KIND_GRID, cells, mode: this.gridMode, gridN: this.gridN, label });
+      this._trimUndo(UNDO_KIND_GRID, GRID_UNDO_MAX_STEPS);
+      this.redoStack = [];
+    },
+
+    canUndo() { return this.undoHistory.length > 0; },
+
+    // Tooltip for the Undo button: what the NEXT undo reverts.
+    undoTooltip() {
+      const e = this.undoHistory[this.undoHistory.length - 1];
+      return e ? ('Undo ' + e.label + ' (Cmd+Z)') : MSG_NOTHING_TO_UNDO;
     },
 
     restoreSnapshot(json) {
@@ -2452,24 +2679,39 @@ function polygonEditor() {
       this.draw();
     },
 
+    // v5.77 — undo the most recent edit of either kind.  Returns true when an entry was consumed.
     undo() {
-      if (this.undoStack.length === 0) { this.flash('Nothing to undo', false); return; }
+      const e = this.undoHistory.pop();
+      if (!e) { this.flash(MSG_NOTHING_TO_UNDO, false); return false; }
+      if (e.kind === UNDO_KIND_GRID) { this._undoGridEntry(e); return true; }
       this.redoStack.push(this.snapshotPolygons());
-      this.restoreSnapshot(this.undoStack.pop());
-      this.flash('Undo', true);
+      this.restoreSnapshot(e.snap);
+      this.flash('Undo ' + e.label, true);
+      this.autoSave();
+      return true;
+    },
+
+    _undoGridEntry(u) {
+      if (u.mode !== this.gridMode || u.gridN !== this.gridN) { this.flash(MSG_UNDO_MODE_CHANGED, false); return; }
+      for (const [i, v] of Object.entries(u.cells)) {
+        if (v === undefined) delete this.gridCellHeights[i]; else this.gridCellHeights[i] = v;
+      }
+      this.draw();
+      this.flash('Undo ' + u.label, true);
       this.autoSave();
     },
 
     redo() {
       if (this.redoStack.length === 0) { this.flash('Nothing to redo', false); return; }
-      this.undoStack.push(this.snapshotPolygons());
+      this.undoHistory.push({ kind: UNDO_KIND_POLY, snap: this.snapshotPolygons(), label: UNDO_LABEL_POLY_DEFAULT });
+      this._trimUndo(UNDO_KIND_POLY, this.maxUndo);
       this.restoreSnapshot(this.redoStack.pop());
       this.flash('Redo', true);
       this.autoSave();
     },
 
     resampleAll() {
-      this.pushUndo();
+      this.pushUndo('resample');
       const n = Math.max(RESAMPLE_MIN_POINTS, Math.min(RESAMPLE_MAX_POINTS, this.numPoints || RESAMPLE_DEFAULT_POINTS));
       for (const poly of this.polygons) {
         poly.points = this.resamplePoly(poly.points, n);
@@ -2481,7 +2723,7 @@ function polygonEditor() {
     },
 
     addTrap() {
-      this.pushUndo();
+      this.pushUndo('add trap');
       const trapCount = this.polygons.filter(p => p.type === 'trap').length;
       const cx = this.imgW / 2;
       const cy = this.imgH / 2;
@@ -2505,7 +2747,7 @@ function polygonEditor() {
     },
 
     addWater() {
-      this.pushUndo();
+      this.pushUndo('add water');
       const waterCount = this.polygons.filter(p => p.type === 'water').length;
       const cx = this.imgW / 2;
       const cy = this.imgH / 2;
@@ -2589,29 +2831,6 @@ function polygonEditor() {
         };
         this.flash('Tee hole added — drag to reposition', true);
       }
-      this.autoSave();
-    },
-    // Which side of the print (left / right) the tee hole currently sits on.
-    // Derived from x_mm — no dedicated EGM field. Returns 'left' when marker
-    // is missing (radio group is hidden anyway, but keep the getter safe).
-    get teeHoleSide() {
-      if (!this.teeHole) return TEE_SIDE_LEFT;
-      const psm = this.printSizeMm || DEFAULT_PRINT_SIZE_MM;
-      return (this.teeHole.x_mm < psm / 2) ? TEE_SIDE_LEFT : TEE_SIDE_RIGHT;
-    },
-    // Mirror the tee hole across the print's vertical centerline so its
-    // distance from the opposite frame edge is preserved. Y is untouched.
-    // No-op when marker is missing or when the requested side already matches.
-    setTeeHoleSide(side) {
-      if (!this.teeHole) return;
-      if (side !== TEE_SIDE_LEFT && side !== TEE_SIDE_RIGHT) return;
-      if (this.teeHoleSide === side) return;
-      const psm = this.printSizeMm || DEFAULT_PRINT_SIZE_MM;
-      const newX = psm - this.teeHole.x_mm;
-      this.teeHole = {
-        x_mm: roundMm(newX),
-        y_mm: this.teeHole.y_mm,
-      };
       this.autoSave();
     },
     teeHolePointerDown(e) {
@@ -2737,11 +2956,19 @@ function polygonEditor() {
       let v = parseFloat(this._gridInputValue);
       if (isNaN(v)) {                                   // blank box: shared value of the selected cell(s), else 0
         const t = (this._gridMultiSelect && this._gridMultiSelect.size > 0) ? [...this._gridMultiSelect] : [this._gridActiveCell.idx];
-        const vals = t.map(i => Number(this.gridCellHeights[i]) || 0);
+        const vals = t.map(i => Number(this.gridCellHeights[i]) || GRID_TYPED_EMPTY_VALUE);   // empty -> 0 start point
         v = vals.every(x => x === vals[0]) ? vals[0] : 0;
       }
       v = v + notches * (e.shiftKey ? WHEEL_STEP_SHIFT_MM : WHEEL_STEP_MM);
       this._gridInputValue = String(roundMm(v));
+    },
+
+    // v5.80: opening an explicit-0 cell shows "0"; leaving the box untouched must NOT empty it (typing 0 into a
+    // different value still empties).  True when the single target is already an explicit 0 and the box still reads "0".
+    _untouchedExplicitZero(targets, clamped) {
+      return targets.length === 1 && clamped === GRID_TYPED_EMPTY_VALUE
+        && this.gridCellHeights[targets[0]] === GRID_TYPED_EMPTY_VALUE
+        && this._gridInputValue === String(GRID_TYPED_EMPTY_VALUE);
     },
 
     // Commit the current input value to gridCellHeights.
@@ -2754,9 +2981,10 @@ function polygonEditor() {
         const clamped = Math.max(lim.min, Math.min(lim.max, raw));
         const targets = (this._gridMultiSelect && this._gridMultiSelect.size > 0)
           ? [...this._gridMultiSelect] : [this._gridActiveCell.idx];
-        this.gridUndoSnapshot(targets, targets.length > 1 ? 'set ' + targets.length + ' cells' : 'cell edit');
-        // Zero = empty cell: delete the key instead of storing 0.
-        for (const i of targets) { if (clamped === 0) delete this.gridCellHeights[i]; else this.gridCellHeights[i] = clamped; }
+        if (this._untouchedExplicitZero(targets, clamped)) { this.cancelGridCell(); return; }   // v5.80
+        this.gridUndoSnapshot(targets, targets.length > 1 ? 'set ' + targets.length + ' cells' : UNDO_LABEL_CELL_EDIT);
+        // v5.80: TYPING 0 still empties the cell (delete the key); only the paint-mode brush stores an explicit 0.
+        for (const i of targets) { if (clamped === GRID_TYPED_EMPTY_VALUE) delete this.gridCellHeights[i]; else this.gridCellHeights[i] = clamped; }
       }
       // Commit → autoSave so changes persist.
       this._gridActiveCell       = null;
@@ -2767,12 +2995,11 @@ function polygonEditor() {
       this.autoSave();
     },
 
-    // v5.19 — single-level grid-cell undo.  Snapshot ONLY the cells an edit is about to change
-    // (replacing any earlier snapshot); gridUndo() restores them via the normal draw + autoSave path.
     // v5.22 — switch grid resolution (20 <-> 40). Existing cell values are meaningless in the
     // new grid, so they are erased after a confirm.  Cancel = no change (the toggle is state-
-    // driven, so it stays on the old value).  The switch is NOT undoable: the grid undo
-    // snapshot is cleared because its cell indices belong to the old resolution.
+    // driven, so it stays on the old value).  The switch is NOT undoable: the grid entries of the
+    // unified undo history are dropped (their cell indices belong to the old resolution) while the
+    // polygon/contour entries stay, in order, so Cmd+Z keeps working for polygon edits.
     setGridResolution(n) {
       if (n === this.gridN) return;
       if (Object.keys(this.gridCellHeights).length > 0) {
@@ -2781,35 +3008,20 @@ function polygonEditor() {
       this.cancelGridRamp && this.cancelGridRamp();
       this.gridN = n;
       this.gridCellHeights = {};
-      this._gridUndo = null;
+      this.undoHistory = this.undoHistory.filter(e => e.kind !== UNDO_KIND_GRID);
       this._gridActiveCell = null;
       this._gridInputValue = '';
       this._gridHoveredCell = null;
       this._gridMultiSelect = null;
-      this._trapCtlCells = [];
-      this._trapCtlSig = '';
       this.autoSave();
       this.draw();
     },
 
+    // Snapshot ONLY the cells an edit is about to change and push them as one unified-history step.
     gridUndoSnapshot(idxs, label) {
       const cells = {};
       for (const i of idxs) cells[i] = this.gridCellHeights[i];   // undefined = was empty
-      this._gridUndo = { cells, mode: this.gridMode, label };
-    },
-
-    gridUndo() {
-      const u = this._gridUndo;
-      if (!u) return false;
-      this._gridUndo = null;                       // one level: cleared after use
-      if (u.mode !== this.gridMode) { this.flash('Grid mode changed — nothing to undo', false); return true; }
-      for (const [i, v] of Object.entries(u.cells)) {
-        if (v === undefined) delete this.gridCellHeights[i]; else this.gridCellHeights[i] = v;
-      }
-      this.draw();
-      this.flash('Undo ' + u.label, true);
-      this.autoSave();
-      return true;
+      this.pushGridUndo(cells, label);
     },
 
     // v5.19 — apply the first->last ramp over the selected cells in drag (Set insertion) order.
@@ -2819,7 +3031,7 @@ function polygonEditor() {
       if (!isNaN(a) && !isNaN(b) && this._gridMultiSelect) {
         this.gridUndoSnapshot([...this._gridMultiSelect], 'ramp fill (' + this._gridMultiSelect.size + ' cells)');
         for (const [i, v] of gridRampAssign([...this._gridMultiSelect], a, b, this.gridMode)) {
-          if (v === 0) delete this.gridCellHeights[i]; else this.gridCellHeights[i] = v;
+          if (v === GRID_TYPED_EMPTY_VALUE) delete this.gridCellHeights[i]; else this.gridCellHeights[i] = v;   // typed ramp ends: 0 = empty (v5.80)
         }
         this.cancelGridRamp();
         this.autoSave();
@@ -2853,6 +3065,7 @@ function polygonEditor() {
 
     // Delete a grid cell's stored value (called from handleKey on Delete).
     deleteGridCell(idx) {
+      this.gridUndoSnapshot([idx], UNDO_LABEL_CELL_CLEAR);
       delete this.gridCellHeights[idx];
       this._gridActiveCell = null;
       this._gridInputValue = '';
@@ -2860,9 +3073,127 @@ function polygonEditor() {
       this.autoSave();
     },
 
+    // ── Paint mode (v5.77) ───────────────────────────────────────────────────────
+
+    updatePaletteSize() { this.paletteSwatchPx = paletteSwatchHeight(window.innerHeight); },
+
+    get paletteVisible() { return this.imgLoaded && this.gridMode !== GRID_MODE_OFF; },
+
+    // CSS colour of palette step s, from the SAME fixed scale the cell tint uses.
+    paletteColor(step) {
+      const c = this.cellColorAt(step / (CELL_COLOR_STOPS.length - 1));
+      return 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
+    },
+
+    paintBrushValueNow() { return paintBrushValue(this.paintBrush, this.gridMode); },
+
+    // Enter paint mode (optionally choosing a brush first).  Returns false when the grid is Off / no image.
+    enterPaintMode(brush) {
+      if (brush !== undefined) this.paintBrush = brush;
+      if (this.gridMode === GRID_MODE_OFF) { this.flash(MSG_GRID_MODE_OFF, false); return false; }
+      if (!this.imgLoaded) return false;
+      if (this._gridActiveCell || this._gridMultiSelect) this.cancelGridRamp();   // close any open value box / selection
+      this._gridHoveredCell = null;
+      this.paintMode = true;
+      this.applyPaintCursor();
+      this.draw();
+      return true;
+    },
+
+    exitPaintMode() {
+      if (this._paintStroke) this.paintEnd();
+      if (!this.paintMode) return;
+      this.paintMode = false;
+      if (this.$refs.canvas) this.$refs.canvas.style.cursor = CURSOR_DEFAULT;
+    },
+
+    togglePaintMode() {
+      if (this.paintMode) this.exitPaintMode(); else this.enterPaintMode();
+    },
+
+    // Palette click: choose the brush AND enter paint mode.
+    selectBrush(brush) {
+      if (this.paintMode) { this.paintBrush = brush; this.applyPaintCursor(); return; }
+      this.enterPaintMode(brush);
+    },
+
+    // CSS cursor for the current brush; the SVG is rebuilt whenever the brush changes.
+    paintCursorCss() {
+      if (this.paintBrush === PAINT_BRUSH_ERASER) {
+        return cursorCssFromSvg(eraserCursorSvg(), ERASER_CURSOR_HOTSPOT_X, ERASER_CURSOR_HOTSPOT_Y);
+      }
+      return cursorCssFromSvg(paintCursorSvg(this.paletteColor(this.paintBrush)), PAINT_CURSOR_TIP_X, PAINT_CURSOR_TIP_Y);
+    },
+
+    applyPaintCursor() {
+      if (!this.paintMode || !this.$refs.canvas) return;
+      this.$refs.canvas.style.cursor = this.paintCursorCss();
+    },
+
+    // Fractional cell coordinates (u = columns from the left, v = rows from the TOP) of an image-px point.
+    _imgToCellUV(x, y) {
+      const tl = this._printTopLeftPx(), k = this._pxPerMm();
+      const psm = this.printSizeMm || DEFAULT_PRINT_SIZE_MM;
+      return { u: (x - tl.x) / ((psm / this.gridN) * k), v: (y - tl.y) / ((psm / this.gridN) * k) };
+    },
+
+    // Write the brush into the given cells [[col, rowFromTop], ...] (out-of-grid cells ignored).  Remembers
+    // each cell's pre-stroke value the first time the stroke touches it.  Returns true if anything changed.
+    _paintCells(list) {
+      const N = this.gridN, stroke = this._paintStroke;
+      const eraser = this.paintBrush === PAINT_BRUSH_ERASER;
+      const lim = gridValueLimits(this.gridMode);
+      const val = eraser ? GRID_TYPED_EMPTY_VALUE : Math.max(lim.min, Math.min(lim.max, this.paintBrushValueNow()));
+      let changed = false;
+      for (const [i, j] of list) {
+        if (i < 0 || j < 0 || i >= N || j >= N) continue;
+        const idx = (N - 1 - j) * N + i;
+        if (stroke && !(idx in stroke.cells)) stroke.cells[idx] = this.gridCellHeights[idx];
+        const before = this.gridCellHeights[idx];
+        if (eraser) { if (before !== undefined) { delete this.gridCellHeights[idx]; changed = true; } }   // Eraser empties
+        else if (before !== val) { this.gridCellHeights[idx] = val; changed = true; }              // v5.80: brush 0 is stored (explicit 0)
+      }
+      return changed;
+    },
+
+    paintBegin(e) {
+      const p = this.canvasToImg(e), uv = this._imgToCellUV(p.x, p.y);
+      this._gridHoveredCell = null;
+      this._paintStroke = { cells: {}, lastU: uv.u, lastV: uv.v };
+      if (this._paintCells([[Math.floor(uv.u), Math.floor(uv.v)]])) this.draw();
+    },
+
+    paintMove(e) {
+      this._gridHoveredCell = null;
+      this.applyPaintCursor();
+      const st = this._paintStroke;
+      if (!st) return;
+      if (!(e.buttons & 1)) { this.paintEnd(); return; }       // mouse-up was missed
+      const p = this.canvasToImg(e), uv = this._imgToCellUV(p.x, p.y);
+      // Interpolate between the previous and this sample so fast drags cannot skip cells.
+      if (this._paintCells(cellsAlongSegment(st.lastU, st.lastV, uv.u, uv.v))) this.draw();
+      st.lastU = uv.u; st.lastV = uv.v;
+    },
+
+    // Mouse-up: the whole stroke becomes ONE undo step (pre-stroke values of every cell it actually changed).
+    paintEnd() {
+      const st = this._paintStroke;
+      if (!st) return;
+      this._paintStroke = null;
+      const cells = {};
+      for (const [i, prev] of Object.entries(st.cells)) {
+        if (this.gridCellHeights[i] !== prev) cells[i] = prev;
+      }
+      const n = Object.keys(cells).length;
+      if (!n) return;
+      this.pushGridUndo(cells, PAINT_STROKE_LABEL + ' (' + n + (n === 1 ? ' cell)' : ' cells)'));
+      this.draw();
+      this.autoSave();
+    },
+
     removePoly(idx) {
       if (!isRemovablePolyType(this.polygons[idx].type)) return;
-      this.pushUndo();
+      this.pushUndo('remove polygon');
       this.polygons.splice(idx, 1);
       if (this.selectedPoly >= this.polygons.length) {
         this.selectedPoly = this.polygons.length - 1;
@@ -2879,51 +3210,42 @@ function polygonEditor() {
       this.autoSave();
     },
 
-    // ── v5.14 cell coloring ──────────────────────────────────────────────────
-    // TERRAIN_STOPS: matplotlib cmap "terrain" sampled at 65 evenly spaced points
-    // (same colormap as gradient_surface_diagnostic.save_height_map); linear interp.
-    TERRAIN_STOPS: ["#333399", "#2e3ea4", "#2848ae", "#2353b9", "#1e5ec4", "#1868ce", "#1373d9", "#0e7ee4", "#0888ee", "#0393f9", "#009cf4", "#00a4dc", "#00acc4", "#00b4ac", "#00bc94", "#00c47d", "#01cc66", "#11cf69", "#21d36d", "#31d670", "#41d973", "#51dc76", "#61df79", "#71e37d", "#81e680", "#91e983", "#a1ec86", "#b1ef89", "#c1f38d", "#d1f690", "#e1f993", "#f1fc96", "#fefe98", "#f6f394", "#eee990", "#e6df8b", "#ded587", "#d6cb83", "#cec07f", "#c6b67a", "#beac76", "#b6a272", "#ae976d", "#a68d69", "#9e8365", "#967960", "#8e6e5c", "#866458", "#815e56", "#896861", "#91726c", "#997c76", "#a18781", "#a9918c", "#b19b96", "#b9a5a1", "#c1b0ac", "#c9bab7", "#d1c4c1", "#d9cecc", "#e1d9d7", "#e9e3e2", "#f1edec", "#f9f7f7", "#ffffff"],
-    terrainColor(t) {
-      const S = this.TERRAIN_STOPS, n = S.length - 1;
+    // ── cell coloring (v5.14; fixed scale since v5.76) ───────────────────────
+    // Linear interpolation between the CELL_COLOR_STOPS hex colours, t in 0..1 (clamped).
+    cellColorAt(t) {
+      const S = CELL_COLOR_STOPS, n = S.length - 1;
       t = Math.max(0, Math.min(1, t));
       const f = t * n, i = Math.min(n - 1, Math.floor(f)), u = f - i;
       const a = S[i], b = S[i + 1], h = (x, o) => parseInt(x.substr(o, 2), 16);
       const ch = o => Math.round(h(a, o) + (h(b, o) - h(a, o)) * u);
       return [ch(1), ch(3), ch(5)];
     },
-    // Colour range over ALL 400 cells with empty cells counted as 0 (v5.14 rev),
-    // so 0 is always inside the range whenever any cell is empty.  null = nothing set.
+    // FIXED range for the current mode (independent of the cell values).  null in 'off' mode.
     gridRange() {
-      let lo = Infinity, hi = -Infinity, nSet = 0;
-      for (const v of Object.values(this.gridCellHeights)) {
-        const n = Number(v); if (!n) continue;
-        nSet++; if (n < lo) lo = n; if (n > hi) hi = n;
-      }
-      if (nSet === 0) return null;
-      if (nSet < GRID_RANGE_FULL_CELL_COUNT) { if (0 < lo) lo = 0; if (0 > hi) hi = 0; }
-      return { min: lo, max: hi };
+      if (this.gridMode === GRID_MODE_OFF) return null;
+      return this.gridMode === GRID_MODE_ABSOLUTE
+        ? { min: CELL_COLOR_ABSOLUTE_MIN_MM, max: CELL_COLOR_ABSOLUTE_MAX_MM }
+        : { min: CELL_COLOR_DELTA_MIN_MM, max: CELL_COLOR_DELTA_MAX_MM };
     },
-    // single set value => mid colour (avoid divide-by-zero)
+    // values outside the range clamp to the end colours (cellColorAt clamps t)
     cellColorRgb(v, range) {
-      const t = range.max === range.min ? 0.5 : (Number(v) - range.min) / (range.max - range.min);
-      return this.terrainColor(t);
-    },
-    terrainLegendGradient() {
-      return 'linear-gradient(to right,' + this.TERRAIN_STOPS.join(',') + ')';
+      return this.cellColorAt((Number(v) - range.min) / (range.max - range.min));
     },
     setColorCells() {   // view preference only — never persisted to the EGM
       try { localStorage.setItem(STORAGE_KEY_COLOR_CELLS, this.colorCellsByHeight ? STORAGE_VALUE_ON : STORAGE_VALUE_OFF); } catch (e) {}
       this.draw();
     },
 
-    // v5.14 — terrain-colored cell fill, auto-scaled between lowest and highest set
-    // cell, empties counted as 0 (all 400 cells filled).  Skipped in 'off' mode and when nothing is set.
+    // v5.14 — colored cell fill on the FIXED v5.76 scale. Only SET cells (key present) are filled; an explicit 0
+    // (v5.80, brush-painted) is set and takes its normal scale colour (delta: the pale-yellow midpoint).
+    // Empty cells (key absent) are left uncoloured. Skipped in 'off' mode and when no cell is set.
     _drawCellColors(ctx, tl, cellWpx, cellHpx) {
       const GRID_COLS = this.gridN, GRID_ROWS = this.gridN;
       const rng = this.gridRange();
-      if (!rng) return;
-      for (let idx = 0; idx < GRID_COLS * GRID_ROWS; idx++) {   // every cell; empty = 0
-        const mm = Number(this.gridCellHeights[idx]) || 0;
+      if (!rng || !Object.keys(this.gridCellHeights).length) return;
+      for (let idx = 0; idx < GRID_COLS * GRID_ROWS; idx++) {   // set cells only; empty (key absent) = no fill
+        if (this.gridCellHeights[idx] === undefined) continue;
+        const mm = Number(this.gridCellHeights[idx]);
         const col = idx % GRID_COLS, row = Math.floor(idx / GRID_COLS);
         const rgb = this.cellColorRgb(mm, rng);
         const p0 = this.imgToCanvas(tl.x + col * cellWpx, tl.y + (GRID_ROWS - 1 - row) * cellHpx);
@@ -2931,40 +3253,6 @@ function polygonEditor() {
         ctx.fillStyle = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${CELL_COLOR_ALPHA})`;
         ctx.fillRect(Math.min(p0.x, p1.x), Math.min(p0.y, p1.y), Math.abs(p1.x - p0.x), Math.abs(p1.y - p0.y));
       }
-    },
-
-    // v5.11 — keep the red controlling-cell rings in sync with the live editor
-    // state.  Debounced; skips the network entirely in off mode.
-    _scheduleTrapCtl() {
-      if (this.gridMode === GRID_MODE_OFF || !Object.keys(this.gridCellHeights).length) {
-        this._trapCtlCells = []; this._trapCtlSig = '';
-        return;
-      }
-      const traps = this.polygons.filter(p => p.type === 'trap' || p.type === 'green')
-        .map(p => ({ type: p.type, name: p.name, closed: true, points: p.points.map(pt => ({ x: pt.x, y: pt.y })) }));
-      const payload = {
-        gridMode: this.gridMode,
-        gridResolution: this.gridN,
-        gridCellHeights: Object.assign({}, this.gridCellHeights),
-        imageSize: { width: this.imgW, height: this.imgH },
-        greenScale: this.greenScale,
-        polygons: traps,
-      };
-      const sig = JSON.stringify(payload);
-      if (sig === this._trapCtlSig) return;
-      this._trapCtlSig = sig;
-      clearTimeout(this._trapCtlTimer);
-      const seq = ++this._trapCtlSeq;
-      this._trapCtlTimer = setTimeout(async () => {
-        try {
-          const r = await fetch(API_TRAP_CONTROLLING_CELLS, {
-            method: HTTP_METHOD_POST, headers: HTTP_HEADERS_JSON, body: sig });
-          if (!r.ok || seq !== this._trapCtlSeq) return;
-          const j = await r.json();
-          this._trapCtlCells = (j.traps || []).flatMap(t => t.cells);
-          this.draw();
-        } catch (e) { /* cosmetic overlay */ }
-      }, TRAP_CTL_DEBOUNCE_MS);
     },
 
     async autoSave() {
@@ -3187,9 +3475,8 @@ function polygonEditor() {
       this.selectedVerts      = [];
       this._pendingRestore    = null;
       // Undo / redo
-      this.undoStack          = [];
+      this.undoHistory        = [];
       this.redoStack          = [];
-      this._gridUndo          = null;
       // Per-hole settings — reset to defaults
       this.contourStep        = DEFAULT_CONTOUR_STEP_MM;
       this.grassAmplitude     = DEFAULT_GRASS_AMPLITUDE_MM;
@@ -3306,9 +3593,8 @@ function polygonEditor() {
         const gs = Array.isArray(gps.gridSize) ? gps.gridSize[0] : (gps.gridSize || DEFAULT_GPS_GRID_SIZE);
         this.gpsGridSize = GPS_GRID_SIZE_OPTIONS.includes(gs) ? gs : DEFAULT_GPS_GRID_SIZE;
         this.courseGeoRef = data.courseGeoRef || null;
-        this.undoStack = [];
+        this.undoHistory = [];
         this.redoStack = [];
-        this._gridUndo = null;
         this.selectedVerts = [];
         this.polygons = [];
         this.contours = [];
@@ -3328,7 +3614,7 @@ function polygonEditor() {
           };
         }
         // gridCellHeights — v5.00. Absent in legacy EGMs → default to empty dict.
-        this.gridCellHeights = Object.fromEntries(Object.entries(data.gridCellHeights || {}).filter(([, v]) => Number(v) !== 0));  // zero = empty
+        this.gridCellHeights = Object.assign({}, data.gridCellHeights || {});  // v5.80: key present = set, explicit 0 kept (old EGMs never stored 0)
         // gridResolution — v5.22. Absent in legacy EGMs → 20. Anything but 40 collapses to 20.
         this.gridN = (Number(data.gridResolution) === GRID_N_FINE) ? GRID_N_FINE : GRID_N_DEFAULT;
         // gridMode — v5.34 (task 774). Absent in legacy EGMs → default to 'delta'
@@ -3404,9 +3690,8 @@ function polygonEditor() {
           this.fringeXyExpansionMm = cd.fringe_xy_expansion_mm;
         }
       } catch (_) { /* use defaults */ }
-      this.undoStack = [];
+      this.undoHistory = [];
       this.redoStack = [];
-      this._gridUndo = null;
       this.selectedVerts = [];
       this.polygons = [];
       // Grid cell elevation — reset on new project
@@ -3888,14 +4173,22 @@ function polygonEditor() {
           }
         }
       }
+      // v5.77 paint mode keys: B toggles, Esc exits -- never while typing in a field or with a dialog open.
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && !this.showNewDialog && !this.showOpenDialog) {
+        const t = e.target;
+        const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+        if (!typing) {
+          if (String(e.key || '').toLowerCase() === PAINT_KEY) { e.preventDefault(); this.togglePaintMode(); return; }
+          if (e.key === PAINT_EXIT_KEY && this.paintMode) { e.preventDefault(); this.exitPaintMode(); return; }
+        }
+      }
       // Undo: Cmd+Z / Ctrl+Z
       if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
         // v5.19: leave native text undo alone inside inputs / popup boxes
         const t = e.target;
         if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
         e.preventDefault();
-        if (this.gridUndo()) return;      // last edit was a grid-cell edit
-        this.undo();
+        this.undo();                      // v5.77: newest edit of either kind (grid or polygon/contour)
         return;
       }
       // Redo: Cmd+Shift+Z / Ctrl+Shift+Z or Ctrl+Y
@@ -3931,7 +4224,7 @@ function polygonEditor() {
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (this.selectedVerts.length === 0) return;
-        this.pushUndo();
+        this.pushUndo('delete points');
         const sorted = [...this.selectedVerts].sort((a, b) => {
           if (a.poly !== b.poly) return b.poly - a.poly;
           return b.idx - a.idx;
