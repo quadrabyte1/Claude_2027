@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{# Boundary Editor v5.87 — UI Mode 2 implemented (Thomas's "Boundary Editor Commands" spreadsheet). Two sub-modes shown/switchable beside the UI Mode switch: Boundary Editing (Cmd/Ctrl-B, arrow cursor: left-click/drag a point moves it; right-click on a line adds a point that follows the mouse; right-click on a point deletes it; drag on empty space = rubber band; Cmd-drag on empty space = freehand lasso; Shift adds to the selection; selected points = same size/colour with a black border; Esc clears the selection) and Z-Painting (Cmd/Ctrl-P: palette swatch = single brush, Cmd-click a swatch = second brush -> rainbow cursor; Eraser = brush with value null; right-click = popup palette; 1 brush: click/drag paints, Cmd-drag rubber-band fills cells entirely inside; 2 brushes: drag selects cells in visit order and release ramps brush 1 -> brush 2 quantised to palette steps). Every gesture is ONE undo step. Mode 1 is untouched (its B toggle, grid copy/paste and Shift line-lock stay Mode-1 only; Mode 2 leaves the grid value box and contour drawing unreachable). Switching back to Mode 1 leaves paint state and restores the cursor. v5.86 — New "UI Mode" switch (Mode 1 / Mode 2) in its own labelled group on the Grid row: an editor-wide, per-browser preference (localStorage, never saved to the EGM; default Mode 1). Mode 1 = all existing key/mouse bindings, unchanged. Mode 2 is a placeholder that currently behaves exactly like Mode 1; the input seam (isUiMode2() + comments in handleKey / onMouseDown / onMouseMove / onMouseUp) is where the new paradigm will branch. v5.85 — Shift held during a Cmd/Ctrl cell drag locks the selection to a straight line: once the pointer is 2 cells from the start cell the direction is locked (any angle; snaps to exact 0/45/90 within 12 degrees), sideways drift is ignored and cells are added along a 1-cell-wide DDA ray walk, in order, so the far end is the most recent cell (paste anchor); releasing Shift returns to free selection. v5.84 — Bunker body is now a ruled surface: rim 2 mm below the fringe, straight chords between boundary heights across the strongest-gradient direction; grid cells inside a bunker no longer reshape it (server-side change; no editor UI change). v5.83 — Grid cells copy/paste: Cmd/Ctrl+C copies the selected cells with their values (explicit 0 kept) as offsets from the most recently selected cell, to the system clipboard (JSON, type-tagged) and an in-memory fallback; Cmd/Ctrl+V pastes that pattern anchored at the most recently selected cell as one undoable step (cells outside the grid skipped). Native copy/paste in text fields is untouched. v5.82 — Bunkers are now carved from the finished fringe: set cells FULLY inside a bunker belong to that bunker only (the fringe is built without them; partly-inside cells still shape the fringe); the bunker floor is the fringe surface minus 1 mm, and its fully-inside cells shape it smoothly (delta = offsets, absolute = floor height in mm) with the rim always 1 mm below the fringe; a bunker with no set cells stays flat. The red controlling-cell ring overlay and its server route are removed. v5.81 — Fix: the canvas could be sized from a container width measured before the paint palette laid out (palette shows/hides with Grid mode), leaving it wider than its frame so the right edge of the image/polygons was clipped; the canvas now re-measures via a ResizeObserver whenever its container width changes. v5.80 — Removed the -15/+15 colour legend gradient next to "Color cells by height" (the left palette shows the scale) and the "N cells set" badge from the Grid row. A 0 painted with the paint-mode BRUSH is now a REAL value: stored in gridCellHeights (key present = set; explicit 0), drawn with its normal scale colour (delta: the pale-yellow midpoint) and labelled 0.0, kept on reload, and used by the generator like any set cell (TPS constraint, trap controlling cell). The Eraser empties a cell; typing 0 in the value box, right-click and Delete still empty it; undo restores empty vs explicit 0 exactly. Old EGMs (never stored zeros) are unaffected. v5.79 — Below-canvas controls reorganised into labelled groups (Project / Shapes / Image / Output on one row with Generate at the right end; Grid row: mode, resolution, Paint, Undo, colour-by-height) with consistent 32px controls and segmented switches; Remove T Hole gets a subtle danger style; Undo moved from the top bar into the Grid group; the tee-hole Side Left/Right picker (and its dead setTeeHoleSide / teeHoleSide / TEE_SIDE_* code) removed — drag the marker instead. Layout and styling only. v5.78 — Cell value labels scale with the actual cell pixel width on the 40x40 grid (clamped min/max; 20x20 unchanged) so labels like -12.5 fit one cell; with "Color cells by height" on, empty cells (0 / unset) are left uncoloured — only set, non-zero cells get a fill. v5.77 — Paint mode: left-margin colour palette (31 swatches on the fixed v5.76 scale + Eraser; delta +15..-15, absolute 30..0), Paint button / B key / swatch click to enter, Esc / B / button / Grid Off to exit; mouse-down + drag paints cells (interpolated along the drag, 20x20 and 40x40) with a brush-tinted paintbrush cursor (eraser has its own); one stroke = one undo step; undo is now ONE chronological history (max 50 grid steps) shared by grid edits and polygon/contour edits, so polygon edits no longer wipe grid undo. v5.76 — Cell colours use a FIXED scale (colormap matplotlib RdYlBu_r, blue low -> red high): delta -15..+15 mm, absolute 0..30 mm on the same colours; values outside clamp to the end colours; legend shows the fixed ends; auto-scaling (and the 400-cell rule) removed. v5.75 — Generate stops with a clear message when a required Python package (e.g. triangle) is missing instead of producing a degraded model. v5.70 — Named-constants refactor (CLAUDE.md Coding Standard), no behavior change: every tunable, color, size, threshold, API URL, storage key, mode name and repeated UI string now lives in one EDITOR CONSTANTS block at the top of the script (CSS custom properties for markup-only values); tests read the constants via tests/editor_constants.py. v5.69 — Create New Project: the heat-map PNG's baked-in background grid is erased for display (server-side heatmap_degrid.py; cleaned copy saved next to the original, original untouched) with an Original/Degridded view toggle; boundary detection still runs on the original; Open Project is unaffected. v5.68 — Grid resolution switch (20x20 default / 40x40) next to the Grid mode switch; confirm dialog then erases all cell values; saved as EGM `gridResolution` (absent = 20); drawing, hit-testing, overlays and the server TPS/controlling-cell code honour it. v5.21 — Default tee-hole position moved to (40, 40) mm (was 30, 30); saved positions untouched. v5.20 — Grid cell value labels are plain black (delta) with no white outline; absolute keeps orange. v5.19 — Ctrl+Option(Alt)+drag selects cells along the drag path (visit order); popup has first/last boxes, Tab/Enter from the last box spreads first->last linearly (0.1 mm precision). v5.18 — Grid cell value labels/tooltip no longer show a leading '+' on positives (negatives keep '-'). v5.17 — Geo-ref setup dialog removed (orphaned after the GPS panel ⚙ opener was removed); courseGeoRef data still loads/saves untouched. v5.16 — GPS controls removed from the UI (JS state/load/save kept so any EGM gpsBackend block still round-trips). v5.15 — Mouse wheel steps the open grid value box (0.1 mm, Shift = 1.0; no clamp; commit still Enter/Tab). v5.14 — Grid cells colored by value (matplotlib 'terrain', auto-scaled; view-only toggle in localStorage). v5.13 — Only cells FULLY inside a bunker can control it (partial cells ignored). v5.12 — Ring now in delta AND absolute (not off); delta = default + highest cell (was mean). v5.11 — Absolute mode: red ring around the grid cell(s) that control each trap's height (server-computed, mirrors generator). v5.10 — Grid value 0 = empty cell (deleted on commit, dropped on load). Grid lines recolored to indigo; Cmd+drag multi-cell selection with shared-value edit (task 726) #}
+{# Boundary Editor v5.92 — Mode 2 is now the ONLY UI: the Mode 1 / Mode 2 switch is removed from the page (hidden behind the single constant UI_MODE_SWITCH_ENABLED = false), uiMode is forced to Mode 2 on load and any stored "Mode 1" is ignored; the Boundary Editing / Z-Painting sub-mode switch stays. Mode 1 code is kept dormant on purpose (set UI_MODE_SWITCH_ENABLED = true to revive). v5.91 — Ctrl now behaves exactly like Cmd everywhere. Palette swatches (side palette, popup palette, Eraser) select on mousedown because macOS never fires `click` for Ctrl+left-click (it becomes a context-menu click); the follow-up click is ignored so a press cannot fire twice, and the context menu is suppressed on swatches. A contextmenu event with Ctrl held (macOS Ctrl+click) is ignored by the canvas, so in Mode 1 a Ctrl-click/drag multi-select no longer clears the grid cell under the pointer; genuine right-click is unchanged. One isCmdLike(e) helper replaces the scattered metaKey||ctrlKey tests (keyboard chords Ctrl-B/P/Z/Shift-Z/Y/Delete included). v5.90 — The "Edit" group (Paint and Undo buttons) is removed from the Grid row; Paint (B in Mode 1, Cmd/Ctrl-P in Mode 2), Esc and Cmd/Ctrl-Z / Cmd/Ctrl-Shift-Z undo/redo remain on the keyboard. v5.89 — Boundary Editing (UI Mode 2): a plain left-click on empty space (no drag past the threshold) and a right-click that is not on a boundary line now unselect any selected control points (Shift + click on empty space keeps the selection; drags still rubber-band; not an undo step). Mode 1 unchanged. v5.88 — The GREEN boundary polygon (line, fill, control points, selected point) is now drawn fuchsia/purple (COLOR_POLY_GREEN #C026D3) instead of green so it stands out on the green heat map; drawn colour is derived from the polygon type, so existing EGMs with a stored green colour also show purple (stored data untouched). Trap/water/boulder colours unchanged. v5.87 — UI Mode 2 implemented (Thomas's "Boundary Editor Commands" spreadsheet). Two sub-modes shown/switchable beside the UI Mode switch: Boundary Editing (Cmd/Ctrl-B, arrow cursor: left-click/drag a point moves it; right-click on a line adds a point that follows the mouse; right-click on a point deletes it; drag on empty space = rubber band; Cmd-drag on empty space = freehand lasso; Shift adds to the selection; selected points = same size/colour with a black border; Esc clears the selection) and Z-Painting (Cmd/Ctrl-P: palette swatch = single brush, Cmd-click a swatch = second brush -> rainbow cursor; Eraser = brush with value null; right-click = popup palette; 1 brush: click/drag paints, Cmd-drag rubber-band fills cells entirely inside; 2 brushes: drag selects cells in visit order and release ramps brush 1 -> brush 2 quantised to palette steps). Every gesture is ONE undo step. Mode 1 is untouched (its B toggle, grid copy/paste and Shift line-lock stay Mode-1 only; Mode 2 leaves the grid value box and contour drawing unreachable). Switching back to Mode 1 leaves paint state and restores the cursor. v5.86 — New "UI Mode" switch (Mode 1 / Mode 2) in its own labelled group on the Grid row: an editor-wide, per-browser preference (localStorage, never saved to the EGM; default Mode 1). Mode 1 = all existing key/mouse bindings, unchanged. Mode 2 is a placeholder that currently behaves exactly like Mode 1; the input seam (isUiMode2() + comments in handleKey / onMouseDown / onMouseMove / onMouseUp) is where the new paradigm will branch. v5.85 — Shift held during a Cmd/Ctrl cell drag locks the selection to a straight line: once the pointer is 2 cells from the start cell the direction is locked (any angle; snaps to exact 0/45/90 within 12 degrees), sideways drift is ignored and cells are added along a 1-cell-wide DDA ray walk, in order, so the far end is the most recent cell (paste anchor); releasing Shift returns to free selection. v5.84 — Bunker body is now a ruled surface: rim 2 mm below the fringe, straight chords between boundary heights across the strongest-gradient direction; grid cells inside a bunker no longer reshape it (server-side change; no editor UI change). v5.83 — Grid cells copy/paste: Cmd/Ctrl+C copies the selected cells with their values (explicit 0 kept) as offsets from the most recently selected cell, to the system clipboard (JSON, type-tagged) and an in-memory fallback; Cmd/Ctrl+V pastes that pattern anchored at the most recently selected cell as one undoable step (cells outside the grid skipped). Native copy/paste in text fields is untouched. v5.82 — Bunkers are now carved from the finished fringe: set cells FULLY inside a bunker belong to that bunker only (the fringe is built without them; partly-inside cells still shape the fringe); the bunker floor is the fringe surface minus 1 mm, and its fully-inside cells shape it smoothly (delta = offsets, absolute = floor height in mm) with the rim always 1 mm below the fringe; a bunker with no set cells stays flat. The red controlling-cell ring overlay and its server route are removed. v5.81 — Fix: the canvas could be sized from a container width measured before the paint palette laid out (palette shows/hides with Grid mode), leaving it wider than its frame so the right edge of the image/polygons was clipped; the canvas now re-measures via a ResizeObserver whenever its container width changes. v5.80 — Removed the -15/+15 colour legend gradient next to "Color cells by height" (the left palette shows the scale) and the "N cells set" badge from the Grid row. A 0 painted with the paint-mode BRUSH is now a REAL value: stored in gridCellHeights (key present = set; explicit 0), drawn with its normal scale colour (delta: the pale-yellow midpoint) and labelled 0.0, kept on reload, and used by the generator like any set cell (TPS constraint, trap controlling cell). The Eraser empties a cell; typing 0 in the value box, right-click and Delete still empty it; undo restores empty vs explicit 0 exactly. Old EGMs (never stored zeros) are unaffected. v5.79 — Below-canvas controls reorganised into labelled groups (Project / Shapes / Image / Output on one row with Generate at the right end; Grid row: mode, resolution, Paint, Undo, colour-by-height) with consistent 32px controls and segmented switches; Remove T Hole gets a subtle danger style; Undo moved from the top bar into the Grid group; the tee-hole Side Left/Right picker (and its dead setTeeHoleSide / teeHoleSide / TEE_SIDE_* code) removed — drag the marker instead. Layout and styling only. v5.78 — Cell value labels scale with the actual cell pixel width on the 40x40 grid (clamped min/max; 20x20 unchanged) so labels like -12.5 fit one cell; with "Color cells by height" on, empty cells (0 / unset) are left uncoloured — only set, non-zero cells get a fill. v5.77 — Paint mode: left-margin colour palette (31 swatches on the fixed v5.76 scale + Eraser; delta +15..-15, absolute 30..0), Paint button / B key / swatch click to enter, Esc / B / button / Grid Off to exit; mouse-down + drag paints cells (interpolated along the drag, 20x20 and 40x40) with a brush-tinted paintbrush cursor (eraser has its own); one stroke = one undo step; undo is now ONE chronological history (max 50 grid steps) shared by grid edits and polygon/contour edits, so polygon edits no longer wipe grid undo. v5.76 — Cell colours use a FIXED scale (colormap matplotlib RdYlBu_r, blue low -> red high): delta -15..+15 mm, absolute 0..30 mm on the same colours; values outside clamp to the end colours; legend shows the fixed ends; auto-scaling (and the 400-cell rule) removed. v5.75 — Generate stops with a clear message when a required Python package (e.g. triangle) is missing instead of producing a degraded model. v5.70 — Named-constants refactor (CLAUDE.md Coding Standard), no behavior change: every tunable, color, size, threshold, API URL, storage key, mode name and repeated UI string now lives in one EDITOR CONSTANTS block at the top of the script (CSS custom properties for markup-only values); tests read the constants via tests/editor_constants.py. v5.69 — Create New Project: the heat-map PNG's baked-in background grid is erased for display (server-side heatmap_degrid.py; cleaned copy saved next to the original, original untouched) with an Original/Degridded view toggle; boundary detection still runs on the original; Open Project is unaffected. v5.68 — Grid resolution switch (20x20 default / 40x40) next to the Grid mode switch; confirm dialog then erases all cell values; saved as EGM `gridResolution` (absent = 20); drawing, hit-testing, overlays and the server TPS/controlling-cell code honour it. v5.21 — Default tee-hole position moved to (40, 40) mm (was 30, 30); saved positions untouched. v5.20 — Grid cell value labels are plain black (delta) with no white outline; absolute keeps orange. v5.19 — Ctrl+Option(Alt)+drag selects cells along the drag path (visit order); popup has first/last boxes, Tab/Enter from the last box spreads first->last linearly (0.1 mm precision). v5.18 — Grid cell value labels/tooltip no longer show a leading '+' on positives (negatives keep '-'). v5.17 — Geo-ref setup dialog removed (orphaned after the GPS panel ⚙ opener was removed); courseGeoRef data still loads/saves untouched. v5.16 — GPS controls removed from the UI (JS state/load/save kept so any EGM gpsBackend block still round-trips). v5.15 — Mouse wheel steps the open grid value box (0.1 mm, Shift = 1.0; no clamp; commit still Enter/Tab). v5.14 — Grid cells colored by value (matplotlib 'terrain', auto-scaled; view-only toggle in localStorage). v5.13 — Only cells FULLY inside a bunker can control it (partial cells ignored). v5.12 — Ring now in delta AND absolute (not off); delta = default + highest cell (was mean). v5.11 — Absolute mode: red ring around the grid cell(s) that control each trap's height (server-computed, mirrors generator). v5.10 — Grid value 0 = empty cell (deleted on commit, dropped on load). Grid lines recolored to indigo; Cmd+drag multi-cell selection with shared-value edit (task 726) #}
 {% block title %}Boundary Editor — AI Team Workspace{% endblock %}
 {% block content_width %}max-w-6xl{% endblock %}
 {% block content %}
@@ -393,7 +393,7 @@
        :style="'font-size:' + PALETTE_LABEL_FONT_PX + 'px;'">
     <template x-for="step in paletteSteps()" :key="step">
       <button type="button" data-testid="palette-swatch" :data-step="step"
-              @click="onSwatchClick(step, $event)"
+              @mousedown="onSwatchMouseDown(step, $event)" @click="onSwatchKeyClick(step, $event)" @contextmenu.prevent
               :title="paletteLabel(step, gridMode) + ' mm'"
               class="flex items-center gap-1 rounded-sm px-0.5 leading-none"
               :style="'height:' + paletteSwatchPx + 'px;' + (paintBrush === step ? 'outline:2px solid ' + COLOR_PALETTE_SELECTED + ';outline-offset:0;background:#eef2ff;' : (paintBrush2 === step ? 'outline:2px solid ' + COLOR_PALETTE_SELECTED_2 + ';outline-offset:0;background:#fdf2f8;' : ''))">
@@ -403,7 +403,7 @@
       </button>
     </template>
     <button type="button" data-testid="palette-eraser"
-            @click="onSwatchClick(PAINT_BRUSH_ERASER, $event)"
+            @mousedown="onSwatchMouseDown(PAINT_BRUSH_ERASER, $event)" @click="onSwatchKeyClick(PAINT_BRUSH_ERASER, $event)" @contextmenu.prevent
             :title="TIP_PALETTE_ERASER"
             class="mt-1 flex items-center justify-center rounded-sm border border-notion-border font-medium text-notion-text"
             :style="'height:' + (paletteSwatchPx + PALETTE_ERASER_ROW_EXTRA_PX) + 'px;background:' + COLOR_PALETTE_ERASER_BG + ';' + (paintBrush === PAINT_BRUSH_ERASER ? 'outline:2px solid ' + COLOR_PALETTE_SELECTED + ';' : '')">Eraser</button>
@@ -417,13 +417,13 @@
     <div class="flex flex-wrap">
       <template x-for="step in paletteSteps()" :key="step">
         <button type="button" data-testid="popup-swatch" :data-step="step"
-                @click="pickPopupBrush(step)"
+                @mousedown="onPopupSwatchMouseDown(step, $event)" @click="onPopupSwatchKeyClick(step, $event)" @contextmenu.prevent
                 :title="paletteLabel(step, gridMode) + ' mm'"
                 :style="'width:' + PALETTE_POPUP_SWATCH_PX + 'px;height:' + PALETTE_POPUP_SWATCH_PX + 'px;background:' + paletteColor(step) + ';' + (paintBrush === step ? 'outline:2px solid ' + COLOR_PALETTE_SELECTED + ';' : '')"
                 class="border border-black/20"></button>
       </template>
     </div>
-    <button type="button" data-testid="popup-eraser" @click="pickPopupBrush(PAINT_BRUSH_ERASER)" :title="TIP_PALETTE_ERASER"
+    <button type="button" data-testid="popup-eraser" @mousedown="onPopupSwatchMouseDown(PAINT_BRUSH_ERASER, $event)" @click="onPopupSwatchKeyClick(PAINT_BRUSH_ERASER, $event)" @contextmenu.prevent :title="TIP_PALETTE_ERASER"
             class="mt-1 w-full rounded-sm border border-notion-border text-xs font-medium text-notion-text"
             :style="'height:' + PALETTE_POPUP_ERASER_ROW_PX + 'px;background:' + COLOR_PALETTE_ERASER_BG + ';'">Eraser</button>
   </div>
@@ -682,31 +682,12 @@
         </div>
       </div>
 
-      <div class="eb-group">
-        <span class="eb-cap">Edit</span>
-        <div class="flex items-center gap-2">
-          {# Paint mode toggle (v5.77) — shown pressed while paint mode is on; B key does the same #}
-          <button type="button" data-testid="paint-btn"
-                  @click="isUiMode2() ? setUiSubMode(uiSubMode === UI_SUB_PAINT ? UI_SUB_BOUNDARY : UI_SUB_PAINT) : togglePaintMode()"
-                  :aria-pressed="paintMode ? 'true' : 'false'"
-                  :class="paintMode ? 'eb-seg-on-indigo shadow-inner' : ''"
-                  class="eb-btn"
-                  :title="TIP_PAINT_BTN">Paint</button>
-
-          <button @click="undo()" :disabled="!canUndo()"
-                  data-testid="undo-btn"
-                  :title="undoTooltip()"
-                  class="eb-btn">
-            Undo
-          </button>
-        </div>
-      </div>
-
       {# UI Mode switch (v5.86) — editor-wide input paradigm; per-browser preference (localStorage) #}
-      <div class="eb-group" data-testid="ui-mode-switch" :title="UI_MODE_TIP_SWITCH">
-        <span class="eb-cap" x-text="UI_MODE_CAPTION"></span>
+      {# v5.92: Mode 2 is the only UI. The Mode 1 / Mode 2 switch is hidden unless UI_MODE_SWITCH_ENABLED is true (see the constant); the Mode 2 sub-mode switch below stays visible. #}
+      <div class="eb-group" data-testid="ui-mode-switch" :title="UI_MODE_SWITCH_ENABLED ? UI_MODE_TIP_SWITCH : UI_SUB_TIP_SWITCH">
+        <span class="eb-cap" x-show="UI_MODE_SWITCH_ENABLED" x-cloak x-text="UI_MODE_CAPTION"></span>
         <div class="flex items-center gap-2">
-        <div class="eb-seg">
+        <div class="eb-seg" x-show="UI_MODE_SWITCH_ENABLED" x-cloak data-testid="ui-mode-switch-buttons">
           <button type="button" data-testid="ui-mode-1"
                   @click="setUiMode(UI_MODE_1)"
                   :class="uiMode === UI_MODE_1 ? 'eb-seg-on-indigo' : ''"
@@ -802,7 +783,14 @@ const STORAGE_KEY_UI_MODE = 'editorUiMode';
 const UI_MODE_1 = 'mode1';                       // all current key/mouse bindings
 const UI_MODE_2 = 'mode2';                       // experimental controls (placeholder: same as Mode 1 for now)
 const UI_MODES = [UI_MODE_1, UI_MODE_2];
-const DEFAULT_UI_MODE = UI_MODE_1;
+// ── Mode 2 is the ONLY UI (v5.92, Thomas 2026-10-27: "significantly better") ──
+// UI_MODE_SWITCH_ENABLED = false: the Mode 1 / Mode 2 switch is hidden, DEFAULT_UI_MODE is Mode 2, and any value
+// stored in localStorage (e.g. an old "Mode 1") is ignored (loadUiMode / setUiMode are no-ops).
+// Mode 1 code (B paint toggle, grid value box, contour mode, Cmd-C/V, Shift line-lock, ...) is kept DORMANT ON PURPOSE
+// so it can be revived: flip UI_MODE_SWITCH_ENABLED to true and the switch reappears, the saved preference is honoured
+// again and the default goes back to Mode 1. Nothing else needs to change.
+const UI_MODE_SWITCH_ENABLED = false;
+const DEFAULT_UI_MODE = UI_MODE_SWITCH_ENABLED ? UI_MODE_1 : UI_MODE_2;
 const UI_MODE_CAPTION = 'UI Mode';
 const UI_MODE_LABEL_1 = 'Mode 1';
 const UI_MODE_LABEL_2 = 'Mode 2';
@@ -824,7 +812,14 @@ const M2_KEY_PAINT = 'p';                   // Cmd/Ctrl + this key -> Z-Painting
 const M2_KEY_CANCEL = 'Escape';             // popup palette -> close; Boundary Editing -> clear point selection
 const MOUSE_BUTTON_LEFT = 0;
 const MOUSE_BUTTON_RIGHT = 2;
+const CLICK_DETAIL_KEYBOARD = 0;            // MouseEvent.detail of a `click` synthesised by keyboard activation (a real press is >= 1)
 const MOUSE_BUTTONS_LEFT_MASK = 1;          // MouseEvent.buttons bit for the left button
+// v5.91: Cmd and Ctrl are interchangeable everywhere (spec).  ONE helper decides "is the Cmd-equivalent modifier held".
+function isCmdLike(e) { return !!(e && (e.metaKey || e.ctrlKey)); }
+// v5.91: on macOS a Ctrl+left-click is turned by the browser into a context-menu click (no `click` event; `contextmenu`
+// fires with ctrlKey set).  Such a contextmenu event is NOT a right-click: the Cmd-equivalent left-click path already ran
+// on mousedown, so every contextmenu handler must ignore it.  A genuine right-click has no Ctrl held.
+function isCtrlContextMenu(e) { return !!(e && e.ctrlKey); }
 const M2_DRAG_THRESHOLD_PX = 3;             // CSS px the pointer must travel before a click becomes a drag
 const M2_KIND_MOVE = 'move';                // dragging the selected control points
 const M2_KIND_BAND = 'band';                // rubber-band selection rectangle (Boundary Editing)
@@ -989,7 +984,6 @@ function gridClipTargets(p, anchorIdx, gridN) {
 }
 const MSG_NOTHING_TO_UNDO = 'Nothing to undo';
 const MSG_UNDO_MODE_CHANGED = 'Grid mode changed — nothing to undo';
-const TIP_PAINT_BTN = 'Paint mode (B): pick a colour in the left palette, then click or drag on the grid to paint cells. Esc / B / this button exits.';
 const TIP_PALETTE_ERASER = 'Eraser: paint cells empty';
 const PAINT_CURSOR_SIZE_PX = 32;            // SVG cursor box (CSS px)
 const PAINT_CURSOR_TIP_X = 3;               // brush bristle tip = cursor hotspot (SVG px)
@@ -1043,7 +1037,7 @@ const CURSOR_CROSSHAIR = 'crosshair';
 // ── Canvas colors & sizes ──
 const COLOR_WHITE = '#FFFFFF';
 const COLOR_RED = '#EF4444';
-const COLOR_POLY_GREEN = '#22C55E';
+const COLOR_POLY_GREEN = '#C026D3';          // v5.88 fuchsia-600 (was green: invisible on the green heat map)
 const COLOR_POLY_WATER = '#EAB308';
 const COLOR_POLY_BOULDERS = '#EC4899';
 const COLOR_POLY_TRAP = COLOR_RED;            // also the fallback for unknown types
@@ -1861,6 +1855,7 @@ function polygonEditor() {
         const poly = this.polygons[pi];
         const pts = poly.points;
         if (pts.length < 2) continue;
+        const polyColor = polyColorForType(poly.type);   // v5.88 drawn colour comes from the TYPE, never the stored/legacy poly.color
 
         const isSelected = (pi === this.selectedPoly);
 
@@ -1869,11 +1864,11 @@ function polygonEditor() {
 
         // Build closed Catmull-Rom spline path
         this.traceSplinePath(ctx, cpts);
-        ctx.fillStyle = poly.color + (isSelected ? POLY_FILL_ALPHA_SELECTED : POLY_FILL_ALPHA);
+        ctx.fillStyle = polyColor + (isSelected ? POLY_FILL_ALPHA_SELECTED : POLY_FILL_ALPHA);
         ctx.fill();
 
         this.traceSplinePath(ctx, cpts);
-        ctx.strokeStyle = poly.color;
+        ctx.strokeStyle = polyColor;
         ctx.lineWidth = (isSelected ? POLY_LINE_WIDTH_SELECTED : POLY_LINE_WIDTH) * dpr;
         ctx.stroke();
 
@@ -1883,14 +1878,14 @@ function polygonEditor() {
         for (let i = 0; i < pts.length; i++) {
           const p = this.imgToCanvas(pts[i].x, pts[i].y);
           const isSelVert = this.isVertSelected(pi, i);
-          if (this.isUiMode2() && isSelVert) { this._drawM2SelectedVertex(ctx, p, baseR * dpr, poly.color, dpr); continue; }   // v5.87
+          if (this.isUiMode2() && isSelVert) { this._drawM2SelectedVertex(ctx, p, baseR * dpr, polyColor, dpr); continue; }   // v5.87
           const r = (isSelVert ? baseR + VERTEX_SELECTED_RADIUS_BONUS : baseR) * dpr;
 
           ctx.beginPath();
           ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-          ctx.fillStyle = isSelVert ? COLOR_WHITE : poly.color;
+          ctx.fillStyle = isSelVert ? COLOR_WHITE : polyColor;
           ctx.fill();
-          ctx.strokeStyle = isSelVert ? poly.color : COLOR_WHITE;
+          ctx.strokeStyle = isSelVert ? polyColor : COLOR_WHITE;
           ctx.lineWidth = (isSelVert ? VERTEX_SELECTED_LINE_WIDTH : baseLW) * dpr;
           ctx.stroke();
         }
@@ -2328,7 +2323,7 @@ function polygonEditor() {
       } else {
         // ── Cmd/Ctrl+click on grid cell → enter multi-select mode (v5.09) ────
         const gridCell = this._gridCellFromImgPx(x, y);
-        if (gridCell && (e.metaKey || e.ctrlKey)) {
+        if (gridCell && isCmdLike(e)) {
           // Cancel any active single-cell input first
           this._gridActiveCell = null;
           this._gridInputValue = '';
@@ -2614,6 +2609,7 @@ function polygonEditor() {
 
     onRightClick(e) {
       if (this.paintMode) return;   // v5.77
+      if (isCtrlContextMenu(e)) return;   // v5.91: macOS Ctrl+left-click context menu = the Cmd-equivalent click, not a right-click
       if (this.uiMode === UI_MODE_2) return;   // v5.87: Mode 2 right-click is handled on mousedown (m2MouseDown)
       const { x, y } = this.canvasToImg(e);
 
@@ -2846,14 +2842,6 @@ function polygonEditor() {
       this.undoHistory.push({ kind: UNDO_KIND_GRID, cells, mode: this.gridMode, gridN: this.gridN, label });
       this._trimUndo(UNDO_KIND_GRID, GRID_UNDO_MAX_STEPS);
       this.redoStack = [];
-    },
-
-    canUndo() { return this.undoHistory.length > 0; },
-
-    // Tooltip for the Undo button: what the NEXT undo reverts.
-    undoTooltip() {
-      const e = this.undoHistory[this.undoHistory.length - 1];
-      return e ? ('Undo ' + e.label + ' (Cmd+Z)') : MSG_NOTHING_TO_UNDO;
     },
 
     restoreSnapshot(json) {
@@ -3602,11 +3590,30 @@ function polygonEditor() {
       this.applyPaintCursor();
     },
 
+    // v5.91: swatches select on MOUSEDOWN (left button; a macOS Ctrl-click never fires `click`).  The follow-up `click`
+    // from a real mouse press (detail > 0) is ignored so a press never fires twice; keyboard activation (detail 0) still works.
+    onSwatchMouseDown(brush, e) {
+      if (e.button !== MOUSE_BUTTON_LEFT) return;
+      this.onSwatchClick(brush, e);
+    },
+    onSwatchKeyClick(brush, e) {
+      if (e.detail > CLICK_DETAIL_KEYBOARD) return;
+      this.onSwatchClick(brush, e);
+    },
+    onPopupSwatchMouseDown(brush, e) {
+      if (e.button !== MOUSE_BUTTON_LEFT) return;
+      this.pickPopupBrush(brush);
+    },
+    onPopupSwatchKeyClick(brush, e) {
+      if (e.detail > CLICK_DETAIL_KEYBOARD) return;
+      this.pickPopupBrush(brush);
+    },
+
     // Palette click / Cmd-click.  Mode 1: unchanged (selectBrush).  Mode 2: plain = single brush; Cmd-click with ONE
     // colour brush active adds a second brush (rainbow cursor); otherwise it behaves like a plain click.
     onSwatchClick(brush, e) {
       if (!this.isUiMode2()) { this.selectBrush(brush); return; }
-      const cmd = !!(e && (e.metaKey || e.ctrlKey));
+      const cmd = isCmdLike(e);
       const wasPaint = this.uiSubMode === UI_SUB_PAINT;
       const single = wasPaint && this.paintBrush2 === null && this.paintBrush !== PAINT_BRUSH_ERASER;
       if (cmd && single && brush !== PAINT_BRUSH_ERASER) this.paintBrush2 = brush;
@@ -3619,7 +3626,7 @@ function polygonEditor() {
       if (this.showNewDialog || this.showOpenDialog) return false;
       if (this.isTypingTarget(e.target)) return false;
       const k = String(e.key || '').toLowerCase();
-      const cmd = e.metaKey || e.ctrlKey;
+      const cmd = isCmdLike(e);
       if (cmd && !e.altKey && !e.shiftKey) {
         if (k === M2_KEY_BOUNDARY) { e.preventDefault(); this.setUiSubMode(UI_SUB_BOUNDARY); return true; }
         if (k === M2_KEY_PAINT) { e.preventDefault(); this.setUiSubMode(UI_SUB_PAINT); return true; }
@@ -3646,7 +3653,7 @@ function polygonEditor() {
       const left = e.button === MOUSE_BUTTON_LEFT, right = e.button === MOUSE_BUTTON_RIGHT;
       if (!left && !right) return;
       this.m2Cancel();
-      const cmd = !!(e.metaKey || e.ctrlKey);
+      const cmd = isCmdLike(e);
       if (this.uiSubMode === UI_SUB_PAINT && this.paintMode) this._m2PaintDown(e, left, cmd);
       else this._m2BoundaryDown(e, left, cmd);
       if (this._m2 || this._paintStroke) this._m2AttachMouseUp();
@@ -3704,7 +3711,11 @@ function polygonEditor() {
       if (!m) return;
       if (m.kind === M2_KIND_MOVE) { if (m.pushed) this.autoSave(); this.draw(); return; }
       if (m.kind === M2_KIND_RAMP) { this._m2RampCommit(); return; }
-      if (!m.active) { this.rubberBand = false; this.lassoPts = null; return; }   // a plain click without a drag: no effect
+      if (!m.active) {   // a plain click without a drag
+        this.rubberBand = false; this.lassoPts = null;
+        if (m.kind === M2_KIND_BAND && !m.additive) this._m2ClearSelection();   // v5.89: click on empty space unselects (Shift keeps)
+        return;
+      }
       if (m.kind === M2_KIND_BAND) {
         this.rubberBand = false;
         const r = this._m2Rect();
@@ -3742,6 +3753,13 @@ function polygonEditor() {
     _m2Rect() {
       return { minX: Math.min(this.rbStartX, this.rbCurX), maxX: Math.max(this.rbStartX, this.rbCurX),
                minY: Math.min(this.rbStartY, this.rbCurY), maxY: Math.max(this.rbStartY, this.rbCurY) };
+    },
+
+    // v5.89 — deselect all control points.  Selection changes are not undo steps.
+    _m2ClearSelection() {
+      if (!this.selectedVerts.length) return;
+      this.selectedVerts = [];
+      this.draw();
     },
 
     // Replace the point selection with `found`, or (additive) add `found` to `pre`.
@@ -3815,7 +3833,7 @@ function polygonEditor() {
       if (!left) {
         if (hit) { this._m2DeletePoint(hit); return; }
         const edge = this.hitTestEdge(x, y);
-        if (!edge) return;                        // right-click off a line: no effect
+        if (!edge) { this._m2ClearSelection(); return; }   // v5.89: right-click off a line unselects any selected points
         this.pushUndo(M2_UNDO_ADD);
         const newIdx = edge.edgeIdx + 1;
         this.polygons[edge.polyIdx].points.splice(newIdx, 0, { x: Math.round(x), y: Math.round(y) });
@@ -3900,10 +3918,11 @@ function polygonEditor() {
     },
     isUiMode2() { return this.uiMode === UI_MODE_2; },   // v5.86 seam: input handlers branch on this
     loadUiMode() {   // v5.86 — restore the saved preference; unknown / unavailable storage keeps the default
+      if (!UI_MODE_SWITCH_ENABLED) { this.uiMode = DEFAULT_UI_MODE; return; }   // v5.92: Mode 2 only; stored value ignored
       try { const m = localStorage.getItem(STORAGE_KEY_UI_MODE); if (UI_MODES.includes(m)) this.uiMode = m; } catch (e) {}
     },
     setUiMode(mode) {   // v5.86 — preference only; never persisted to the EGM
-      if (!UI_MODES.includes(mode)) return;
+      if (!UI_MODE_SWITCH_ENABLED || !UI_MODES.includes(mode)) return;   // v5.92: switch disabled -> Mode 2 stays
       this.uiMode = mode;
       try { localStorage.setItem(STORAGE_KEY_UI_MODE, mode); } catch (e) {}
     },
@@ -4852,7 +4871,7 @@ function polygonEditor() {
         }
       }
       // v5.77 paint mode keys: B toggles, Esc exits -- never while typing in a field or with a dialog open.
-      if (!e.metaKey && !e.ctrlKey && !e.altKey && !this.showNewDialog && !this.showOpenDialog) {
+      if (!isCmdLike(e) && !e.altKey && !this.showNewDialog && !this.showOpenDialog) {
         const t = e.target;
         const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
         if (!typing) {
@@ -4861,7 +4880,7 @@ function polygonEditor() {
         }
       }
       // v5.83 grid cell copy / paste (never inside a text field, see _gridClipKeyOk)
-      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && !this.showNewDialog && !this.showOpenDialog) {
+      if (isCmdLike(e) && !e.altKey && !e.shiftKey && !this.showNewDialog && !this.showOpenDialog) {
         const k = String(e.key || '').toLowerCase();
         if (k === GRID_COPY_KEY && this._gridClipKeyOk(e) && this._gridSelectionList().length) {
           e.preventDefault(); this.copyGridCells(); return;
@@ -4872,7 +4891,7 @@ function polygonEditor() {
         }
       }
       // Undo: Cmd+Z / Ctrl+Z
-      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
+      if (isCmdLike(e) && e.key === 'z' && !e.shiftKey) {
         // v5.19: leave native text undo alone inside inputs / popup boxes
         const t = e.target;
         if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
@@ -4881,8 +4900,8 @@ function polygonEditor() {
         return;
       }
       // Redo: Cmd+Shift+Z / Ctrl+Shift+Z or Ctrl+Y
-      if (((e.metaKey || e.ctrlKey) && e.key === 'z' && e.shiftKey) ||
-          ((e.metaKey || e.ctrlKey) && e.key === 'y')) {
+      if ((isCmdLike(e) && e.key === 'z' && e.shiftKey) ||
+          (isCmdLike(e) && e.key === 'y')) {
         e.preventDefault();
         this.redo();
         return;
@@ -4901,7 +4920,7 @@ function polygonEditor() {
         return;
       }
       // Cmd+Delete / Ctrl+Delete: remove the selected polygon if it is a trap, water, or boulders
-      if ((e.metaKey || e.ctrlKey) && (e.key === 'Delete' || e.key === 'Backspace')) {
+      if (isCmdLike(e) && (e.key === 'Delete' || e.key === 'Backspace')) {
         if (this.selectedPoly >= 0 && this.selectedPoly < this.polygons.length) {
           const selType = this.polygons[this.selectedPoly].type;
           if (isRemovablePolyType(selType)) {

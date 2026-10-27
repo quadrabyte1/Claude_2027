@@ -31,9 +31,16 @@ def _method(name):
     return EDITOR[start:end].strip().rstrip(",")
 
 
-def _run(script, storage="ok", initial=None):
+SWITCH_DECL = "const UI_MODE_SWITCH_ENABLED = %s;"
+
+
+def _run(script, storage="ok", initial=None, switch_enabled=False):
+    prelude = C.prelude()
+    assert SWITCH_DECL % "false" in prelude          # shipped state: Mode 2 only
+    if switch_enabled:                                # revival path: flip the one constant
+        prelude = prelude.replace(SWITCH_DECL % "false", SWITCH_DECL % "true")
     body = ",\n".join(_method(n) for n in METHODS)
-    js = C.prelude() + """
+    js = prelude + """
 const store = %s;
 const mode = %s;
 globalThis.localStorage = {
@@ -47,40 +54,61 @@ const o = {uiMode: DEFAULT_UI_MODE, %s};
     return json.loads(out.stdout.strip().splitlines()[-1])
 
 
-def test_constants_are_distinct_and_default_is_mode_1():
+def test_constants_are_distinct_and_default_is_mode_2():
     assert MODE_1 != MODE_2
-    assert C.value("DEFAULT_UI_MODE") == MODE_1
+    assert C.value("UI_MODE_SWITCH_ENABLED") is False
+    assert C.value("DEFAULT_UI_MODE") == MODE_2
     assert C.value("UI_MODES") == [MODE_1, MODE_2]
 
 
-def test_default_is_mode_1_and_not_mode_2():
+def test_switch_enabled_flips_default_back_to_mode_1():
+    js = C.prelude().replace(SWITCH_DECL % "false", SWITCH_DECL % "true") + "console.log(JSON.stringify(DEFAULT_UI_MODE));"
+    out = subprocess.run([node, "-e", js], capture_output=True, text=True)
+    assert json.loads(out.stdout) == MODE_1
+
+
+def test_default_is_mode_2():
     r = _run("o.loadUiMode(); console.log(JSON.stringify({m: o.uiMode, two: o.isUiMode2()}));")
-    assert r == {"m": MODE_1, "two": False}
+    assert r == {"m": MODE_2, "two": True}
+
+
+def test_stored_mode_1_is_ignored_and_set_is_noop_while_switch_disabled():
+    r = _run("""o.loadUiMode(); const a = o.uiMode; o.setUiMode(UI_MODE_1);
+      console.log(JSON.stringify({a, b: o.uiMode, stored: store[STORAGE_KEY_UI_MODE]}));""", initial={KEY: MODE_1})
+    assert r == {"a": MODE_2, "b": MODE_2, "stored": MODE_1}      # stored value untouched, never read
 
 
 def test_toggle_and_persist():
     r = _run("""o.setUiMode(UI_MODE_2); const a = [o.uiMode, o.isUiMode2()];
       o.setUiMode(UI_MODE_1); const b = [o.uiMode, o.isUiMode2()];
       o.setUiMode(UI_MODE_2);
-      console.log(JSON.stringify({a, b, stored: store[STORAGE_KEY_UI_MODE]}));""")
+      console.log(JSON.stringify({a, b, stored: store[STORAGE_KEY_UI_MODE]}));""", switch_enabled=True)
     assert r == {"a": [MODE_2, True], "b": [MODE_1, False], "stored": MODE_2}
 
 
 def test_restored_from_storage_on_load():
-    r = _run("o.loadUiMode(); console.log(JSON.stringify(o.uiMode));", initial={KEY: MODE_2})
-    assert r == MODE_2
+    r = _run("o.loadUiMode(); console.log(JSON.stringify(o.uiMode));", initial={KEY: MODE_1}, switch_enabled=True)
+    assert r == MODE_1
 
 
 def test_garbage_stored_value_is_ignored_and_invalid_set_rejected():
     r = _run("""o.loadUiMode(); const a = o.uiMode; o.setUiMode('bogus');
-      console.log(JSON.stringify({a, b: o.uiMode, stored: store[STORAGE_KEY_UI_MODE] ?? null}));""", initial={KEY: "nonsense"})
+      console.log(JSON.stringify({a, b: o.uiMode, stored: store[STORAGE_KEY_UI_MODE] ?? null}));""", initial={KEY: "nonsense"}, switch_enabled=True)
     assert r == {"a": MODE_1, "b": MODE_1, "stored": "nonsense"}
 
 
 def test_storage_throwing_is_graceful():
     r = _run("""o.loadUiMode(); const a = o.uiMode; o.setUiMode(UI_MODE_2);
-      console.log(JSON.stringify({a, b: o.uiMode}));""", storage="throw")
+      console.log(JSON.stringify({a, b: o.uiMode}));""", storage="throw", switch_enabled=True)
     assert r == {"a": MODE_1, "b": MODE_2}      # still works in-session, just not persisted
+
+
+def test_switch_markup_is_guarded_by_the_enable_constant():
+    i = EDITOR.index('data-testid="ui-mode-switch-buttons"')
+    assert 'x-show="UI_MODE_SWITCH_ENABLED"' in EDITOR[i - 120:i + 60]
+    j = EDITOR.index('data-testid="ui-mode-switch"')
+    assert 'x-show="UI_MODE_SWITCH_ENABLED"' in EDITOR[j:j + 400]       # caption hidden too
+    assert 'data-testid="ui-submode-switch"' in EDITOR                   # sub-mode switch stays
 
 
 def test_switch_markup_uses_constants_and_segmented_style():

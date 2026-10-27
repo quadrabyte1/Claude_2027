@@ -26,7 +26,7 @@ PAINT_METHODS = ["updatePaletteSize", "paletteColor", "paintBrushValueNow", "ent
                  "togglePaintMode", "selectBrush", "paintCursorCss", "applyPaintCursor", "_imgToCellUV",
                  "_paintCells", "paintBegin", "paintMove", "paintEnd", "cellColorAt", "cancelGridRamp",
                  "cancelGridCell", "pushGridUndo", "_trimUndo", "undo", "_undoGridEntry"]
-UNDO_METHODS = ["pushUndo", "_trimUndo", "pushGridUndo", "canUndo", "undoTooltip", "undo", "_undoGridEntry",
+UNDO_METHODS = ["pushUndo", "_trimUndo", "pushGridUndo", "undo", "_undoGridEntry",
                 "redo", "gridUndoSnapshot", "commitGridCell", "setGridResolution", "snapshotPolygons",
                 "restoreSnapshot"]
 
@@ -161,7 +161,6 @@ def test_paint_branches_in_pointer_handlers():
     assert "if (this._paintStroke) { this.paintEnd(); return; }" in EDITOR
     assert re.search(r"onDblClick\(e\) \{\s*if \(this\.paintMode\) return;", EDITOR)
     assert re.search(r"onRightClick\(e\) \{\s*if \(this\.paintMode\) return;", EDITOR)
-    assert 'data-testid="paint-btn"' in EDITOR and ":aria-pressed" in EDITOR
     assert "exitPaintMode()" in EDITOR[EDITOR.index("@click=\"gridMode = GRID_MODE_OFF"):][:120]
     assert "$watch('gridMode'" in EDITOR
 
@@ -302,17 +301,16 @@ def test_unified_history_pops_in_chronological_order_across_grid_and_polygon_edi
       o.gridUndoSnapshot([5], 'cell edit'); o.gridCellHeights[5] = 7; states.push(snap()); // 2 grid
       o.pushUndo('move B');         o.polygons[0].points[0].x = 2;  states.push(snap());   // 3 poly (does NOT wipe grid entry)
       o.gridUndoSnapshot([5, 6], 'set 2 cells'); o.gridCellHeights[5] = 9; o.gridCellHeights[6] = 3; states.push(snap()); // 4 grid
-      const kinds = o.undoHistory.map(e => e.kind), tips = [];
+      const kinds = o.undoHistory.map(e => e.kind);
       const seen = [];
-      for (let i = 0; i < 4; i++) { tips.push(o.undoTooltip()); o.undo(); seen.push(snap()); }
+      for (let i = 0; i < 4; i++) { o.undo(); seen.push(snap()); }
       const extra = o.undo();
-      console.log(JSON.stringify({states, kinds, tips, seen, extra, tipEmpty:o.undoTooltip(), can:o.canUndo()}));""",
+      console.log(JSON.stringify({states, kinds, seen, extra}));""",
              UNDO_METHODS)
     st = r["states"]
     assert r["kinds"] == ["poly", "grid", "poly", "grid"]
     assert r["seen"] == [st[3], st[2], st[1], st[0]]          # exactly the reverse chronological states
-    assert r["tips"] == ["Undo set 2 cells (Cmd+Z)", "Undo move B (Cmd+Z)", "Undo cell edit (Cmd+Z)", "Undo move A (Cmd+Z)"]
-    assert r["extra"] is False and r["tipEmpty"] == "Nothing to undo" and r["can"] is False
+    assert r["extra"] is False
 
 
 def test_polygon_redo_still_works_and_new_edit_clears_redo():
@@ -356,10 +354,8 @@ def test_resolution_switch_drops_grid_entries_keeps_polygon_entries_in_order():
       o.pushUndo('A'); o.gridUndoSnapshot([1], 'g1'); o.pushUndo('B'); o.gridUndoSnapshot([2], 'g2');
       o.gridCellHeights = {1: 3};
       o.setGridResolution(40);
-      console.log(JSON.stringify({labels:o.undoHistory.map(e => e.label), N:o.gridN, cells:o.gridCellHeights,
-                                  tip:o.undoTooltip()}));""", UNDO_METHODS)
+      console.log(JSON.stringify({labels:o.undoHistory.map(e => e.label), N:o.gridN, cells:o.gridCellHeights}));""", UNDO_METHODS)
     assert r["labels"] == ["A", "B"] and r["N"] == 40 and r["cells"] == {}
-    assert r["tip"] == "Undo B (Cmd+Z)"
 
 
 def test_undo_mode_change_consumes_entry_without_touching_cells():
@@ -369,9 +365,7 @@ def test_undo_mode_change_consumes_entry_without_touching_cells():
     assert r["h"] == {"1": 8} and r["n"] == 0 and "mode changed" in r["f"]
 
 
-def test_undo_key_and_button_use_the_unified_undo():
-    assert re.search(r'@click="undo\(\)" :disabled="!canUndo\(\)"', EDITOR)
-    assert ':title="undoTooltip()"' in EDITOR
+def test_undo_key_uses_the_unified_undo():
     h = EDITOR[EDITOR.index("// Undo: Cmd+Z / Ctrl+Z"):][:700]
     assert "this.undo();" in h and "gridUndo" not in h
     assert "pushUndo()" not in _method("pushGridUndo")
@@ -423,3 +417,15 @@ def test_eraser_has_distinct_cursor_with_hotspot_on_its_working_edge():
 
 def test_tee_hole_marker_not_draggable_in_paint_mode():
     assert "${paintMode ? 'pointer-events:none;' : ''}" in EDITOR
+
+
+def test_edit_group_removed_but_keyboard_paths_remain():
+    # v5.90: the Grid-row "Edit" group (Paint + Undo buttons) is gone; keyboard paths stay
+    for gone in ('data-testid="paint-btn"', 'data-testid="undo-btn"', "TIP_PAINT_BTN",
+                 ":disabled=\"!canUndo()\"", "undoTooltip", "canUndo"):
+        assert gone not in EDITOR, gone
+    assert not re.search(r'<span class="eb-cap">Edit</span>', EDITOR)
+    for kept in ("togglePaintMode()", "exitPaintMode()", "undo()", "redo()", "setUiSubMode("):
+        assert kept in EDITOR, kept
+    assert "this.undo();" in EDITOR[EDITOR.index("// Undo: Cmd+Z / Ctrl+Z"):][:700]
+    assert "this.togglePaintMode()" in _handle_key()

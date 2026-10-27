@@ -26,7 +26,7 @@ pytestmark = pytest.mark.skipif(not node, reason="node not installed")
 METHODS = [
     "isUiMode2", "isTypingTarget", "onUiModeChanged", "setUiSubMode", "m2Cancel", "closePaintPopup", "openPaintPopup",
     "pickPopupBrush", "onSwatchClick", "m2HandleKey", "_m2AttachMouseUp", "m2MouseDown", "m2MouseMove", "m2MouseUp",
-    "_m2Rect", "_m2SetSelection", "_m2BrushValue", "_m2ApplyCells", "_m2RampAdd", "_m2RampCommit", "_m2PaintDown",
+    "_m2Rect", "_m2SetSelection", "_m2ClearSelection", "_m2BrushValue", "_m2ApplyCells", "_m2RampAdd", "_m2RampCommit", "_m2PaintDown",
     "_m2BoundaryDown", "_m2DeletePoint", "onMouseDown", "onMouseMove", "onMouseUp", "onRightClick", "onDblClick",
     "hitTestPoint", "hitTestEdge", "sampleSplinePoints", "distToSegment", "isVertSelected", "toggleVertSelection",
     "pushUndo", "_trimUndo", "pushGridUndo", "undo", "redo", "_undoGridEntry", "snapshotPolygons", "restoreSnapshot",
@@ -128,8 +128,8 @@ def test_submode_indicator_markup_uses_constants_and_is_clickable():
 def test_popup_and_swatch_markup():
     assert 'data-testid="paint-popup"' in EDITOR and 'x-show="paintPopup.open"' in EDITOR
     assert 'x-for="step in paletteSteps()"' in EDITOR[EDITOR.index('data-testid="paint-popup"'):][:1500]
-    assert 'onSwatchClick(step, $event)' in EDITOR and 'onSwatchClick(PAINT_BRUSH_ERASER, $event)' in EDITOR
-    assert 'pickPopupBrush(step)' in EDITOR and "pickPopupBrush(PAINT_BRUSH_ERASER)" in EDITOR
+    assert 'onSwatchMouseDown(step, $event)' in EDITOR and 'onSwatchMouseDown(PAINT_BRUSH_ERASER, $event)' in EDITOR   # v5.91: select on mousedown
+    assert 'onPopupSwatchMouseDown(step, $event)' in EDITOR and 'onPopupSwatchMouseDown(PAINT_BRUSH_ERASER, $event)' in EDITOR
 
 
 def test_seams_dispatch_to_mode2_and_selected_point_style_uses_constants():
@@ -222,12 +222,28 @@ def test_plain_click_on_point_without_movement_selects_but_adds_no_undo_entry():
     assert r == {"sel": "[[0,0]]", "hist": 0}
 
 
-def test_left_click_not_on_a_point_has_no_effect_selection_kept():
+def test_left_click_not_on_a_point_unselects_points_without_undo_step():
     r = _run("""o.selectedVerts = [{poly: 0, idx: 1}];
       down(300, 300); up(300, 300);
+      const a = sel();
+      o.selectedVerts = [{poly: 0, idx: 1}];
       down(300, 300); move(300 + %d - 1, 300); up(300 + %d - 1, 300);   // sub-threshold wobble is still a click
-      console.log(JSON.stringify({sel: sel(), hist: o.undoHistory.length, rb: o.rubberBand}));""" % (THRESH, THRESH))
-    assert r == {"sel": "[[0,1]]", "hist": 0, "rb": False}
+      console.log(JSON.stringify({a, sel: sel(), hist: o.undoHistory.length, rb: o.rubberBand}));""" % (THRESH, THRESH))
+    assert r == {"a": "[]", "sel": "[]", "hist": 0, "rb": False}
+
+
+def test_shift_click_on_empty_space_keeps_the_selection():
+    r = _run("""o.selectedVerts = [{poly: 0, idx: 1}];
+      down(300, 300, {shiftKey: true}); up(300, 300, {shiftKey: true});
+      console.log(JSON.stringify({sel: sel()}));""")
+    assert r == {"sel": "[[0,1]]"}
+
+
+def test_drag_on_empty_space_still_rubber_bands_after_the_click_change():
+    r = _run("""o.selectedVerts = [{poly: 1, idx: 0}];
+      down(90, 90); move(120, 120); const during = o.rubberBand; move(210, 110); up(210, 110);
+      console.log(JSON.stringify({during, sel: sel()}));""")
+    assert r == {"during": True, "sel": "[[0,0],[0,1]]"}
 
 
 def test_right_click_on_line_adds_point_selects_it_and_it_follows_the_mouse():
@@ -246,10 +262,11 @@ def test_right_click_release_without_drag_just_adds_and_selects():
     assert r == {"n": 5, "sel": "[[0,1]]"}
 
 
-def test_right_click_not_on_a_line_has_no_effect():
-    r = _run("""down(600, 600, {button: BTN_R, buttons: 2}); up(600, 600, {button: BTN_R});
-      console.log(JSON.stringify({n: o.polygons[0].points.length, hist: o.undoHistory.length, popup: o.paintPopup.open}));""")
-    assert r == {"n": 4, "hist": 0, "popup": False}
+def test_right_click_not_on_a_line_unselects_points_and_changes_nothing_else():
+    r = _run("""o.selectedVerts = [{poly: 0, idx: 1}];
+      down(600, 600, {button: BTN_R, buttons: 2}); up(600, 600, {button: BTN_R});
+      console.log(JSON.stringify({n: o.polygons[0].points.length, hist: o.undoHistory.length, popup: o.paintPopup.open, sel: sel()}));""")
+    assert r == {"n": 4, "hist": 0, "popup": False, "sel": "[]"}
 
 
 def test_right_click_on_control_point_deletes_it_and_undo_restores():
@@ -323,7 +340,7 @@ def test_esc_clears_the_point_selection_in_boundary_editing():
 
 
 def test_selected_point_look_is_same_size_black_border_in_source():
-    assert "this._drawM2SelectedVertex(ctx, p, baseR * dpr, poly.color, dpr)" in EDITOR   # unselected radius, polygon colour
+    assert "this._drawM2SelectedVertex(ctx, p, baseR * dpr, polyColor, dpr)" in EDITOR   # unselected radius, polygon colour
     block = _method("_drawM2SelectedVertex")
     assert "fillStyle = color" in block and "COLOR_M2_SELECTED_BORDER" in block and "M2_SELECTED_BORDER_WIDTH" in block
 

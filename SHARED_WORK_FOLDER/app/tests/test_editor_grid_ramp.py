@@ -48,7 +48,7 @@ def test_rounded_to_tenth_and_clamped_by_mode():
 def test_wiring():
     assert "_gridRampMode" in EDITOR and "commitGridRamp" in EDITOR
     # Ctrl+Option branch is decided at mousedown from altKey, inside the Ctrl/Cmd branch
-    i = EDITOR.index("if (gridCell && (e.metaKey || e.ctrlKey))")
+    i = EDITOR.index("if (gridCell && isCmdLike(e))")
     assert "e.altKey" in EDITOR[i:i + 900]
     assert "@keydown.tab.prevent" in EDITOR and "commitGridRamp()" in EDITOR
     assert "Ctrl+Option" in EDITOR   # help text
@@ -137,6 +137,5 @@ def test_undo_wiring():
     assert "_gridUndo" not in EDITOR and "this.undoStack" not in EDITOR
     h = EDITOR[EDITOR.index("// Undo: Cmd+Z / Ctrl+Z"):][:900]
     assert "tagName === 'INPUT'" in h and h.index("tagName === 'INPUT'") < h.index("this.undo()")
-    assert 'data-testid="undo-btn"' in EDITOR and ':disabled="!canUndo()"' in EDITOR
     # history cleared on project load / new project / reset
     assert len(re.findall(r"this\.undoHistory\s*=\s*\[\]", EDITOR)) >= 3
