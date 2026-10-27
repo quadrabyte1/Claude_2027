@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{# Boundary Editor v5.85 — Shift held during a Cmd/Ctrl cell drag locks the selection to a straight line: once the pointer is 2 cells from the start cell the direction is locked (any angle; snaps to exact 0/45/90 within 12 degrees), sideways drift is ignored and cells are added along a 1-cell-wide DDA ray walk, in order, so the far end is the most recent cell (paste anchor); releasing Shift returns to free selection. v5.84 — Bunker body is now a ruled surface: rim 2 mm below the fringe, straight chords between boundary heights across the strongest-gradient direction; grid cells inside a bunker no longer reshape it (server-side change; no editor UI change). v5.83 — Grid cells copy/paste: Cmd/Ctrl+C copies the selected cells with their values (explicit 0 kept) as offsets from the most recently selected cell, to the system clipboard (JSON, type-tagged) and an in-memory fallback; Cmd/Ctrl+V pastes that pattern anchored at the most recently selected cell as one undoable step (cells outside the grid skipped). Native copy/paste in text fields is untouched. v5.82 — Bunkers are now carved from the finished fringe: set cells FULLY inside a bunker belong to that bunker only (the fringe is built without them; partly-inside cells still shape the fringe); the bunker floor is the fringe surface minus 1 mm, and its fully-inside cells shape it smoothly (delta = offsets, absolute = floor height in mm) with the rim always 1 mm below the fringe; a bunker with no set cells stays flat. The red controlling-cell ring overlay and its server route are removed. v5.81 — Fix: the canvas could be sized from a container width measured before the paint palette laid out (palette shows/hides with Grid mode), leaving it wider than its frame so the right edge of the image/polygons was clipped; the canvas now re-measures via a ResizeObserver whenever its container width changes. v5.80 — Removed the -15/+15 colour legend gradient next to "Color cells by height" (the left palette shows the scale) and the "N cells set" badge from the Grid row. A 0 painted with the paint-mode BRUSH is now a REAL value: stored in gridCellHeights (key present = set; explicit 0), drawn with its normal scale colour (delta: the pale-yellow midpoint) and labelled 0.0, kept on reload, and used by the generator like any set cell (TPS constraint, trap controlling cell). The Eraser empties a cell; typing 0 in the value box, right-click and Delete still empty it; undo restores empty vs explicit 0 exactly. Old EGMs (never stored zeros) are unaffected. v5.79 — Below-canvas controls reorganised into labelled groups (Project / Shapes / Image / Output on one row with Generate at the right end; Grid row: mode, resolution, Paint, Undo, colour-by-height) with consistent 32px controls and segmented switches; Remove T Hole gets a subtle danger style; Undo moved from the top bar into the Grid group; the tee-hole Side Left/Right picker (and its dead setTeeHoleSide / teeHoleSide / TEE_SIDE_* code) removed — drag the marker instead. Layout and styling only. v5.78 — Cell value labels scale with the actual cell pixel width on the 40x40 grid (clamped min/max; 20x20 unchanged) so labels like -12.5 fit one cell; with "Color cells by height" on, empty cells (0 / unset) are left uncoloured — only set, non-zero cells get a fill. v5.77 — Paint mode: left-margin colour palette (31 swatches on the fixed v5.76 scale + Eraser; delta +15..-15, absolute 30..0), Paint button / B key / swatch click to enter, Esc / B / button / Grid Off to exit; mouse-down + drag paints cells (interpolated along the drag, 20x20 and 40x40) with a brush-tinted paintbrush cursor (eraser has its own); one stroke = one undo step; undo is now ONE chronological history (max 50 grid steps) shared by grid edits and polygon/contour edits, so polygon edits no longer wipe grid undo. v5.76 — Cell colours use a FIXED scale (colormap matplotlib RdYlBu_r, blue low -> red high): delta -15..+15 mm, absolute 0..30 mm on the same colours; values outside clamp to the end colours; legend shows the fixed ends; auto-scaling (and the 400-cell rule) removed. v5.75 — Generate stops with a clear message when a required Python package (e.g. triangle) is missing instead of producing a degraded model. v5.70 — Named-constants refactor (CLAUDE.md Coding Standard), no behavior change: every tunable, color, size, threshold, API URL, storage key, mode name and repeated UI string now lives in one EDITOR CONSTANTS block at the top of the script (CSS custom properties for markup-only values); tests read the constants via tests/editor_constants.py. v5.69 — Create New Project: the heat-map PNG's baked-in background grid is erased for display (server-side heatmap_degrid.py; cleaned copy saved next to the original, original untouched) with an Original/Degridded view toggle; boundary detection still runs on the original; Open Project is unaffected. v5.68 — Grid resolution switch (20x20 default / 40x40) next to the Grid mode switch; confirm dialog then erases all cell values; saved as EGM `gridResolution` (absent = 20); drawing, hit-testing, overlays and the server TPS/controlling-cell code honour it. v5.21 — Default tee-hole position moved to (40, 40) mm (was 30, 30); saved positions untouched. v5.20 — Grid cell value labels are plain black (delta) with no white outline; absolute keeps orange. v5.19 — Ctrl+Option(Alt)+drag selects cells along the drag path (visit order); popup has first/last boxes, Tab/Enter from the last box spreads first->last linearly (0.1 mm precision). v5.18 — Grid cell value labels/tooltip no longer show a leading '+' on positives (negatives keep '-'). v5.17 — Geo-ref setup dialog removed (orphaned after the GPS panel ⚙ opener was removed); courseGeoRef data still loads/saves untouched. v5.16 — GPS controls removed from the UI (JS state/load/save kept so any EGM gpsBackend block still round-trips). v5.15 — Mouse wheel steps the open grid value box (0.1 mm, Shift = 1.0; no clamp; commit still Enter/Tab). v5.14 — Grid cells colored by value (matplotlib 'terrain', auto-scaled; view-only toggle in localStorage). v5.13 — Only cells FULLY inside a bunker can control it (partial cells ignored). v5.12 — Ring now in delta AND absolute (not off); delta = default + highest cell (was mean). v5.11 — Absolute mode: red ring around the grid cell(s) that control each trap's height (server-computed, mirrors generator). v5.10 — Grid value 0 = empty cell (deleted on commit, dropped on load). Grid lines recolored to indigo; Cmd+drag multi-cell selection with shared-value edit (task 726) #}
+{# Boundary Editor v5.87 — UI Mode 2 implemented (Thomas's "Boundary Editor Commands" spreadsheet). Two sub-modes shown/switchable beside the UI Mode switch: Boundary Editing (Cmd/Ctrl-B, arrow cursor: left-click/drag a point moves it; right-click on a line adds a point that follows the mouse; right-click on a point deletes it; drag on empty space = rubber band; Cmd-drag on empty space = freehand lasso; Shift adds to the selection; selected points = same size/colour with a black border; Esc clears the selection) and Z-Painting (Cmd/Ctrl-P: palette swatch = single brush, Cmd-click a swatch = second brush -> rainbow cursor; Eraser = brush with value null; right-click = popup palette; 1 brush: click/drag paints, Cmd-drag rubber-band fills cells entirely inside; 2 brushes: drag selects cells in visit order and release ramps brush 1 -> brush 2 quantised to palette steps). Every gesture is ONE undo step. Mode 1 is untouched (its B toggle, grid copy/paste and Shift line-lock stay Mode-1 only; Mode 2 leaves the grid value box and contour drawing unreachable). Switching back to Mode 1 leaves paint state and restores the cursor. v5.86 — New "UI Mode" switch (Mode 1 / Mode 2) in its own labelled group on the Grid row: an editor-wide, per-browser preference (localStorage, never saved to the EGM; default Mode 1). Mode 1 = all existing key/mouse bindings, unchanged. Mode 2 is a placeholder that currently behaves exactly like Mode 1; the input seam (isUiMode2() + comments in handleKey / onMouseDown / onMouseMove / onMouseUp) is where the new paradigm will branch. v5.85 — Shift held during a Cmd/Ctrl cell drag locks the selection to a straight line: once the pointer is 2 cells from the start cell the direction is locked (any angle; snaps to exact 0/45/90 within 12 degrees), sideways drift is ignored and cells are added along a 1-cell-wide DDA ray walk, in order, so the far end is the most recent cell (paste anchor); releasing Shift returns to free selection. v5.84 — Bunker body is now a ruled surface: rim 2 mm below the fringe, straight chords between boundary heights across the strongest-gradient direction; grid cells inside a bunker no longer reshape it (server-side change; no editor UI change). v5.83 — Grid cells copy/paste: Cmd/Ctrl+C copies the selected cells with their values (explicit 0 kept) as offsets from the most recently selected cell, to the system clipboard (JSON, type-tagged) and an in-memory fallback; Cmd/Ctrl+V pastes that pattern anchored at the most recently selected cell as one undoable step (cells outside the grid skipped). Native copy/paste in text fields is untouched. v5.82 — Bunkers are now carved from the finished fringe: set cells FULLY inside a bunker belong to that bunker only (the fringe is built without them; partly-inside cells still shape the fringe); the bunker floor is the fringe surface minus 1 mm, and its fully-inside cells shape it smoothly (delta = offsets, absolute = floor height in mm) with the rim always 1 mm below the fringe; a bunker with no set cells stays flat. The red controlling-cell ring overlay and its server route are removed. v5.81 — Fix: the canvas could be sized from a container width measured before the paint palette laid out (palette shows/hides with Grid mode), leaving it wider than its frame so the right edge of the image/polygons was clipped; the canvas now re-measures via a ResizeObserver whenever its container width changes. v5.80 — Removed the -15/+15 colour legend gradient next to "Color cells by height" (the left palette shows the scale) and the "N cells set" badge from the Grid row. A 0 painted with the paint-mode BRUSH is now a REAL value: stored in gridCellHeights (key present = set; explicit 0), drawn with its normal scale colour (delta: the pale-yellow midpoint) and labelled 0.0, kept on reload, and used by the generator like any set cell (TPS constraint, trap controlling cell). The Eraser empties a cell; typing 0 in the value box, right-click and Delete still empty it; undo restores empty vs explicit 0 exactly. Old EGMs (never stored zeros) are unaffected. v5.79 — Below-canvas controls reorganised into labelled groups (Project / Shapes / Image / Output on one row with Generate at the right end; Grid row: mode, resolution, Paint, Undo, colour-by-height) with consistent 32px controls and segmented switches; Remove T Hole gets a subtle danger style; Undo moved from the top bar into the Grid group; the tee-hole Side Left/Right picker (and its dead setTeeHoleSide / teeHoleSide / TEE_SIDE_* code) removed — drag the marker instead. Layout and styling only. v5.78 — Cell value labels scale with the actual cell pixel width on the 40x40 grid (clamped min/max; 20x20 unchanged) so labels like -12.5 fit one cell; with "Color cells by height" on, empty cells (0 / unset) are left uncoloured — only set, non-zero cells get a fill. v5.77 — Paint mode: left-margin colour palette (31 swatches on the fixed v5.76 scale + Eraser; delta +15..-15, absolute 30..0), Paint button / B key / swatch click to enter, Esc / B / button / Grid Off to exit; mouse-down + drag paints cells (interpolated along the drag, 20x20 and 40x40) with a brush-tinted paintbrush cursor (eraser has its own); one stroke = one undo step; undo is now ONE chronological history (max 50 grid steps) shared by grid edits and polygon/contour edits, so polygon edits no longer wipe grid undo. v5.76 — Cell colours use a FIXED scale (colormap matplotlib RdYlBu_r, blue low -> red high): delta -15..+15 mm, absolute 0..30 mm on the same colours; values outside clamp to the end colours; legend shows the fixed ends; auto-scaling (and the 400-cell rule) removed. v5.75 — Generate stops with a clear message when a required Python package (e.g. triangle) is missing instead of producing a degraded model. v5.70 — Named-constants refactor (CLAUDE.md Coding Standard), no behavior change: every tunable, color, size, threshold, API URL, storage key, mode name and repeated UI string now lives in one EDITOR CONSTANTS block at the top of the script (CSS custom properties for markup-only values); tests read the constants via tests/editor_constants.py. v5.69 — Create New Project: the heat-map PNG's baked-in background grid is erased for display (server-side heatmap_degrid.py; cleaned copy saved next to the original, original untouched) with an Original/Degridded view toggle; boundary detection still runs on the original; Open Project is unaffected. v5.68 — Grid resolution switch (20x20 default / 40x40) next to the Grid mode switch; confirm dialog then erases all cell values; saved as EGM `gridResolution` (absent = 20); drawing, hit-testing, overlays and the server TPS/controlling-cell code honour it. v5.21 — Default tee-hole position moved to (40, 40) mm (was 30, 30); saved positions untouched. v5.20 — Grid cell value labels are plain black (delta) with no white outline; absolute keeps orange. v5.19 — Ctrl+Option(Alt)+drag selects cells along the drag path (visit order); popup has first/last boxes, Tab/Enter from the last box spreads first->last linearly (0.1 mm precision). v5.18 — Grid cell value labels/tooltip no longer show a leading '+' on positives (negatives keep '-'). v5.17 — Geo-ref setup dialog removed (orphaned after the GPS panel ⚙ opener was removed); courseGeoRef data still loads/saves untouched. v5.16 — GPS controls removed from the UI (JS state/load/save kept so any EGM gpsBackend block still round-trips). v5.15 — Mouse wheel steps the open grid value box (0.1 mm, Shift = 1.0; no clamp; commit still Enter/Tab). v5.14 — Grid cells colored by value (matplotlib 'terrain', auto-scaled; view-only toggle in localStorage). v5.13 — Only cells FULLY inside a bunker can control it (partial cells ignored). v5.12 — Ring now in delta AND absolute (not off); delta = default + highest cell (was mean). v5.11 — Absolute mode: red ring around the grid cell(s) that control each trap's height (server-computed, mirrors generator). v5.10 — Grid value 0 = empty cell (deleted on commit, dropped on load). Grid lines recolored to indigo; Cmd+drag multi-cell selection with shared-value edit (task 726) #}
 {% block title %}Boundary Editor — AI Team Workspace{% endblock %}
 {% block content_width %}max-w-6xl{% endblock %}
 {% block content %}
@@ -393,20 +393,39 @@
        :style="'font-size:' + PALETTE_LABEL_FONT_PX + 'px;'">
     <template x-for="step in paletteSteps()" :key="step">
       <button type="button" data-testid="palette-swatch" :data-step="step"
-              @click="selectBrush(step)"
+              @click="onSwatchClick(step, $event)"
               :title="paletteLabel(step, gridMode) + ' mm'"
               class="flex items-center gap-1 rounded-sm px-0.5 leading-none"
-              :style="'height:' + paletteSwatchPx + 'px;' + (paintBrush === step ? 'outline:2px solid ' + COLOR_PALETTE_SELECTED + ';outline-offset:0;background:#eef2ff;' : '')">
+              :style="'height:' + paletteSwatchPx + 'px;' + (paintBrush === step ? 'outline:2px solid ' + COLOR_PALETTE_SELECTED + ';outline-offset:0;background:#eef2ff;' : (paintBrush2 === step ? 'outline:2px solid ' + COLOR_PALETTE_SELECTED_2 + ';outline-offset:0;background:#fdf2f8;' : ''))">
         <span class="block rounded-sm border border-black/20" data-testid="palette-color"
               :style="'width:' + PALETTE_SWATCH_WIDTH_PX + 'px;height:100%;background:' + paletteColor(step)"></span>
         <span class="tabular-nums text-notion-text w-6 text-right" x-text="paletteLabel(step, gridMode)"></span>
       </button>
     </template>
     <button type="button" data-testid="palette-eraser"
-            @click="selectBrush(PAINT_BRUSH_ERASER)"
+            @click="onSwatchClick(PAINT_BRUSH_ERASER, $event)"
             :title="TIP_PALETTE_ERASER"
             class="mt-1 flex items-center justify-center rounded-sm border border-notion-border font-medium text-notion-text"
             :style="'height:' + (paletteSwatchPx + PALETTE_ERASER_ROW_EXTRA_PX) + 'px;background:' + COLOR_PALETTE_ERASER_BG + ';' + (paintBrush === PAINT_BRUSH_ERASER ? 'outline:2px solid ' + COLOR_PALETTE_SELECTED + ';' : '')">Eraser</button>
+  </div>
+
+  {# ── Popup palette (v5.87, Mode 2 Z-Painting): right-click on the canvas; picking a swatch selects a new single brush and dismisses it ── #}
+  <div x-show="paintPopup.open" x-cloak data-testid="paint-popup"
+       class="fixed bg-white border border-notion-border rounded-lg shadow-lg select-none"
+       :style="'z-index:var(--editor-z-modal);left:' + paintPopup.x + 'px;top:' + paintPopup.y + 'px;padding:' + PALETTE_POPUP_PAD_PX + 'px;width:' + (PALETTE_POPUP_COLUMNS * PALETTE_POPUP_SWATCH_PX + 2 * PALETTE_POPUP_PAD_PX) + 'px;'"
+       @mousedown.stop @contextmenu.prevent>
+    <div class="flex flex-wrap">
+      <template x-for="step in paletteSteps()" :key="step">
+        <button type="button" data-testid="popup-swatch" :data-step="step"
+                @click="pickPopupBrush(step)"
+                :title="paletteLabel(step, gridMode) + ' mm'"
+                :style="'width:' + PALETTE_POPUP_SWATCH_PX + 'px;height:' + PALETTE_POPUP_SWATCH_PX + 'px;background:' + paletteColor(step) + ';' + (paintBrush === step ? 'outline:2px solid ' + COLOR_PALETTE_SELECTED + ';' : '')"
+                class="border border-black/20"></button>
+      </template>
+    </div>
+    <button type="button" data-testid="popup-eraser" @click="pickPopupBrush(PAINT_BRUSH_ERASER)" :title="TIP_PALETTE_ERASER"
+            class="mt-1 w-full rounded-sm border border-notion-border text-xs font-medium text-notion-text"
+            :style="'height:' + PALETTE_POPUP_ERASER_ROW_PX + 'px;background:' + COLOR_PALETTE_ERASER_BG + ';'">Eraser</button>
   </div>
 
   {# ── Canvas ─────────────────────────────────────────────── #}
@@ -668,7 +687,7 @@
         <div class="flex items-center gap-2">
           {# Paint mode toggle (v5.77) — shown pressed while paint mode is on; B key does the same #}
           <button type="button" data-testid="paint-btn"
-                  @click="togglePaintMode()"
+                  @click="isUiMode2() ? setUiSubMode(uiSubMode === UI_SUB_PAINT ? UI_SUB_BOUNDARY : UI_SUB_PAINT) : togglePaintMode()"
                   :aria-pressed="paintMode ? 'true' : 'false'"
                   :class="paintMode ? 'eb-seg-on-indigo shadow-inner' : ''"
                   class="eb-btn"
@@ -680,6 +699,38 @@
                   class="eb-btn">
             Undo
           </button>
+        </div>
+      </div>
+
+      {# UI Mode switch (v5.86) — editor-wide input paradigm; per-browser preference (localStorage) #}
+      <div class="eb-group" data-testid="ui-mode-switch" :title="UI_MODE_TIP_SWITCH">
+        <span class="eb-cap" x-text="UI_MODE_CAPTION"></span>
+        <div class="flex items-center gap-2">
+        <div class="eb-seg">
+          <button type="button" data-testid="ui-mode-1"
+                  @click="setUiMode(UI_MODE_1)"
+                  :class="uiMode === UI_MODE_1 ? 'eb-seg-on-indigo' : ''"
+                  class="eb-seg-btn"
+                  :title="UI_MODE_TIP_1" x-text="UI_MODE_LABEL_1"></button>
+          <button type="button" data-testid="ui-mode-2"
+                  @click="setUiMode(UI_MODE_2)"
+                  :class="uiMode === UI_MODE_2 ? 'eb-seg-on-indigo' : ''"
+                  class="eb-seg-btn"
+                  :title="UI_MODE_TIP_2" x-text="UI_MODE_LABEL_2"></button>
+        </div>
+        {# Mode-2 sub-mode indicator + switch (v5.87): Cmd-B / Cmd-P do the same #}
+        <div class="eb-seg" x-show="isUiMode2()" x-cloak data-testid="ui-submode-switch" :title="UI_SUB_TIP_SWITCH">
+          <button type="button" data-testid="ui-submode-boundary"
+                  @click="setUiSubMode(UI_SUB_BOUNDARY)"
+                  :class="uiSubMode === UI_SUB_BOUNDARY ? 'eb-seg-on-indigo' : ''"
+                  class="eb-seg-btn"
+                  :title="UI_SUB_TIP_BOUNDARY" x-text="UI_SUB_LABEL_BOUNDARY"></button>
+          <button type="button" data-testid="ui-submode-paint"
+                  @click="setUiSubMode(UI_SUB_PAINT)"
+                  :class="uiSubMode === UI_SUB_PAINT ? 'eb-seg-on-indigo' : ''"
+                  class="eb-seg-btn"
+                  :title="UI_SUB_TIP_PAINT" x-text="UI_SUB_LABEL_PAINT"></button>
+        </div>
         </div>
       </div>
 
@@ -746,6 +797,60 @@ const HTTP_HEADERS_JSON = { 'Content-Type': 'application/json' };
 const STORAGE_KEY_COLOR_CELLS = 'editorColorCells';            // view pref, never saved in the EGM
 const STORAGE_VALUE_ON = '1';
 const STORAGE_VALUE_OFF = '0';
+// ── UI mode (v5.86) — editor-wide input paradigm; per-browser preference, never saved in the EGM ──
+const STORAGE_KEY_UI_MODE = 'editorUiMode';
+const UI_MODE_1 = 'mode1';                       // all current key/mouse bindings
+const UI_MODE_2 = 'mode2';                       // experimental controls (placeholder: same as Mode 1 for now)
+const UI_MODES = [UI_MODE_1, UI_MODE_2];
+const DEFAULT_UI_MODE = UI_MODE_1;
+const UI_MODE_CAPTION = 'UI Mode';
+const UI_MODE_LABEL_1 = 'Mode 1';
+const UI_MODE_LABEL_2 = 'Mode 2';
+const UI_MODE_TIP_SWITCH = 'UI Mode: which set of mouse / keyboard controls the editor uses. Saved in this browser only, not in the EGM.';
+const UI_MODE_TIP_1 = 'Mode 1 - current controls';
+const UI_MODE_TIP_2 = 'Mode 2 - Boundary Editing (Cmd-B) / Z-Painting (Cmd-P) controls';
+// ── UI Mode 2 (v5.87): two sub-modes, only active while UI Mode = Mode 2 ──
+const UI_SUB_BOUNDARY = 'boundary';
+const UI_SUB_PAINT = 'paint';
+const UI_SUB_MODES = [UI_SUB_BOUNDARY, UI_SUB_PAINT];
+const DEFAULT_UI_SUB_MODE = UI_SUB_BOUNDARY;
+const UI_SUB_LABEL_BOUNDARY = 'Boundary Editing';
+const UI_SUB_LABEL_PAINT = 'Z-Painting';
+const UI_SUB_TIP_SWITCH = 'Mode 2 sub-mode: Boundary Editing (Cmd-B) edits control points; Z-Painting (Cmd-P) paints grid cell heights.';
+const UI_SUB_TIP_BOUNDARY = 'Boundary Editing (Cmd-B)';
+const UI_SUB_TIP_PAINT = 'Z-Painting (Cmd-P)';
+const M2_KEY_BOUNDARY = 'b';                // Cmd/Ctrl + this key -> Boundary Editing
+const M2_KEY_PAINT = 'p';                   // Cmd/Ctrl + this key -> Z-Painting
+const M2_KEY_CANCEL = 'Escape';             // popup palette -> close; Boundary Editing -> clear point selection
+const MOUSE_BUTTON_LEFT = 0;
+const MOUSE_BUTTON_RIGHT = 2;
+const MOUSE_BUTTONS_LEFT_MASK = 1;          // MouseEvent.buttons bit for the left button
+const M2_DRAG_THRESHOLD_PX = 3;             // CSS px the pointer must travel before a click becomes a drag
+const M2_KIND_MOVE = 'move';                // dragging the selected control points
+const M2_KIND_BAND = 'band';                // rubber-band selection rectangle (Boundary Editing)
+const M2_KIND_LASSO = 'lasso';              // freehand lasso selection (Boundary Editing)
+const M2_KIND_PAINT_BAND = 'paintband';     // rubber-band fill rectangle (Z-Painting, 1 brush)
+const M2_KIND_RAMP = 'ramp';                // cells visited by a 2-brush drag
+const M2_UNDO_MOVE = 'point move';
+const M2_UNDO_ADD = 'add point';
+const M2_UNDO_DELETE = 'point delete';
+const M2_UNDO_BAND_FILL = 'rubber-band fill';
+const M2_UNDO_RAMP = 'colour ramp';
+const COLOR_M2_SELECTED_BORDER = '#000000'; // selected control point = same size + colour, black border
+const M2_SELECTED_BORDER_WIDTH = 2.5;
+const COLOR_LASSO = '#2383E2';
+const COLOR_LASSO_FILL = 'rgba(35, 131, 226, 0.08)';
+const LASSO_LINE_WIDTH = 1.5;
+const LASSO_MIN_SAMPLE_PX = 2;              // image px between recorded lasso samples
+const LASSO_MIN_POINTS = 3;                 // fewer samples than this selects nothing
+const RAINBOW_STOPS = ['#e11d48', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6'];   // 2-brush cursor bristles
+const RAINBOW_GRADIENT_ID = 'rainbowBristles';
+const COLOR_PALETTE_SELECTED_2 = '#db2777'; // ring around the second brush of a 2-brush pair
+const PALETTE_POPUP_COLUMNS = 8;
+const PALETTE_POPUP_SWATCH_PX = 24;
+const PALETTE_POPUP_PAD_PX = 6;
+const PALETTE_POPUP_ERASER_ROW_PX = 26;
+const TIP_PALETTE_POPUP = 'Pick a brush';
 
 // ── Grid cell elevation: modes, limits, resolution ──
 const GRID_MODE_DELTA = 'delta';        // additive offsets to the Poisson default; indigo UI
@@ -1106,6 +1211,26 @@ function eraserCursorSvg() {
     + '<path data-part="eraser" d="' + body + '" fill="' + COLOR_CURSOR_ERASER + '" stroke="' + COLOR_CURSOR_OUTLINE + '" stroke-width="1" stroke-linejoin="round"/>'
     + '</svg>';
 }
+// v5.87 — rainbow paintbrush (two brushes active): same brush shape, bristles filled with a gradient.
+function rainbowCursorSvg() {
+  const stops = RAINBOW_STOPS.map((c, i) => '<stop offset="' + (i / (RAINBOW_STOPS.length - 1)) + '" stop-color="' + c + '"/>').join('');
+  const defs = '<defs><linearGradient id="' + RAINBOW_GRADIENT_ID + '" x1="0" y1="1" x2="1" y2="0">' + stops + '</linearGradient></defs>';
+  return paintCursorSvg('url(#' + RAINBOW_GRADIENT_ID + ')').replace('>', '>' + defs);   // defs right after the opening <svg ...> tag
+}
+// v5.87 — palette step for the k-th of n visited cells ramping from step a to step b (linear, quantised to whole steps).
+function rampStepAt(k, n, a, b) {
+  const t = n <= 1 ? 0 : k / (n - 1);
+  return Math.round(a + t * (b - a));
+}
+// v5.87 — ray-casting point-in-polygon (poly = [{x,y}, ...]).
+function pointInPolygon(x, y, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
 // CSS `cursor` value (data-URL image + hotspot + fallback keyword).
 function cursorCssFromSvg(svg, hx, hy) {
   return 'url("data:image/svg+xml;utf8,' + encodeURIComponent(svg) + '") ' + hx + ' ' + hy + ', ' + PAINT_CURSOR_FALLBACK;
@@ -1247,6 +1372,12 @@ function polygonEditor() {
     //   'absolute' — values REPLACE the Poisson default (0 to 30 mm). Orange UI.
     //   'off'      — overlays hidden, no overrides applied; stored values are preserved for A/B toggling.
     gridMode: DEFAULT_GRID_MODE,
+    uiMode: DEFAULT_UI_MODE,   // v5.86 UI Mode (localStorage STORAGE_KEY_UI_MODE); not part of the EGM
+    uiSubMode: DEFAULT_UI_SUB_MODE,   // v5.87 Mode-2 sub-mode (UI_SUB_*); Z-Painting == paintMode true
+    paintBrush2: null,         // v5.87 second brush (palette step) while two brushes are active; null = single brush
+    paintPopup: { open: false, x: 0, y: 0 },   // v5.87 right-click popup palette (client px)
+    _m2: null,                 // v5.87 in-flight Mode-2 gesture {kind, ...}; null when idle
+    lassoPts: null,            // v5.87 freehand lasso samples [{x,y}] in image px while drawing
     colorCellsByHeight: true,  // v5.14 view pref (localStorage 'editorColorCells'); not part of the EGM
     _gridActiveCell: null,   // {col, row, idx, canvasPx:{x,y}} or null
     _wheelAcc: 0,            // accumulated wheel px for gridWheel (v5.15)
@@ -1369,11 +1500,13 @@ function polygonEditor() {
     },
 
     init() {
+      this.loadUiMode();
       try { const c = localStorage.getItem(STORAGE_KEY_COLOR_CELLS); if (c === STORAGE_VALUE_OFF) this.colorCellsByHeight = false; } catch (e) {}
       // v5.77: palette fits the viewport; Grid Off hides it (and leaves paint mode); the canvas re-measures when it appears/disappears.
       this.updatePaletteSize();
       window.addEventListener('resize', () => this.updatePaletteSize());
-      this.$watch('gridMode', (m) => { if (m === GRID_MODE_OFF) this.exitPaintMode(); this.$nextTick(() => this.resizeCanvas()); });
+      this.$watch('uiMode', (m) => this.onUiModeChanged(m));   // v5.87: leaving / entering Mode 2 resets transient Mode-2 state
+      this.$watch('gridMode', (m) => { if (m === GRID_MODE_OFF) { this.exitPaintMode(); if (this.isUiMode2()) this.uiSubMode = UI_SUB_BOUNDARY; } this.$nextTick(() => this.resizeCanvas()); });
       this.$watch('imgLoaded', () => this.$nextTick(() => this.resizeCanvas()));
       // v5.81: the canvas is sized from its container's width, but that width changes when the palette shows/hides
       // (and with the sidebar / scrollbar).  A one-shot measure taken before the palette laid out left the canvas wider
@@ -1750,6 +1883,7 @@ function polygonEditor() {
         for (let i = 0; i < pts.length; i++) {
           const p = this.imgToCanvas(pts[i].x, pts[i].y);
           const isSelVert = this.isVertSelected(pi, i);
+          if (this.isUiMode2() && isSelVert) { this._drawM2SelectedVertex(ctx, p, baseR * dpr, poly.color, dpr); continue; }   // v5.87
           const r = (isSelVert ? baseR + VERTEX_SELECTED_RADIUS_BONUS : baseR) * dpr;
 
           ctx.beginPath();
@@ -1883,6 +2017,9 @@ function polygonEditor() {
         ctx.fillRect(rx, ry, rw, rh);
         ctx.setLineDash([]);
       }
+
+      // v5.87 freehand lasso (Mode 2 Boundary Editing)
+      this._drawLasso(ctx, dpr);
 
       // ── Grid cell elevation overlay (v5.00) ──────────────────────────────
       // Draw 20×20 cell boundaries over the print area only when an image is
@@ -2119,6 +2256,8 @@ function polygonEditor() {
     },
 
     onMouseDown(e) {
+      // UI-mode seam (v5.86/87).
+      if (this.uiMode === UI_MODE_2) { this.m2MouseDown(e); return; }
       if (e.button !== 0) return; // left click only
       // v5.77: in paint mode a click only paints (no selection, no point drag, no value box)
       if (this.paintMode) {
@@ -2248,6 +2387,8 @@ function polygonEditor() {
     },
 
     onMouseMove(e) {
+      // UI-mode seam (v5.86/87).
+      if (this.uiMode === UI_MODE_2) { this.m2MouseMove(e); return; }
       if (this.paintMode) { this.paintMove(e); return; }   // v5.77
       const { x, y } = this.canvasToImg(e);
 
@@ -2386,6 +2527,8 @@ function polygonEditor() {
     },
 
     onMouseUp(e) {
+      // UI-mode seam (v5.86/87).
+      if (this.uiMode === UI_MODE_2) { this.m2MouseUp(e); return; }
       // Remove the global window listener attached during mousedown (handles out-of-canvas releases).
       if (this._globalMouseUp) {
         window.removeEventListener('mouseup', this._globalMouseUp);
@@ -2446,6 +2589,7 @@ function polygonEditor() {
 
     onDblClick(e) {
       if (this.paintMode) return;   // v5.77
+      if (this.uiMode === UI_MODE_2) return;   // v5.87: Mode 2 has no double-click action
       // In contour mode, double-click finishes the contour
       if (this.contourMode) {
         this.finishContour();
@@ -2470,6 +2614,7 @@ function polygonEditor() {
 
     onRightClick(e) {
       if (this.paintMode) return;   // v5.77
+      if (this.uiMode === UI_MODE_2) return;   // v5.87: Mode 2 right-click is handled on mousedown (m2MouseDown)
       const { x, y } = this.canvasToImg(e);
 
       // ── Grid dot right-click → delete (v5.05) ────────────────────────────
@@ -3299,6 +3444,9 @@ function polygonEditor() {
 
     // CSS cursor for the current brush; the SVG is rebuilt whenever the brush changes.
     paintCursorCss() {
+      if (this.paintBrush2 != null) {   // v5.87: two brushes active -> rainbow brush
+        return cursorCssFromSvg(rainbowCursorSvg(), PAINT_CURSOR_TIP_X, PAINT_CURSOR_TIP_Y);
+      }
       if (this.paintBrush === PAINT_BRUSH_ERASER) {
         return cursorCssFromSvg(eraserCursorSvg(), ERASER_CURSOR_HOTSPOT_X, ERASER_CURSOR_HOTSPOT_Y);
       }
@@ -3371,6 +3519,345 @@ function polygonEditor() {
       this.autoSave();
     },
 
+    // ── UI Mode 2 (v5.87) ───────────────────────────────────────────────────────
+    // Two sub-modes (uiSubMode): Boundary Editing (Cmd-B; arrow cursor) and Z-Painting (Cmd-P; paintMode == true).
+    // Everything below runs ONLY while uiMode === UI_MODE_2; the Mode-1 handlers are never entered then.
+
+    // Selected control point in Mode 2: same size and colour as an unselected one, with a black border.
+    _drawM2SelectedVertex(ctx, p, r, color, dpr) {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.strokeStyle = COLOR_M2_SELECTED_BORDER;
+      ctx.lineWidth = M2_SELECTED_BORDER_WIDTH * dpr;
+      ctx.stroke();
+    },
+
+    _drawLasso(ctx, dpr) {
+      if (!this.lassoPts || this.lassoPts.length < 2) return;
+      ctx.setLineDash([DASH_ON_PX * dpr, DASH_OFF_PX * dpr]);
+      ctx.beginPath();
+      this.lassoPts.forEach((q, qi) => { const c = this.imgToCanvas(q.x, q.y); if (qi) ctx.lineTo(c.x, c.y); else ctx.moveTo(c.x, c.y); });
+      ctx.closePath();
+      ctx.fillStyle = COLOR_LASSO_FILL;
+      ctx.fill();
+      ctx.strokeStyle = COLOR_LASSO;
+      ctx.lineWidth = LASSO_LINE_WIDTH * dpr;
+      ctx.stroke();
+      ctx.setLineDash([]);
+    },
+
+    isTypingTarget(t) { return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || !!t.isContentEditable); },
+
+    // Leaving or entering Mode 2: drop every transient gesture, leave paint state, restore the default cursor.
+    onUiModeChanged(mode) {
+      this.m2Cancel();
+      this.paintBrush2 = null;
+      this.uiSubMode = DEFAULT_UI_SUB_MODE;
+      this.exitPaintMode();
+      if (mode === UI_MODE_2) { this.contourMode = false; this.contourDraft = []; }
+      if (this.$refs.canvas) this.$refs.canvas.style.cursor = CURSOR_DEFAULT;
+      this.draw();
+    },
+
+    setUiSubMode(sub) {
+      if (!this.isUiMode2() || !UI_SUB_MODES.includes(sub)) return;
+      this.m2Cancel();
+      if (sub === UI_SUB_PAINT) { if (!this.enterPaintMode()) return; }   // Grid Off / no image: stay where we are
+      else { this.exitPaintMode(); if (this.$refs.canvas) this.$refs.canvas.style.cursor = CURSOR_DEFAULT; }
+      this.uiSubMode = sub;
+      this.draw();
+    },
+
+    // Abort any in-flight Mode-2 gesture (an unfinished paint stroke is committed as one undo step).
+    m2Cancel() {
+      if (this._paintStroke) this.paintEnd();
+      if (this._m2 && this._m2.kind === M2_KIND_RAMP) this._gridMultiSelect = null;
+      this._m2 = null;
+      this.rubberBand = false;
+      this.lassoPts = null;
+      this.paintPopup = { open: false, x: 0, y: 0 };
+      if (this._globalMouseUp) { window.removeEventListener('mouseup', this._globalMouseUp); this._globalMouseUp = null; }
+    },
+
+    closePaintPopup() { this.paintPopup = { open: false, x: 0, y: 0 }; },
+
+    openPaintPopup(e) {
+      const w = PALETTE_POPUP_COLUMNS * PALETTE_POPUP_SWATCH_PX + 2 * PALETTE_POPUP_PAD_PX;
+      const rows = Math.ceil(CELL_COLOR_STOPS.length / PALETTE_POPUP_COLUMNS);
+      const h = rows * PALETTE_POPUP_SWATCH_PX + PALETTE_POPUP_ERASER_ROW_PX + 2 * PALETTE_POPUP_PAD_PX;
+      this.paintPopup = {
+        open: true,
+        x: Math.max(0, Math.min(e.clientX, window.innerWidth - w)),
+        y: Math.max(0, Math.min(e.clientY, window.innerHeight - h)),
+      };
+    },
+
+    // Popup swatch: a NEW single brush; the popup is dismissed.
+    pickPopupBrush(brush) {
+      this.paintBrush = brush;
+      this.paintBrush2 = null;
+      this.closePaintPopup();
+      this.applyPaintCursor();
+    },
+
+    // Palette click / Cmd-click.  Mode 1: unchanged (selectBrush).  Mode 2: plain = single brush; Cmd-click with ONE
+    // colour brush active adds a second brush (rainbow cursor); otherwise it behaves like a plain click.
+    onSwatchClick(brush, e) {
+      if (!this.isUiMode2()) { this.selectBrush(brush); return; }
+      const cmd = !!(e && (e.metaKey || e.ctrlKey));
+      const wasPaint = this.uiSubMode === UI_SUB_PAINT;
+      const single = wasPaint && this.paintBrush2 === null && this.paintBrush !== PAINT_BRUSH_ERASER;
+      if (cmd && single && brush !== PAINT_BRUSH_ERASER) this.paintBrush2 = brush;
+      else { this.paintBrush = brush; this.paintBrush2 = null; }
+      if (!wasPaint) this.setUiSubMode(UI_SUB_PAINT); else this.applyPaintCursor();
+    },
+
+    // Key chords.  Returns true when the key was consumed; false lets the shared handler (undo/redo, Delete, ...) run.
+    m2HandleKey(e) {
+      if (this.showNewDialog || this.showOpenDialog) return false;
+      if (this.isTypingTarget(e.target)) return false;
+      const k = String(e.key || '').toLowerCase();
+      const cmd = e.metaKey || e.ctrlKey;
+      if (cmd && !e.altKey && !e.shiftKey) {
+        if (k === M2_KEY_BOUNDARY) { e.preventDefault(); this.setUiSubMode(UI_SUB_BOUNDARY); return true; }
+        if (k === M2_KEY_PAINT) { e.preventDefault(); this.setUiSubMode(UI_SUB_PAINT); return true; }
+      }
+      if (!cmd && !e.altKey && k === PAINT_KEY) return true;       // Mode-1 B paint toggle is Mode 1 only
+      if (cmd && (k === GRID_COPY_KEY || k === GRID_PASTE_KEY)) return true;   // grid copy / paste: Mode 1 only for now
+      if (e.key === M2_KEY_CANCEL && !cmd) {
+        if (this.paintPopup.open) { e.preventDefault(); this.closePaintPopup(); return true; }
+        if (this.uiSubMode === UI_SUB_BOUNDARY && this.selectedVerts.length) { this.selectedVerts = []; this.draw(); }
+        return true;
+      }
+      return false;
+    },
+
+    _m2AttachMouseUp() {
+      if (!this._globalMouseUp) {
+        this._globalMouseUp = (ev) => this.onMouseUp(ev);
+        window.addEventListener('mouseup', this._globalMouseUp);
+      }
+    },
+
+    m2MouseDown(e) {
+      if (this.paintPopup.open) { this.closePaintPopup(); return; }   // click outside the popup just dismisses it
+      const left = e.button === MOUSE_BUTTON_LEFT, right = e.button === MOUSE_BUTTON_RIGHT;
+      if (!left && !right) return;
+      this.m2Cancel();
+      const cmd = !!(e.metaKey || e.ctrlKey);
+      if (this.uiSubMode === UI_SUB_PAINT && this.paintMode) this._m2PaintDown(e, left, cmd);
+      else this._m2BoundaryDown(e, left, cmd);
+      if (this._m2 || this._paintStroke) this._m2AttachMouseUp();
+    },
+
+    m2MouseMove(e) {
+      this._gridHoveredCell = null;
+      if (this.uiSubMode === UI_SUB_PAINT && this.paintMode) this.applyPaintCursor();
+      if (this._paintStroke) { this.paintMove(e); return; }
+      const m = this._m2;
+      if (!m) return;
+      if (!e.buttons) { this.m2MouseUp(e); return; }                 // mouse-up was missed
+      const { x, y } = this.canvasToImg(e);
+      if (m.kind === M2_KIND_MOVE) {
+        const dx = x - m.lastX, dy = y - m.lastY;
+        if (!dx && !dy) return;
+        if (!m.pushed) { this.pushUndo(M2_UNDO_MOVE); m.pushed = true; }   // first real movement = the ONE undo step
+        m.lastX = x; m.lastY = y;
+        const clampX = (v) => Math.max(-this.fringePadPx, Math.min(this.imgW + this.fringePadPx, Math.round(v)));
+        const clampY = (v) => Math.max(-this.fringePadPx, Math.min(this.imgH + this.fringePadPx, Math.round(v)));
+        for (const sv of this.selectedVerts) {
+          const pt = this.polygons[sv.poly].points[sv.idx];
+          pt.x = clampX(pt.x + dx);
+          pt.y = clampY(pt.y + dy);
+        }
+        this.draw();
+        return;
+      }
+      if (m.kind === M2_KIND_RAMP) {
+        const uv = this._imgToCellUV(x, y);
+        this._m2RampAdd(cellsAlongSegment(m.lastU, m.lastV, uv.u, uv.v));
+        m.lastU = uv.u; m.lastV = uv.v;
+        return;
+      }
+      if (!m.active) {   // BAND / LASSO / PAINT_BAND start only after the pointer really moved
+        if (Math.hypot(e.clientX - m.startCX, e.clientY - m.startCY) < M2_DRAG_THRESHOLD_PX) return;
+        m.active = true;
+        if (m.kind === M2_KIND_LASSO) this.lassoPts = [{ x: m.startX, y: m.startY }];
+        else { this.rubberBand = true; this.rbStartX = m.startX; this.rbStartY = m.startY; }
+      }
+      if (m.kind === M2_KIND_LASSO) {
+        const last = this.lassoPts[this.lassoPts.length - 1];
+        if (Math.hypot(x - last.x, y - last.y) >= LASSO_MIN_SAMPLE_PX) this.lassoPts.push({ x, y });
+      } else {
+        this.rbCurX = x; this.rbCurY = y;
+      }
+      this.draw();
+    },
+
+    m2MouseUp(e) {
+      if (this._globalMouseUp) { window.removeEventListener('mouseup', this._globalMouseUp); this._globalMouseUp = null; }
+      if (this._paintStroke) { this.paintEnd(); this._m2 = null; return; }   // stroke = ONE undo step
+      const m = this._m2;
+      this._m2 = null;
+      if (!m) return;
+      if (m.kind === M2_KIND_MOVE) { if (m.pushed) this.autoSave(); this.draw(); return; }
+      if (m.kind === M2_KIND_RAMP) { this._m2RampCommit(); return; }
+      if (!m.active) { this.rubberBand = false; this.lassoPts = null; return; }   // a plain click without a drag: no effect
+      if (m.kind === M2_KIND_BAND) {
+        this.rubberBand = false;
+        const r = this._m2Rect();
+        const found = [];
+        this.polygons.forEach((poly, pi) => poly.points.forEach((q, i) => {
+          if (q.x >= r.minX && q.x <= r.maxX && q.y >= r.minY && q.y <= r.maxY) found.push({ poly: pi, idx: i });
+        }));
+        this._m2SetSelection(found, m.additive, m.pre);
+      } else if (m.kind === M2_KIND_LASSO) {
+        const lasso = this.lassoPts || [];
+        this.lassoPts = null;
+        const found = [];
+        if (lasso.length >= LASSO_MIN_POINTS) {
+          this.polygons.forEach((poly, pi) => poly.points.forEach((q, i) => {
+            if (pointInPolygon(q.x, q.y, lasso)) found.push({ poly: pi, idx: i });
+          }));
+        }
+        this._m2SetSelection(found, m.additive, m.pre);
+      } else if (m.kind === M2_KIND_PAINT_BAND) {
+        this.rubberBand = false;
+        const r = this._m2Rect();
+        const a = this._imgToCellUV(r.minX, r.minY), b = this._imgToCellUV(r.maxX, r.maxY);
+        const val = this._m2BrushValue(this.paintBrush);
+        const N = this.gridN, entries = [];
+        for (let j = Math.ceil(a.v); j < Math.floor(b.v); j++) {
+          for (let i = Math.ceil(a.u); i < Math.floor(b.u); i++) {
+            if (i < 0 || j < 0 || i >= N || j >= N) continue;
+            entries.push([(N - 1 - j) * N + i, val]);
+          }
+        }
+        if (!this._m2ApplyCells(entries, M2_UNDO_BAND_FILL)) this.draw();
+      }
+    },
+
+    _m2Rect() {
+      return { minX: Math.min(this.rbStartX, this.rbCurX), maxX: Math.max(this.rbStartX, this.rbCurX),
+               minY: Math.min(this.rbStartY, this.rbCurY), maxY: Math.max(this.rbStartY, this.rbCurY) };
+    },
+
+    // Replace the point selection with `found`, or (additive) add `found` to `pre`.
+    _m2SetSelection(found, additive, pre) {
+      const out = additive ? [...pre] : [];
+      for (const v of found) if (!out.some(o => o.poly === v.poly && o.idx === v.idx)) out.push(v);
+      this.selectedVerts = out;
+      this.draw();
+    },
+
+    // Brush value for a Z-painting fill: eraser -> null (empty the cell), colour -> clamped palette value.
+    _m2BrushValue(brush) {
+      return brush === PAINT_BRUSH_ERASER ? null : paintBrushValue(brush, this.gridMode);
+    },
+
+    // Write [[idx, value|null], ...] as ONE undo step (value null empties the cell).  Returns true when anything changed.
+    _m2ApplyCells(entries, label) {
+      const lim = gridValueLimits(this.gridMode);
+      const prev = {};
+      for (const [idx, v] of entries) {
+        const before = this.gridCellHeights[idx];
+        const next = v === null ? undefined : Math.max(lim.min, Math.min(lim.max, v));
+        if (before === next) continue;
+        if (!(idx in prev)) prev[idx] = before;
+        if (next === undefined) delete this.gridCellHeights[idx]; else this.gridCellHeights[idx] = next;
+      }
+      const n = Object.keys(prev).length;
+      if (!n) return false;
+      this.pushGridUndo(prev, label + ' (' + n + (n === 1 ? ' cell)' : ' cells)'));
+      this.draw();
+      this.autoSave();
+      return true;
+    },
+
+    _m2RampAdd(list) {
+      const N = this.gridN;
+      for (const [i, j] of list) {
+        if (i < 0 || j < 0 || i >= N || j >= N) continue;
+        this._gridMultiSelect.add((N - 1 - j) * N + i);   // Set keeps visit order
+      }
+      this.draw();
+    },
+
+    _m2RampCommit() {
+      const cells = [...(this._gridMultiSelect || [])];
+      this._gridMultiSelect = null;
+      const n = cells.length;
+      const entries = cells.map((idx, k) => [idx, paintBrushValue(rampStepAt(k, n, this.paintBrush, this.paintBrush2), this.gridMode)]);
+      if (!this._m2ApplyCells(entries, M2_UNDO_RAMP)) this.draw();
+    },
+
+    _m2PaintDown(e, left, cmd) {
+      if (!left) { this.openPaintPopup(e); return; }
+      const p = this.canvasToImg(e);
+      this._gridHoveredCell = null;
+      if (this.paintBrush2 !== null) {            // two brushes: touched cells are selected, ramped on release
+        const uv = this._imgToCellUV(p.x, p.y);
+        this._gridMultiSelect = new Set();
+        this._m2 = { kind: M2_KIND_RAMP, lastU: uv.u, lastV: uv.v };
+        this._m2RampAdd([[Math.floor(uv.u), Math.floor(uv.v)]]);
+      } else if (cmd) {                           // one brush + Cmd: rubber-band fill
+        this._m2 = { kind: M2_KIND_PAINT_BAND, startX: p.x, startY: p.y, startCX: e.clientX, startCY: e.clientY, active: false };
+      } else {
+        this.paintBegin(e);                       // one brush: click / drag paints every touched cell
+      }
+    },
+
+    _m2BoundaryDown(e, left, cmd) {
+      const { x, y } = this.canvasToImg(e);
+      const hit = this.hitTestPoint(x, y);
+      if (!left) {
+        if (hit) { this._m2DeletePoint(hit); return; }
+        const edge = this.hitTestEdge(x, y);
+        if (!edge) return;                        // right-click off a line: no effect
+        this.pushUndo(M2_UNDO_ADD);
+        const newIdx = edge.edgeIdx + 1;
+        this.polygons[edge.polyIdx].points.splice(newIdx, 0, { x: Math.round(x), y: Math.round(y) });
+        this.selectedPoly = edge.polyIdx;
+        this.selectedVerts = [{ poly: edge.polyIdx, idx: newIdx }];
+        this._m2 = { kind: M2_KIND_MOVE, lastX: x, lastY: y, pushed: true };   // the new point follows the mouse
+        this.draw();
+        return;
+      }
+      if (hit) {
+        const sel = this.isVertSelected(hit.polyIdx, hit.pointIdx);
+        if (cmd && sel) return;                   // Cmd-drag on a selected point: no effect
+        this.selectedPoly = hit.polyIdx;
+        this.selectedContour = -1;
+        if (!sel) this.toggleVertSelection(hit.polyIdx, hit.pointIdx, e.shiftKey);
+        this._m2 = { kind: M2_KIND_MOVE, lastX: x, lastY: y, pushed: false };
+        this.draw();
+        return;
+      }
+      const base = { startX: x, startY: y, startCX: e.clientX, startCY: e.clientY, active: false, pre: [...this.selectedVerts] };
+      const kind = cmd ? M2_KIND_LASSO : M2_KIND_BAND;          // Cmd-drag on empty space = freehand lasso
+      this._m2 = Object.assign(base, { kind, additive: !!e.shiftKey });   // Shift adds to the selection, otherwise it replaces
+    },
+
+    // Right-click on a control point deletes it (a trap / water / boulders polygon at the minimum size is removed whole).
+    _m2DeletePoint(hit) {
+      const pts = this.polygons[hit.polyIdx].points;
+      if (pts.length > MIN_POLYGON_VERTICES) {
+        this.pushUndo(M2_UNDO_DELETE);
+        pts.splice(hit.pointIdx, 1);
+        this.selectedVerts = this.selectedVerts.filter(v => !(v.poly === hit.polyIdx && v.idx === hit.pointIdx));
+        for (const sv of this.selectedVerts) if (sv.poly === hit.polyIdx && sv.idx > hit.pointIdx) sv.idx--;
+        this.draw();
+        this.autoSave();
+      } else if (isRemovablePolyType(this.polygons[hit.polyIdx].type)) {
+        this.selectedVerts = [];
+        this.removePoly(hit.polyIdx);
+      } else {
+        this.flash(MSG_MIN_VERTICES, false);
+      }
+    },
+
     removePoly(idx) {
       if (!isRemovablePolyType(this.polygons[idx].type)) return;
       this.pushUndo('remove polygon');
@@ -3410,6 +3897,15 @@ function polygonEditor() {
     // values outside the range clamp to the end colours (cellColorAt clamps t)
     cellColorRgb(v, range) {
       return this.cellColorAt((Number(v) - range.min) / (range.max - range.min));
+    },
+    isUiMode2() { return this.uiMode === UI_MODE_2; },   // v5.86 seam: input handlers branch on this
+    loadUiMode() {   // v5.86 — restore the saved preference; unknown / unavailable storage keeps the default
+      try { const m = localStorage.getItem(STORAGE_KEY_UI_MODE); if (UI_MODES.includes(m)) this.uiMode = m; } catch (e) {}
+    },
+    setUiMode(mode) {   // v5.86 — preference only; never persisted to the EGM
+      if (!UI_MODES.includes(mode)) return;
+      this.uiMode = mode;
+      try { localStorage.setItem(STORAGE_KEY_UI_MODE, mode); } catch (e) {}
     },
     setColorCells() {   // view preference only — never persisted to the EGM
       try { localStorage.setItem(STORAGE_KEY_COLOR_CELLS, this.colorCellsByHeight ? STORAGE_VALUE_ON : STORAGE_VALUE_OFF); } catch (e) {}
@@ -4334,6 +4830,8 @@ function polygonEditor() {
     },
 
     handleKey(e) {
+      // v5.86 UI-mode seam (v5.87: Mode 2 key chords branch here; keys it does not claim fall through to the shared code below).
+      if (this.uiMode === UI_MODE_2 && this.m2HandleKey(e)) return;
       // ── Grid cell input intercepts — must run before polygon key handlers ──
       if (this._gridActiveCell) {
         if (e.key === 'Escape') {
