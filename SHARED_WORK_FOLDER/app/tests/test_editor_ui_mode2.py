@@ -339,6 +339,26 @@ def test_esc_clears_the_point_selection_in_boundary_editing():
     assert r == {"sel": 0}
 
 
+def test_entering_paint_mode_by_any_path_deselects_control_points():
+    paths = {
+        "button": "o.setUiSubMode(UI_SUB_PAINT);",
+        "swatch": "o.onSwatchClick(7, {});",
+        "cmd_p": "o.handleKey(key(M2_KEY_PAINT, {metaKey: true}));",
+        "ctrl_p": "o.handleKey(key(M2_KEY_PAINT, {ctrlKey: true}));",
+        "direct": "o.enterPaintMode();",
+    }
+    for name, act in paths.items():
+        r = _run("o.selectedVerts = [{poly: 0, idx: 0}, {poly: 1, idx: 2}];" + act + """
+          console.log(JSON.stringify({paint: o.paintMode, sel: o.selectedVerts.length}));""")
+        assert r == {"paint": True, "sel": 0}, name
+
+
+def test_failed_paint_entry_keeps_selection():
+    r = _run("""o.gridMode = GRID_MODE_OFF; o.selectedVerts = [{poly: 0, idx: 0}]; o.setUiSubMode(UI_SUB_PAINT);
+      console.log(JSON.stringify({paint: o.paintMode, sel: o.selectedVerts.length}));""")
+    assert r == {"paint": False, "sel": 1}
+
+
 def test_selected_point_look_is_same_size_black_border_in_source():
     assert "this._drawM2SelectedVertex(ctx, p, baseR * dpr, polyColor, dpr)" in EDITOR   # unselected radius, polygon colour
     block = _method("_drawM2SelectedVertex")

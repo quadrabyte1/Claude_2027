@@ -25,7 +25,7 @@ pytestmark = pytest.mark.skipif(not node, reason="node not installed")
 PAINT_METHODS = ["updatePaletteSize", "paletteColor", "paintBrushValueNow", "enterPaintMode", "exitPaintMode",
                  "togglePaintMode", "selectBrush", "paintCursorCss", "applyPaintCursor", "_imgToCellUV",
                  "_paintCells", "paintBegin", "paintMove", "paintEnd", "cellColorAt", "cancelGridRamp",
-                 "cancelGridCell", "pushGridUndo", "_trimUndo", "undo", "_undoGridEntry"]
+                 "cancelGridCell", "pushGridUndo", "_trimUndo", "undo", "_undoGridEntry", "_m2ClearSelection"]
 UNDO_METHODS = ["pushUndo", "_trimUndo", "pushGridUndo", "undo", "_undoGridEntry",
                 "redo", "gridUndoSnapshot", "commitGridCell", "setGridResolution", "snapshotPolygons",
                 "restoreSnapshot"]
