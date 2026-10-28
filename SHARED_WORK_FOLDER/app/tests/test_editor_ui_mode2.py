@@ -33,6 +33,7 @@ METHODS = [
     "enterPaintMode", "exitPaintMode", "togglePaintMode", "selectBrush", "paintCursorCss", "applyPaintCursor",
     "paletteColor", "cellColorAt", "paintBrushValueNow", "_imgToCellUV", "_paintCells", "paintBegin", "paintMove",
     "paintEnd", "cancelGridRamp", "cancelGridCell", "removePoly",
+    "slopeStart", "slopeCancel", "_slopePrompt", "_slopePickBrush", "_slopeDown", "_slopeStrokeEnd", "_slopeCommit",
 ]
 
 SUB_B, SUB_P = C.value("UI_SUB_BOUNDARY"), C.value("UI_SUB_PAINT")
@@ -65,7 +66,7 @@ globalThis.window = {innerWidth: 1000, innerHeight: 800, l: null,
 const BTN_L = MOUSE_BUTTON_LEFT, BTN_R = MOUSE_BUTTON_RIGHT;
 const o = {
   uiMode: UI_MODE_2, uiSubMode: DEFAULT_UI_SUB_MODE, paintBrush2: null, paintPopup: {open: false, x: 0, y: 0},
-  _m2: null, lassoPts: null, rubberBand: false, rbStartX: 0, rbStartY: 0, rbCurX: 0, rbCurY: 0,
+  _m2: null, _slope: null, lassoPts: null, rubberBand: false, rbStartX: 0, rbStartY: 0, rbCurX: 0, rbCurY: 0,
   gridMode: 'delta', gridN: %d, gridCellHeights: {}, imgLoaded: true, printSizeMm: %d,
   paintMode: false, paintBrush: PAINT_DEFAULT_STEP, _paintStroke: null, paletteSwatchPx: 20,
   undoHistory: [], redoStack: [], maxUndo: 100, selectedVerts: [], selectedPoly: 0, selectedContour: -1,
@@ -77,7 +78,7 @@ const o = {
   $refs: {canvas: {style: {cursor: 'default'}, getBoundingClientRect() { return {left: 0, top: 0}; }}},
   _contourArrowBtns: [], hitTestContourPoint() { return null; }, _gridCellFromImgPx() { return null; },
   saves: 0, draws: 0, flashes: [],
-  draw() { this.draws++; }, autoSave() { this.saves++; }, flash(m) { this.flashes.push(m); },
+  draw() { this.draws++; }, flashDismiss() { this.flashes.push(null); }, autoSave() { this.saves++; }, flash(m) { this.flashes.push(m); },
   canvasToImg(e) { return {x: e.x, y: e.y}; },
   _printTopLeftPx() { return {x: 0, y: 0}; }, _pxPerMm() { return 1; },
 };
@@ -571,3 +572,96 @@ def test_mode2_dblclick_and_mode1_only_keys_are_inert():
     r = _run("""o.onDblClick(ev(150, 100)); o.handleKey(key('b')); o.handleKey(key('c', {metaKey: true}));
       console.log(JSON.stringify({n: o.polygons[0].points.length, paint: o.paintMode}));""")
     assert r == {"n": 4, "paint": False}
+
+
+# ═══════════════════════════ v5.95: S = Slope (Z-Painting) ═══════════════════════════
+SLOPE_KEY = C.value("SLOPE_KEY")
+MSG_FIRST, MSG_SECOND = C.value("MSG_SLOPE_FIRST"), C.value("MSG_SLOPE_SECOND")
+MSG_PICK, MSG_NO_ERASER = C.value("MSG_SLOPE_PICK_BRUSH"), C.value("MSG_SLOPE_NO_ERASER")
+SLOPE_LO, SLOPE_HI = 0, STEPS - 1   # palette steps of the two boundaries (lowest / highest colour)
+
+# draw a horizontal boundary at row `row` from column c0 to c1, cell by cell
+STROKE = """
+const STRIDE = Math.ceil(SLOPE_MIN_SAMPLE_PX);   // mock grid is 1 px/cell: step by the sample spacing so no point is dropped
+const stroke = (row, c0, c1) => { const pts = []; const d = c1 >= c0 ? STRIDE : -STRIDE;
+  for (let c = c0; d > 0 ? c <= c1 : c >= c1; c += d) pts.push(cellXY(c, row)); drag(pts); };
+const val = (i, j) => o.gridCellHeights[cellIdx(i, j)];
+const pick = (step, kw) => o.onSwatchClick(step, ev(0, 0, kw));
+"""
+
+
+def test_slope_constants_and_spreadsheet_text():
+    assert SLOPE_KEY == "s"
+    assert MSG_FIRST == "Select a brush and draw one boundary of the sloped area that will be at that value"
+    assert MSG_SECOND == "Select a brush and draw the other boundary of the sloped area that will be at that value"
+    assert C.value("SLOPE_LINE_WIDTH_PX") == 3
+    assert "this._drawSlope(ctx, dpr)" in EDITOR[EDITOR.index("    draw() {"):EDITOR.index("    hitTestPoint(")]
+
+
+def test_slope_full_flow_fills_ramp_between_boundaries_as_one_undo_step():
+    out = _run(_go_paint() + STROKE + """
+o.m2HandleKey(key(SLOPE_KEY));
+const first = o.flashes[o.flashes.length - 1];
+down(5.5, 5.5);                                  // no brush chosen yet -> no stroke
+const noBrush = [!!o._m2, o.flashes[o.flashes.length - 1]];
+pick(%d); stroke(2, 2, 14);
+const second = o.flashes[o.flashes.length - 1];
+const lineStaysUntilDone = o._slope.a.pts.length > 1;
+pick(%d, {metaKey: true}); stroke(8, 2, 14);       // Cmd-click must NOT make a 2-brush pair here
+const col = [2, 3, 4, 5, 6, 7, 8].map(j => val(6, j));
+console.log(JSON.stringify({first, noBrush, second, lineStaysUntilDone, slope: o._slope, col,
+  undo: o.undoHistory.length, brush2: o.paintBrush2, outside: val(6, 1) === undefined && val(6, 9) === undefined}));
+""" % (SLOPE_LO, SLOPE_HI))
+    assert out["first"] == MSG_FIRST and out["second"] == MSG_SECOND
+    assert out["noBrush"][0] is False and MSG_PICK in out["noBrush"][1] and MSG_FIRST in out["noBrush"][1]
+    assert out["lineStaysUntilDone"] and out["slope"] is None and out["brush2"] is None
+    col = out["col"]
+    assert col[0] == C.value("CELL_COLOR_DELTA_MIN_MM") and col[-1] == C.value("CELL_COLOR_DELTA_MAX_MM")
+    assert col == sorted(col) and len(set(col)) > 2          # monotone ramp, intermediate values present
+    assert out["outside"] and out["undo"] == 1                # fill stays between the boundaries; ONE undo step
+
+
+def test_slope_boundary_direction_does_not_matter():
+    script = _go_paint() + STROKE + """
+o.m2HandleKey(key(SLOPE_KEY)); pick(%d); stroke(2, 2, 14); pick(%d); stroke(8, %s, %s);
+console.log(JSON.stringify(Object.entries(o.gridCellHeights).sort()));
+"""
+    same = _run(script % (SLOPE_LO, SLOPE_HI, 2, 14))
+    flipped = _run(script % (SLOPE_LO, SLOPE_HI, 14, 2))
+    assert same == flipped and same
+
+
+def test_slope_esc_cancels_and_writes_nothing():
+    out = _run(_go_paint() + STROKE + """
+o.m2HandleKey(key(SLOPE_KEY)); pick(%d); stroke(2, 2, 14);
+o.m2HandleKey(key(M2_KEY_CANCEL));
+console.log(JSON.stringify({slope: o._slope, cells: Object.keys(o.gridCellHeights).length, undo: o.undoHistory.length}));
+""" % SLOPE_LO)
+    assert out == {"slope": None, "cells": 0, "undo": 0}
+
+
+def test_slope_rejects_eraser_and_ignores_s_outside_z_painting():
+    out = _run(STROKE + """
+o.m2HandleKey(key(SLOPE_KEY)); const inBoundary = o._slope;       // Boundary Editing: S does nothing
+""" + _go_paint() + """
+o.m2HandleKey(key(SLOPE_KEY)); pick(ERASER_ID);
+console.log(JSON.stringify({inBoundary, picked: o._slope.picked, msg: o.flashes[o.flashes.length - 1]}));
+""".replace("ERASER_ID", json.dumps(ERASER)))
+    assert out["inBoundary"] is None and out["picked"] is False and MSG_NO_ERASER in out["msg"]
+
+
+def test_slope_leaving_z_painting_cancels_it():
+    out = _run(_go_paint() + "o.m2HandleKey(key(SLOPE_KEY)); o.setUiSubMode(UI_SUB_BOUNDARY);"
+               "console.log(JSON.stringify({slope: o._slope}));")
+    assert out["slope"] is None
+
+
+def test_slope_fill_steps_is_pure_ramp_between_lines():
+    out = _run("""
+const A = [{u: 1, v: 3.5}, {u: 12, v: 3.5}], B = [{u: 1, v: 9.5}, {u: 12, v: 9.5}];
+const r = new Map(slopeFillSteps(A, B, %d, %d, %d));
+const at = (c, rw) => r.get((%d - 1 - rw) * %d + c);
+console.log(JSON.stringify({top: at(5, 3), bottom: at(5, 9), mid: at(5, 6), outside: at(5, 2) ?? null}));
+""" % (SLOPE_LO, SLOPE_HI, N, N, N))
+    assert out["top"] == SLOPE_LO and out["bottom"] == SLOPE_HI
+    assert SLOPE_LO < out["mid"] < SLOPE_HI and out["outside"] is None
