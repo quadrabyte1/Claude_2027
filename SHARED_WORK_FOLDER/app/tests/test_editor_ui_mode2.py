@@ -602,18 +602,15 @@ def test_slope_full_flow_fills_ramp_between_boundaries_as_one_undo_step():
     out = _run(_go_paint() + STROKE + """
 o.m2HandleKey(key(SLOPE_KEY));
 const first = o.flashes[o.flashes.length - 1];
-down(5.5, 5.5);                                  // no brush chosen yet -> no stroke
-const noBrush = [!!o._m2, o.flashes[o.flashes.length - 1]];
 pick(%d); stroke(2, 2, 14);
 const second = o.flashes[o.flashes.length - 1];
 const lineStaysUntilDone = o._slope.a.pts.length > 1;
 pick(%d, {metaKey: true}); stroke(8, 2, 14);       // Cmd-click must NOT make a 2-brush pair here
 const col = [2, 3, 4, 5, 6, 7, 8].map(j => val(6, j));
-console.log(JSON.stringify({first, noBrush, second, lineStaysUntilDone, slope: o._slope, col,
+console.log(JSON.stringify({first, second, lineStaysUntilDone, slope: o._slope, col,
   undo: o.undoHistory.length, brush2: o.paintBrush2, outside: val(6, 1) === undefined && val(6, 9) === undefined}));
 """ % (SLOPE_LO, SLOPE_HI))
     assert out["first"] == MSG_FIRST and out["second"] == MSG_SECOND
-    assert out["noBrush"][0] is False and MSG_PICK in out["noBrush"][1] and MSG_FIRST in out["noBrush"][1]
     assert out["lineStaysUntilDone"] and out["slope"] is None and out["brush2"] is None
     col = out["col"]
     assert col[0] == C.value("CELL_COLOR_DELTA_MIN_MM") and col[-1] == C.value("CELL_COLOR_DELTA_MAX_MM")
@@ -647,7 +644,7 @@ o.m2HandleKey(key(SLOPE_KEY)); const inBoundary = o._slope;       // Boundary Ed
 o.m2HandleKey(key(SLOPE_KEY)); pick(ERASER_ID);
 console.log(JSON.stringify({inBoundary, picked: o._slope.picked, msg: o.flashes[o.flashes.length - 1]}));
 """.replace("ERASER_ID", json.dumps(ERASER)))
-    assert out["inBoundary"] is None and out["picked"] is False and MSG_NO_ERASER in out["msg"]
+    assert out["inBoundary"] is None and MSG_NO_ERASER in out["msg"]
 
 
 def test_slope_leaving_z_painting_cancels_it():
@@ -665,3 +662,87 @@ console.log(JSON.stringify({top: at(5, 3), bottom: at(5, 9), mid: at(5, 6), outs
 """ % (SLOPE_LO, SLOPE_HI, N, N, N))
     assert out["top"] == SLOPE_LO and out["bottom"] == SLOPE_HI
     assert SLOPE_LO < out["mid"] < SLOPE_HI and out["outside"] is None
+
+
+# ═══════════════ v5.96: the popup palette must never be visible unless invoked ═══════════════
+# Root cause (browser-verified): the popup's `:style` was a STRING binding.  Alpine writes a string binding with
+# setAttribute('style', ...), which wipes the inline `display:none` that x-show put there.  Every re-assignment of
+# `paintPopup` (m2Cancel on entering Z-Painting / Slope, etc.) re-ran that binding while x-show did not re-run, so the
+# closed popup appeared at left:0/top:0.  Fix: object-form :style (per-property, cannot clobber display) AND one hide
+# function (closePaintPopup) that does nothing -- no reactive write -- when the popup is already closed.
+POPUP_PAD_ASSIGN = re.compile(r"paintPopup\s*=\s*\{")
+
+
+def _popup_tag():
+    i = EDITOR.index('data-testid="paint-popup"')
+    return EDITOR[i:EDITOR.index("@mousedown.stop", i)]
+
+
+def test_popup_style_binding_is_object_form_so_it_cannot_wipe_x_show_display_none():
+    tag = _popup_tag()
+    m = re.search(r':style="([^"]*)"', tag)
+    assert m, "popup needs a :style binding"
+    assert m.group(1).lstrip().startswith("{"), "string :style uses setAttribute and wipes x-show's display:none"
+
+
+def test_popup_is_hidden_through_exactly_one_function():
+    # the only assignments of a closed popup state live in closePaintPopup (the initial data literal is `paintPopup:`)
+    body = _method("closePaintPopup")
+    others = EDITOR.replace(body, "")
+    for m in POPUP_PAD_ASSIGN.finditer(others):
+        assert "open: true" in others[m.start():m.start() + 40], "hide popup via closePaintPopup() only: " + others[m.start():m.start() + 60]
+
+
+def test_hiding_an_already_closed_popup_does_not_touch_reactive_state():
+    r = _run("""const before = o.paintPopup;
+      o.setUiSubMode(UI_SUB_PAINT); o.m2Cancel(); o.closePaintPopup(); o.slopeStart(); o.slopeCancel(true);
+      console.log(JSON.stringify({same: o.paintPopup === before, open: o.paintPopup.open}));""")
+    assert r == {"same": True, "open": False}
+
+
+def test_m2_cancel_closes_an_open_popup_and_pick_closes_it_in_slope_too():
+    r = _run("""o.setUiSubMode(UI_SUB_PAINT);
+      down(300, 200, {button: BTN_R, buttons: 2}); const a = o.paintPopup.open; o.m2Cancel(); const b = o.paintPopup.open;
+      o.slopeStart(); down(300, 200, {button: BTN_R, buttons: 2}); const c = o.paintPopup.open; o.pickPopupBrush(12);
+      console.log(JSON.stringify({a, b, c, d: o.paintPopup.open, picked: o._slope.picked}));""")
+    assert r == {"a": True, "b": False, "c": True, "d": False, "picked": True}
+
+
+# ═══════════════════════════ v5.97: an already-selected colour need not be re-picked for boundary 1 ═══════════════════════════
+def test_slope_adopts_preselected_brush_for_first_boundary_but_still_requires_second_pick():
+    out = _run(_go_paint() + STROKE + """
+o.paintBrush = %d; o.paintBrush2 = null;
+o.m2HandleKey(key(SLOPE_KEY));
+const pickedAtStart = o._slope.picked;
+stroke(2, 2, 14);                                // boundary 1 drawn with NO palette click
+const afterFirst = [o._slope.phase, o._slope.picked, o._slope.a.step];
+down(5.5, 5.5);                                  // boundary 2: the active brush is brush 1 -> must pick another
+const blocked = [!!o._m2, o.flashes[o.flashes.length - 1]];
+pick(%d); stroke(8, 2, 14);
+console.log(JSON.stringify({pickedAtStart, afterFirst, blocked, slope: o._slope,
+  lo: val(6, 2), hi: val(6, 8), undo: o.undoHistory.length}));
+""" % (SLOPE_LO, SLOPE_HI))
+    assert out["pickedAtStart"] is True
+    assert out["afterFirst"] == [C.value("SLOPE_PHASE_SECOND"), False, SLOPE_LO]
+    assert out["blocked"][0] is False and MSG_PICK in out["blocked"][1] and MSG_SECOND in out["blocked"][1]
+    assert out["slope"] is None and out["undo"] == 1 and out["lo"] < out["hi"]
+
+
+def test_slope_picking_a_swatch_before_boundary_one_overrides_the_preselected_brush():
+    out = _run(_go_paint() + STROKE + """
+o.paintBrush = %d;
+o.m2HandleKey(key(SLOPE_KEY)); pick(%d); stroke(2, 2, 14);
+console.log(JSON.stringify({step: o._slope.a.step}));
+""" % (SLOPE_LO, SLOPE_HI))
+    assert out["step"] == SLOPE_HI
+
+
+def test_slope_with_eraser_active_still_requires_a_pick():
+    out = _run(_go_paint() + STROKE + """
+o.paintBrush = ERASER_ID;
+o.m2HandleKey(key(SLOPE_KEY));
+const pickedAtStart = o._slope.picked;
+down(5.5, 5.5);
+console.log(JSON.stringify({pickedAtStart, m2: !!o._m2, msg: o.flashes[o.flashes.length - 1]}));
+""".replace("ERASER_ID", json.dumps(ERASER)))
+    assert out["pickedAtStart"] is False and out["m2"] is False and MSG_PICK in out["msg"]

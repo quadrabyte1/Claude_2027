@@ -377,4 +377,4 @@ def test_editor_wiring():
     assert "this._pendingDegrid = true;   // v5.69: Create New Project only" in html
     # the degrid fetch is only reachable from the pending flag (Open Project never sets it)
     assert html.count("_pendingDegrid = true") == 1
-    assert "this.DEGRID_API_URL" in html
+    assert "fetch(DEGRID_API_URL" in html   # constant lives in the EDITOR CONSTANTS block (v5.99)

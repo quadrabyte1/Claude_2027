@@ -1,3 +1,11 @@
+# v0.29 — 2026-10-28 Topo — Cell-following bunker body (APP_VERSION v5.98), BUNKER_BODY_MODE_CELLS (new default).
+#         Root cause of the "concave bowl" in RULED mode: the crest clamp (fringe - rake/2 - 0.3 mm) was evaluated
+#           against the VIRTUAL fringe continuation, which sags under the bunker (owned cells revert to low Poisson
+#           defaults while the surrounding set cells are raised), so ~90% of the ruled chord was clamped onto
+#           that dished surface.  CELLS mode: body = rim reference (nearest-boundary fringe - BUNKER_RIM_DROP_MM)
+#           blended by a quintic falloff over BUNKER_CELLS_BLEND_BAND_CELLS cell widths into a thin-plate surface
+#           through the cells' Z targets (delta: fringe(cell) - drop + value; absolute: literal), no crest clamp.
+#           RULED / LEGACY stay selectable.
 # v0.28 — 2026-10-27 Topo — Ruled bunker body (APP_VERSION v5.84), gated by BUNKER_BODY_MODE.
 #         Rim = local fringe - BUNKER_RIM_DROP_MM (2.0).  Body = ruled surface: g = downhill dir of a plane
 #           fit to the fringe around the bunker; each chord perpendicular to g is a straight line between
@@ -4603,7 +4611,7 @@ def build_fringe_mesh(
 
     # v5.82: fringe Z at carve-out cells (bunker areas), so bunkers can be carved from
     # the finished fringe 'as if it continued there'.  Only computed when a bunker owns cells.
-    _want_virtual = bool(_bunker_owned) or (BUNKER_BODY_MODE == BUNKER_BODY_MODE_RULED and traps_union is not None)
+    _want_virtual = bool(_bunker_owned) or (BUNKER_BODY_MODE in (BUNKER_BODY_MODE_RULED, BUNKER_BODY_MODE_CELLS) and traps_union is not None)
     Z_virtual = np.full((fringe_grid_res, fringe_grid_res), np.nan) if _want_virtual else None
 
     for r in range(fringe_grid_res):
@@ -6194,12 +6202,19 @@ BUNKER_EDGE_ANCHOR_SPACING_MM:         float = 2.0  # spacing of zero-offset TPS
 # v5.84 -- ruled bunker body (Thomas 2026-10-27): rim 2 mm under the fringe, body = ruled surface
 BUNKER_BODY_MODE_LEGACY:               str   = "legacy"  # v5.82 behaviour: fringe - BUNKER_DROP_BELOW_FRINGE_MM + cell-driven TPS offset
 BUNKER_BODY_MODE_RULED:                str   = "ruled"   # v5.84: straight chords across the bunker, driven by boundary heights only
-BUNKER_BODY_MODE:                      str   = BUNKER_BODY_MODE_RULED  # switch back to BUNKER_BODY_MODE_LEGACY to recover v5.82
+BUNKER_BODY_MODE_CELLS:                str   = "cells"   # v5.98: body follows the cells' Z values, rim pinned to fringe - drop
+BUNKER_BODY_MODE:                      str   = BUNKER_BODY_MODE_CELLS  # BUNKER_BODY_MODE_RULED (v5.84) / BUNKER_BODY_MODE_LEGACY (v5.82) recover older bodies
 BUNKER_RIM_DROP_MM:                    float = 2.0  # ruled mode: rim sits this far below the local fringe surface
 BUNKER_RULED_RING_SPACING_MM:          float = BUNKER_EDGE_ANCHOR_SPACING_MM  # boundary sampling step for the gradient plane fit
 BUNKER_RULED_MIN_SLOPE:                float = 1e-3  # mm/mm; fitted fringe plane flatter than this -> use the polygon principal axis
 BUNKER_RULED_QUERY_CHUNK:              int   = 4000  # query points per vectorised chord-intersection batch
 BUNKER_RULED_GRAD_SRC_PLANE:           str   = "plane-fit"    # info label: g from the boundary plane fit
+BUNKER_CELLS_BLEND_BAND_CELLS:         float = 1.5   # cells mode: width (in cell widths) of the quintic falloff from the rim into the cell surface
+BUNKER_CELLS_RIM_SAMPLE_MM:            float = 0.1   # cells mode: spacing of the boundary samples that give the rim reference height
+BUNKER_CELLS_MIN_TPS_CELLS:            int   = 3     # fewer owned cells than this cannot define a thin-plate plane -> inverse-distance fallback
+BUNKER_CELLS_IDW_POWER:                float = 2.0   # inverse-distance exponent of that fallback
+BUNKER_CELLS_IDW_EPS_MM:               float = 1e-9  # guards the fallback against a query exactly on a cell centre
+BUNKER_CELLS_QUINTIC:                  tuple = (6.0, -15.0, 10.0)  # smootherstep 6t^5 - 15t^4 + 10t^3 (C2): coefficients of t^5, t^4, t^3
 BUNKER_RULED_GRAD_SRC_PRINCIPAL:       str   = "principal-axis"  # info label: degenerate gradient fallback
                                             # v0.04: -2.0 (max), v0.05–v0.09: -4.0 (max),
                                             # v0.11: -2.0 (min) — full circle per Thomas.
@@ -6786,6 +6801,83 @@ def _build_bunker_ruled_floor_fn(footprint, fringe_z_fn):
                     "n_segments": len(A), "unclamped": _chord_z}
 
 
+def _build_bunker_cells_floor_fn(footprint, owned_cells, grid_mode, fringe_z_fn, cell_side, half, grid_n):
+    """Cell-following bunker body (v5.98).  Returns (floor_fn(xy)->z, info dict).
+
+    Every fully-inside set cell has a Z target at its centre -- exactly the number the editor shows:
+      delta mode:    fringe(cell) - BUNKER_RIM_DROP_MM + value   (the carved level plus the delta, as legacy v5.82)
+      absolute mode: the literal value (clamped 0..30, floored at BASE_THICKNESS_MM).
+    S(x, y) is a thin-plate spline through those targets (C2; fewer than BUNKER_CELLS_MIN_TPS_CELLS or collinear
+    cells -> inverse-distance), clipped to the targets' range so it never overshoots what the cells say.
+    The rim reference R(x, y) = fringe(nearest boundary point) - BUNKER_RIM_DROP_MM.  With d = distance to the
+    boundary and w = smootherstep(d / band), band = BUNKER_CELLS_BLEND_BAND_CELLS * cell_side:
+        z = R + w * (S - R)
+    so z = fringe - drop exactly on the rim (junction unchanged) and z = S from one band inward.
+    Unlike RULED/LEGACY there is NO crest-below-fringe clamp: the fringe continuation under a bunker is a
+    phantom surface (it sags when cells raise the surrounding fringe) and clamping to it is what dished the
+    v5.84 body.  Only the printability floors remain (valleys >= plate base, last-resort solid)."""
+    import shapely
+    from scipy.interpolate import RBFInterpolator
+    cxy = np.array([[-half + (ci % grid_n + 0.5) * cell_side, -half + (ci // grid_n + 0.5) * cell_side]
+                    for ci, _ in owned_cells], dtype=np.float64)
+    vals = np.array([v for _, v in owned_cells], dtype=np.float64)
+    if grid_mode == GRID_MODE_ABSOLUTE:
+        targets = np.maximum(BASE_THICKNESS_MM, np.clip(vals, GRID_ABSOLUTE_MIN_MM, GRID_ABSOLUTE_MAX_MM))
+    else:
+        targets = np.asarray(fringe_z_fn(cxy), dtype=np.float64) - BUNKER_RIM_DROP_MM \
+            + np.clip(vals, GRID_DELTA_MIN_MM, GRID_DELTA_MAX_MM)
+    t_lo, t_hi = float(targets.min()), float(targets.max())
+
+    surface_src = "idw"
+    tps = None
+    if len(targets) >= BUNKER_CELLS_MIN_TPS_CELLS:
+        try:
+            tps = RBFInterpolator(cxy, targets, kernel="thin_plate_spline", smoothing=0.0)
+            surface_src = "tps"
+        except Exception:                      # collinear cells: singular polynomial block
+            tps = None
+
+    def _surface(xy):
+        if tps is not None:
+            z = tps(xy)
+        else:
+            d = np.linalg.norm(xy[:, None, :] - cxy[None, :, :], axis=2)
+            wgt = 1.0 / np.maximum(d, BUNKER_CELLS_IDW_EPS_MM) ** BUNKER_CELLS_IDW_POWER
+            z = (wgt * targets[None, :]).sum(axis=1) / wgt.sum(axis=1)
+        return np.clip(z, t_lo, t_hi)
+
+    rings = [footprint.exterior] + list(footprint.interiors) if hasattr(footprint, "exterior") else \
+        [r for gm in footprint.geoms for r in [gm.exterior] + list(gm.interiors)]
+    rim_xy = []
+    for ring in rings:
+        n = max(8, int(math.ceil(ring.length / BUNKER_CELLS_RIM_SAMPLE_MM)))
+        rim_xy.extend((pt.x, pt.y) for pt in (ring.interpolate(t, normalized=True)
+                                              for t in np.linspace(0.0, 1.0, n, endpoint=False)))
+    rim_xy = np.asarray(rim_xy, dtype=np.float64)
+    rim_z = np.asarray(fringe_z_fn(rim_xy), dtype=np.float64) - BUNKER_RIM_DROP_MM
+    rim_tree = cKDTree(rim_xy)
+    band = BUNKER_CELLS_BLEND_BAND_CELLS * cell_side
+    c5, c4, c3 = BUNKER_CELLS_QUINTIC
+    half_rake = SAND_RAKE_AMPLITUDE_MM / 2.0
+
+    def _body(xy):
+        xy = np.asarray(xy, dtype=np.float64).reshape(-1, 2)
+        _d, j = rim_tree.query(xy)
+        ref = rim_z[j]
+        dist = shapely.distance(footprint.boundary, shapely.points(xy[:, 0], xy[:, 1]))   # to the outline, not the (zero-distance) interior
+        t = np.clip(dist / band, 0.0, 1.0)
+        w = t ** 3 * (c5 * t * t + c4 * t + c3)
+        w = np.where(shapely.contains_xy(footprint, xy[:, 0], xy[:, 1]), w, 0.0)   # outside the outline: rim reference
+        return ref + w * (_surface(xy) - ref)
+
+    def _floor(xy):
+        z = _body(xy)
+        z = np.maximum(z, BUNKER_FLOOR_MIN_MM + half_rake)               # valleys stay above the plate base
+        return np.maximum(z, half_rake + BUNKER_MIN_SOLID_MM)            # last resort on a very low fringe
+    return _floor, {"n_cells": len(owned_cells), "n_anchors": 0, "surface_source": surface_src,
+                    "cell_targets": targets, "unclamped": _body}
+
+
 def _compute_trap_height_from_fringe(
     trap_poly_mm: "ShapelyPolygon",
     fringe_mesh: "trimesh.Trimesh | None",
@@ -7230,8 +7322,27 @@ def export_trap_stls(
                     except Exception as _exc_floor:
                         _bunker_floor_fn = None
                         print(f"  Trap {i}: sloped floor failed ({_exc_floor}) — staying flat")
+            _cells_info = None
+            if (BUNKER_BODY_MODE == BUNKER_BODY_MODE_CELLS and not TRAP_SURFACE_CURVED
+                    and _gch and _grid_mode_t != GRID_MODE_OFF
+                    and fringe_mesh is not None
+                    and getattr(fringe_mesh, "bunker_fringe_field", None) is not None):
+                # v5.98: body follows the owned cells' Z values (no crest clamp), rim pinned to fringe - drop.
+                try:
+                    _cells_owned = _trap_inside_cells(shapely_trap, _gch, _grid_cell_side, _grid_half, _grid_n)
+                    if _cells_owned:
+                        _bunker_floor_fn, _cells_info = _build_bunker_cells_floor_fn(
+                            shapely_trap, _cells_owned, _grid_mode_t,
+                            _make_fringe_field_sampler(fringe_mesh.bunker_fringe_field),
+                            _grid_cell_side, _grid_half, _grid_n)
+                        _binfo = _cells_info
+                except Exception as _exc_cells:
+                    _bunker_floor_fn = None
+                    _cells_info = None
+                    print(f"  Trap {i}: cells floor failed ({_exc_cells}) -- using ruled body")
             _ruled_info = None
-            if (BUNKER_BODY_MODE == BUNKER_BODY_MODE_RULED and not TRAP_SURFACE_CURVED
+            if (BUNKER_BODY_MODE in (BUNKER_BODY_MODE_RULED, BUNKER_BODY_MODE_CELLS) and _cells_info is None
+                    and not TRAP_SURFACE_CURVED
                     and fringe_mesh is not None
                     and getattr(fringe_mesh, "bunker_fringe_field", None) is not None):
                 # v5.84: ruled body replaces the cell-driven floor; grid cells never warp it.
@@ -7251,7 +7362,12 @@ def export_trap_stls(
                 # texture base = floor - A/2, so the mean rim sits BUNKER_DROP below the fringe.
                 _trap_base_z_map = (lambda _xy, _f=_bunker_floor_fn:
                                     _f(_xy) - SAND_RAKE_AMPLITUDE_MM / 2.0)   # callable: smooth per-point base
-                if _ruled_info is not None:
+                if _cells_info is not None:
+                    print(f"  Trap {i}: CELLS body from {_cells_info['n_cells']} owned cell(s) "
+                          f"(mode={_grid_mode_t}, surface={_cells_info['surface_source']}, "
+                          f"rim = fringe - {BUNKER_RIM_DROP_MM:.1f} mm) — floor Z "
+                          f"{float(_fz.min()):.2f}..{trap_height:.2f} mm")
+                elif _ruled_info is not None:
                     print(f"  Trap {i}: RULED body (g={_ruled_info['gradient_source']} "
                           f"[{_ruled_info['g'][0]:.3f}, {_ruled_info['g'][1]:.3f}], "
                           f"rim = fringe - {BUNKER_RIM_DROP_MM:.1f} mm) — floor Z "
