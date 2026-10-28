@@ -26,7 +26,7 @@ app = Flask(__name__)
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "db", "workspace.db")
 
-APP_VERSION = "v5.99"  # unified version for all main-app pages, shown in every sticky footer
+APP_VERSION = "v6.00"  # unified version for all main-app pages, shown in every sticky footer
 
 # Tier -> concrete model (single source of truth for Team page + Dashboard).
 # Keep in sync with the mapping in team/README.md.
@@ -1237,7 +1237,7 @@ def _image_url_for_path(img_path: str) -> str | None:
 
 @app.route(ROUTE_API_DEGRID_IMAGE, methods=[METHOD_POST])
 def degrid_image():
-    """Create New Project only: build (or reuse) the degridded copy of a heat-map PNG.
+    """Build on demand (or reuse) the degridded copy of a heat-map PNG.
 
     Body: {"image": filename, "imageCourse": course}.  Returns
     {"status":"ok","found":bool,"originalUrl":..,"degriddedUrl":..|None}.
