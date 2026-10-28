@@ -427,6 +427,12 @@ TPS_MIN_CONSTRAINTS: int = 5        # fewer unique constraints -> flat base fall
 TEXTURE_MAX_GRID_PTS: int = 150_000 # cap on sand / water-ripple sample grid points
 TEXTURE_TOP_BAND_MM: float = 0.1    # within this of z_max counts as "top surface"
 SAND_GRID_STEP_FRACTION: float = 0.2  # sand sample pitch = grain_spacing * this
+# v6.01: when the rake retriangulation of a bunker is not watertight, retry with these sample pitches
+# (same look, different Delaunay) before degrading to the plain slab -- a bunker body is never dropped.
+SAND_RETRY_GRID_STEP_FRACTIONS: tuple = (0.19, 0.21, 0.18, 0.22, 0.17, 0.23)
+TRAP_WARN_TEXTURE_RETRY: str = "Sand trap {i}: rake texture needed a retry (sample pitch {frac}) after: {err}"
+TRAP_WARN_PLAIN_SLAB: str = ("Sand trap {i}: rake texture FAILED ({err}); shipped as a plain slab (no rake texture) "
+                             "so the bunker body is not missing")
 GRASS_RNG_SEED: int = 42            # deterministic grass bump layout
 INTERIOR_BOUNDARY_CLOSE_MAX_PASSES: int = 8   # _close_interior_boundary_edges iterations
 EARCUT_PINHOLE_MAX_PASSES: int = 5            # interior-pinhole earcut passes
@@ -7141,6 +7147,34 @@ def _compute_trap_surface_from_fringe(
 
 
 
+def _texture_trap_or_fallback(slab, trap_index, base_z_map, fallback_slab_fn=None):
+    """v6.01: rake-texture a bunker slab; never lose the body.
+
+    Tries the default sample pitch, then SAND_RETRY_GRID_STEP_FRACTIONS (each on a fresh copy, because
+    apply_sand_texture mutates its input before its watertight check).  If every attempt fails the
+    plain slab (``fallback_slab_fn()`` -- flat at the rim-safe height -- or the given slab) is returned
+    and a warning is recorded.
+    """
+    fractions = (SAND_GRID_STEP_FRACTION,) + tuple(SAND_RETRY_GRID_STEP_FRACTIONS)
+    first_err = None
+    for frac in fractions:
+        work = slab.copy()
+        try:
+            apply_sand_texture(work, trap_index=trap_index, base_z_map=base_z_map, grid_step_fraction=frac)
+        except Exception as exc:  # texture failure must not drop the body
+            first_err = first_err or exc
+            continue
+        if first_err is not None:
+            msg = TRAP_WARN_TEXTURE_RETRY.format(i=trap_index, frac=frac, err=first_err)
+            print(f"  {msg}")
+            PIPELINE_WARNINGS.append(msg)
+        return work
+    msg = TRAP_WARN_PLAIN_SLAB.format(i=trap_index, err=first_err)
+    print(f"  {msg}")
+    PIPELINE_WARNINGS.append(msg)
+    return fallback_slab_fn() if fallback_slab_fn is not None else slab
+
+
 def export_trap_stls(
     egm_data: dict,
     green_boundary_px: np.ndarray,
@@ -7352,6 +7386,7 @@ def export_trap_stls(
                     _binfo = _ruled_info
                 except Exception as _exc_ruled:
                     print(f"  Trap {i}: ruled floor failed ({_exc_ruled}) -- using previous path")
+            _flat_height = trap_height   # v6.01: rim-safe flat height for the plain-slab fallback
             if _bunker_floor_fn is not None:
                 _ins = contains_xy_poly(shapely_inset, _grid_xy)
                 import shapely as _shapely_mod
@@ -7387,7 +7422,9 @@ def export_trap_stls(
             # finished textured surface as one block).
             # When base_z_map is provided, apply_sand_texture uses per-point
             # curved base Z for the rake displacement and per-vertex floor guard.
-            apply_sand_texture(mesh, trap_index=i, base_z_map=_trap_base_z_map)
+            mesh = _texture_trap_or_fallback(
+                mesh, i, _trap_base_z_map,
+                lambda _si=shapely_inset, _h=_flat_height: _build_slab_from_shapely(_si, _h))
 
             # NOTE (Topo, 2026-09-26 — fix #600): the post-texture flatten that
             # previously lived here was erroneously wiping the sinusoidal
@@ -8740,6 +8777,7 @@ def apply_sand_texture(
     grain_spacing: float = 1.125,
     trap_index: int = 0,
     base_z_map: "tuple[np.ndarray, np.ndarray] | None" = None,
+    grid_step_fraction: float = SAND_GRID_STEP_FRACTION,
 ) -> "trimesh.Trimesh":
     """
     Apply parallel rake-line displacement to the top surface of a trap slab mesh.
@@ -8957,7 +8995,7 @@ def apply_sand_texture(
     # ------------------------------------------------------------------
     # 3. Build a regular grid over the bounding box; filter inside polygon
     # ------------------------------------------------------------------
-    grid_step = grain_spacing * SAND_GRID_STEP_FRACTION                   # ~0.3 mm → ~5 pts per period
+    grid_step = grain_spacing * grid_step_fraction                   # ~0.3 mm → ~5 pts per period
 
     x_min, x_max = ring_xy[:, 0].min(), ring_xy[:, 0].max()
     y_min, y_max = ring_xy[:, 1].min(), ring_xy[:, 1].max()

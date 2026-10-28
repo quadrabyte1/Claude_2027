@@ -26,7 +26,7 @@ app = Flask(__name__)
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "db", "workspace.db")
 
-APP_VERSION = "v6.00"  # unified version for all main-app pages, shown in every sticky footer
+APP_VERSION = "v6.02"  # unified version for all main-app pages, shown in every sticky footer
 
 # Tier -> concrete model (single source of truth for Team page + Dashboard).
 # Keep in sync with the mapping in team/README.md.
@@ -102,6 +102,7 @@ ROUTE_TEAM_INBOX = "/team_inbox/<path:filename>"             # editor: IMAGE_URL
 ROUTE_EGM_IMAGE = "/egm/images/<path:course>/<path:filename>"  # editor: IMAGE_URL_EGM_IMAGES (prefix)
 ROUTE_API_BOUNDARIES = "/api/boundaries"                     # editor: API_BOUNDARIES
 ROUTE_API_BOUNDARIES_LIST = "/api/boundaries/list"           # editor: API_BOUNDARIES_LIST
+ROUTE_API_BOUNDARIES_LOAD_PATH = "/api/boundaries/load_path"   # editor: API_BOUNDARIES_LOAD_PATH (full-path load, ?path=)
 ROUTE_API_BOUNDARIES_LOAD = "/api/boundaries/load"           # editor: API_BOUNDARIES_LOAD
 ROUTE_API_PRINT_CONSTANTS = "/api/print_constants"           # editor: API_PRINT_CONSTANTS
 ROUTE_API_DETECT_BOUNDARIES = "/api/detect_boundaries"       # editor: API_DETECT_BOUNDARIES
@@ -119,6 +120,8 @@ METHOD_POST = "POST"
 
 # ── Query-string / payload keys (editor sends these; names are the wire contract) ──
 QUERY_IMAGE = "image"                  # /editor?image=
+QUERY_EGM = "egm"                      # /editor?egm=<absolute .egm path>   (editor: initial egm path)
+QUERY_PATH = "path"                    # /api/boundaries/load_path?path=     (editor: QUERY_PATH)
 QUERY_FILENAME = "filename"            # /api/boundaries/load?filename=   (editor: QUERY_FILENAME)
 QUERY_COURSE = "course"                # /api/gps_files?course=           (editor: QUERY_COURSE)
 QUERY_GPS_FILE = "gps_file"
@@ -138,6 +141,9 @@ KEY_NAME = "name"                      # create_course payload / image + gps fil
 KEY_FILENAME = "filename"
 KEY_URL = "url"
 KEY_PATH = "path"
+KEY_EGM_PATH = "egm_path"              # save payload / load response: absolute path of the EGM file (editor: KEY_EGM_PATH)
+KEY_IMAGE_COURSE = "imageCourse"
+KEY_IMAGE_WARNING = "imageWarning"
 KEY_FILES = "files"
 KEY_FILE = "file"
 KEY_TYPE = "type"
@@ -204,6 +210,12 @@ MSG_COURSE_INVALID = "Invalid course name."
 MSG_COURSE_EXISTS_FMT = "Folder '{name}' already exists."
 MSG_INVALID_FILENAME = "Invalid filename"
 MSG_FILE_NOT_FOUND = "File not found"
+MSG_EGM_PATH_REQUIRED = "path param required"
+MSG_EGM_PATH_NOT_ABSOLUTE = "EGM path must be absolute"
+MSG_EGM_PATH_BAD_EXT_FMT = "Not an {ext} file"
+MSG_EGM_PATH_NOT_FOUND_FMT = "EGM file not found: {path}"
+MSG_EGM_PATH_NOT_REGULAR_FMT = "Not a regular file: {path}"
+MSG_EGM_IMAGE_MISSING_FMT = "Heat-map image '{image}' for this EGM was not found in GolfCourses/<course>/Images/ (looked in: {courses}). Put the image there to see it."
 MSG_NEED_IMAGE_AND_GREEN = "Need image and green_points"
 MSG_NO_JSON = "No JSON payload"
 MSG_MISSING_COURSE_OR_HOLE = "Missing course or hole"
@@ -1301,7 +1313,8 @@ def editor():
     """Polygon boundary editor for golf hole images."""
     image = request.args.get(QUERY_IMAGE, "")
     images = [entry[KEY_FILENAME] for entry in _collect_course_images()]
-    return render("editor.html", image=image, images=images)
+    egm = request.args.get(QUERY_EGM, "")
+    return render("editor.html", image=image, images=images, egm=egm)
 
 
 @app.route(ROUTE_API_IMAGES)
@@ -1395,6 +1408,15 @@ def save_boundaries():
     hole = data.get(KEY_HOLE, DEFAULT_HOLE)
     hole_label = str(hole).zfill(HOLE_LABEL_WIDTH) if str(hole).isdigit() else str(hole)
     filename = EGM_FILENAME_FMT.format(course=course, hole_label=hole_label)
+    # An EGM opened by full path is written back to THAT file, never to a course-folder copy.
+    explicit_path = data.pop(KEY_EGM_PATH, "")
+    if explicit_path:
+        target, err = _validate_egm_path(explicit_path)
+        if err:
+            return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: err}), HTTP_BAD_REQUEST
+        with open(target, "w") as f:
+            _json.dump(data, f, indent=EGM_JSON_INDENT)
+        return jsonify({KEY_STATUS: STATUS_OK, KEY_PATH: target, KEY_FILENAME: os.path.basename(target)})
     # Save to course EGMs/ folder; fall back to owner_inbox for unknown courses
     if course and course != DEFAULT_COURSE_NAME and os.path.isdir(_EGM_BASE):
         course_root = os.path.join(_EGM_BASE, course)
@@ -1451,6 +1473,101 @@ def list_boundaries():
     return resp
 
 
+def _validate_egm_path(raw_path):
+    """Validate a client-supplied full path to an .egm file.
+
+    Returns (realpath, None) or (None, error_message).  Requires an absolute path whose
+    symlink-resolved target has the .egm extension, exists, and is a regular file.
+    """
+    if not raw_path:
+        return None, MSG_EGM_PATH_REQUIRED
+    if not os.path.isabs(raw_path):
+        return None, MSG_EGM_PATH_NOT_ABSOLUTE
+    real = os.path.realpath(raw_path)
+    if not real.lower().endswith(EXT_EGM):
+        return None, MSG_EGM_PATH_BAD_EXT_FMT.format(ext=EXT_EGM)
+    if not os.path.exists(real):
+        return None, MSG_EGM_PATH_NOT_FOUND_FMT.format(path=raw_path)
+    if not os.path.isfile(real):
+        return None, MSG_EGM_PATH_NOT_REGULAR_FMT.format(path=raw_path)
+    return real, None
+
+
+def _course_implied_by_egm_path(real_path):
+    """If the file sits in <GolfCourses>/<Course>/EGMs/, return <Course>; else ''."""
+    egm_dir = os.path.dirname(real_path)
+    course_root = os.path.dirname(egm_dir)
+    if (os.path.basename(egm_dir) == COURSE_SUBDIR_EGMS
+            and os.path.realpath(os.path.dirname(course_root)) == os.path.realpath(_EGM_BASE)):
+        return os.path.basename(course_root)
+    return ""
+
+
+def _resolve_egm_image_course(data, real_path):
+    """Pick the course whose Images/ folder holds the EGM's image.
+
+    Order: the EGM's imageCourse, its course, then the course implied by its location.
+    Returns (course, warning); course '' with no warning means the image is in team_inbox.
+    """
+    image = data.get(KEY_IMAGE, "")
+    candidates = []
+    for name in (data.get(KEY_IMAGE_COURSE), data.get(KEY_COURSE), _course_implied_by_egm_path(real_path)):
+        if name and name not in candidates:
+            candidates.append(name)
+    for name in candidates:
+        if os.path.isfile(os.path.join(_EGM_BASE, name, COURSE_SUBDIR_IMAGES, image)):
+            return name, ""
+    if image and os.path.isfile(os.path.join(_TEAM_INBOX, image)):
+        return "", ""
+    return (candidates[0] if candidates else ""), MSG_EGM_IMAGE_MISSING_FMT.format(
+        image=image, courses=", ".join(candidates) or "-")
+
+
+def _egm_load_response(fpath, by_full_path=False):
+    import json as _json
+    with open(fpath) as f:
+        data = _json.load(f)
+    data[KEY_STATUS] = STATUS_OK
+    # Expose print constants so the editor can size the fringe-expansion zone.
+    # generate_stl_3mf imports trimesh/shapely/numpy at module load; on a fresh
+    # machine missing any of those, this route used to 500 with an ImportError
+    # even though the file itself loaded fine. Fall back to omitting the
+    # constants — the editor tolerates them being null via `if (data.print_size_mm != null)`.
+    try:
+        from generate_stl_3mf import PRINT_SIZE_MM, FRINGE_XY_EXPANSION_MM
+        data[KEY_PRINT_SIZE_MM] = PRINT_SIZE_MM
+        data[KEY_FRINGE_XY_EXPANSION_MM] = FRINGE_XY_EXPANSION_MM
+    except ImportError as _imp_err:
+        print(f"[load_boundaries] WARN: could not import print constants from generate_stl_3mf: {_imp_err!r}")
+
+    # Off-frame polygon points are intentional (users can drag control points
+    # outside the image frame deliberately). Return coords as-is from the EGM —
+    # no load-time clamping. The generation-time clamp in detect_boundaries
+    # still constrains auto-analyzed output to the frame; only hand-placed
+    # off-frame points are preserved here.
+
+    if by_full_path:
+        data[KEY_EGM_PATH] = fpath
+        img_course, warning = _resolve_egm_image_course(data, fpath)
+        data[KEY_IMAGE_COURSE] = img_course
+        if warning:
+            data[KEY_IMAGE_WARNING] = warning
+    return jsonify(data)
+
+
+@app.route(ROUTE_API_BOUNDARIES_LOAD_PATH)
+def load_boundaries_by_path():
+    """Load an .egm by FULL absolute path (Finder double-click / launcher).  Writes go back to that same file."""
+    fpath, err = _validate_egm_path(request.args.get(QUERY_PATH, ""))
+    if err:
+        code = HTTP_NOT_FOUND if err.startswith(MSG_EGM_PATH_NOT_FOUND_FMT.split("{")[0]) else HTTP_BAD_REQUEST
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: err}), code
+    try:
+        return _egm_load_response(fpath, by_full_path=True)
+    except (OSError, ValueError) as exc:
+        return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: MSG_CANNOT_READ_EGM_FMT.format(err=exc)}), HTTP_SERVER_ERROR
+
+
 @app.route(ROUTE_API_BOUNDARIES_LOAD)
 def load_boundaries():
     """Load a saved .egm file by filename and return its contents.
@@ -1477,28 +1594,7 @@ def load_boundaries():
             fpath = candidate
     if fpath is None:
         return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: MSG_FILE_NOT_FOUND}), HTTP_NOT_FOUND
-    with open(fpath) as f:
-        data = _json.load(f)
-    data[KEY_STATUS] = STATUS_OK
-    # Expose print constants so the editor can size the fringe-expansion zone.
-    # generate_stl_3mf imports trimesh/shapely/numpy at module load; on a fresh
-    # machine missing any of those, this route used to 500 with an ImportError
-    # even though the file itself loaded fine. Fall back to omitting the
-    # constants — the editor tolerates them being null via `if (data.print_size_mm != null)`.
-    try:
-        from generate_stl_3mf import PRINT_SIZE_MM, FRINGE_XY_EXPANSION_MM
-        data[KEY_PRINT_SIZE_MM] = PRINT_SIZE_MM
-        data[KEY_FRINGE_XY_EXPANSION_MM] = FRINGE_XY_EXPANSION_MM
-    except ImportError as _imp_err:
-        print(f"[load_boundaries] WARN: could not import print constants from generate_stl_3mf: {_imp_err!r}")
-
-    # Off-frame polygon points are intentional (users can drag control points
-    # outside the image frame deliberately). Return coords as-is from the EGM —
-    # no load-time clamping. The generation-time clamp in detect_boundaries
-    # still constrains auto-analyzed output to the frame; only hand-placed
-    # off-frame points are preserved here.
-
-    return jsonify(data)
+    return _egm_load_response(fpath)
 
 
 @app.route(ROUTE_API_PRINT_CONSTANTS)
@@ -2108,7 +2204,12 @@ def generate_models():
     egm_fname = EGM_FILENAME_FMT.format(course=course, hole_label=hole_label)
     # Look for EGM in course EGMs/ folder first, then owner_inbox fallback
     egm_path = None
-    if os.path.isdir(_EGM_BASE):
+    explicit_egm = data.get(KEY_EGM_PATH, "")
+    if explicit_egm:   # EGM opened by full path: generate from THAT file (the one autosave wrote)
+        egm_path, _path_err = _validate_egm_path(explicit_egm)
+        if _path_err:
+            return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: _path_err}), HTTP_BAD_REQUEST
+    if egm_path is None and os.path.isdir(_EGM_BASE):
         candidate = os.path.abspath(os.path.join(_EGM_BASE, course, COURSE_SUBDIR_EGMS, egm_fname))
         if os.path.exists(candidate):
             egm_path = candidate
