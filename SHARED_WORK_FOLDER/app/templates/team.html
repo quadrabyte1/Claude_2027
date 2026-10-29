@@ -2,7 +2,7 @@
 {% block title %}Team — AI Team Workspace{% endblock %}
 {% block content %}
 
-<!-- v1.2 -->
+<!-- v1.3 -->
 <div class="pb-16">
 <div class="mb-8">
   <h1 class="text-[28px] font-bold text-notion-text leading-tight">Team</h1>
@@ -25,7 +25,7 @@
             model: '{{ m.model or 'opus' }}',
             open: false,
             updating: false,
-            versions: {{ model_versions | tojson }},
+            versions: {{ model_versions | tojson | forceescape }},
             tiers: ['fable','opus','sonnet','haiku'],
             colors: {
               fable:  'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
@@ -62,7 +62,7 @@
                 <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-dasharray="31.4" stroke-dashoffset="10"/>
               </svg>
             </button>
-            <div x-show="open" x-transition
+            <div x-show="open" x-cloak x-transition
               class="absolute left-0 top-full mt-1 z-10 bg-white border border-notion-border rounded-lg shadow-md py-1 min-w-[8rem]">
               <template x-for="tier in tiers" :key="tier">
                 <button @click="setModel(tier)"
