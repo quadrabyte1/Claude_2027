@@ -129,7 +129,7 @@ def test_enter_exit_paths_and_brush_memory():
       o.enterPaintMode(); o.gridMode = 'off'; o.exitPaintMode(); log.push([o.paintMode, o.$refs.canvas.style.cursor]);
       o.gridMode = 'off'; log.push([o.enterPaintMode(), o.paintMode, o.flashes.length]);   // cannot enter while Off
       console.log(JSON.stringify(log));""" % {"esc": _ev("Escape"), "b": _ev("b"), "B": _ev("B")},
-             PAINT_METHODS + ["handleKey"])
+             PAINT_METHODS + ["handleGenerateKey", "handleKey"])
     assert r == [[True, 7], False, [True, 7], False, True, False, [False, "default"], [False, False, 1]]
 
 
@@ -143,7 +143,7 @@ def test_b_and_esc_ignored_while_typing_or_with_modifier():
       console.log(JSON.stringify([a, b, c, d, e]));""" % {
         "b_in": _ev("b", "INPUT"), "b_ta": _ev("b", "TEXTAREA"), "b_cmd": _ev("b", metaKey=True),
         "esc_in": _ev("Escape", "INPUT"), "esc": _ev("Escape")},
-             PAINT_METHODS + ["handleKey"])
+             PAINT_METHODS + ["handleGenerateKey", "handleKey"])
     assert r == [False, False, False, True, True]
 
 

@@ -99,7 +99,7 @@ const sel = () => JSON.stringify(o.selectedVerts.map(v => [v.poly, v.idx]).sort(
 
 
 def _run(script, state=""):
-    body = ",\n".join(_handle_key() if n == "handleKey" else _method(n) for n in METHODS + ["handleKey"])
+    body = ",\n".join(_handle_key() if n == "handleKey" else _method(n) for n in METHODS + ["handleGenerateKey", "handleKey"])
     js = C.prelude() + MOCK % (N, N, body, N, N) + state + "\n" + script
     out = subprocess.run([node, "-e", js], capture_output=True, text=True)
     assert out.returncode == 0, out.stderr
