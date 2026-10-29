@@ -17,6 +17,17 @@
        critical UX shouldn't hinge on a remote script that may not load. -->
 
   <style>
+    /* Background wash: defined once here; every page references the vars. */
+    :root {
+      --wash-start: #3348B2;            /* upper-left corner */
+      --wash-end: #C8CCE3;              /* lower-right corner */
+      --wash-gradient: linear-gradient(to bottom right, var(--wash-start), var(--wash-end));
+      --wash-panel-bg: rgba(255, 255, 255, 0.92);   /* keeps text readable over the dark corner */
+      --wash-panel-radius: 0.75rem;
+    }
+    html, body { min-height: 100vh; }
+    body { background: var(--wash-gradient) fixed; }
+    .wash-panel { background: var(--wash-panel-bg); border-radius: var(--wash-panel-radius); }
     /* ── V3.16 page decoration ─────────────────────────────────────────────
        Palette: blue, gray, black, white. Quiet, local-first polish — no
        loud gradients, no drop shadows anywhere except the sticky footer.
@@ -24,11 +35,7 @@
        distinct planes without visible borders having to do all the work. */
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background:
-        radial-gradient(1200px 700px at 15% -10%, #eff6ff 0%, transparent 55%),
-        radial-gradient(1000px 600px at 100% 110%, #f1f5f9 0%, transparent 55%),
-        #f9fafb;
-      background-attachment: fixed;
+      background: var(--wash-gradient) fixed;
       color: #111827;               /* gray-900 body text — same as headings */
     }
     /* Slightly softer card borders + a 1-px inner highlight so cards feel
@@ -250,7 +257,7 @@
   <div class="max-w-none space-y-6">
 
     <!-- Header -->
-    <div class="flex items-start gap-2">
+    <div class="flex items-start gap-2 wash-panel px-5 py-3">
       <span class="text-2xl">🎬</span>
       <div class="flex-1 min-w-0">
         <h1 class="text-2xl font-bold text-gray-900 tracking-tight">MovieScanner</h1>

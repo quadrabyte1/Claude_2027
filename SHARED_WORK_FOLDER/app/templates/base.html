@@ -53,6 +53,38 @@
   </script>
   <style>
     [x-cloak] { display: none !important; }
+    /* Background wash: defined once here; every page references the vars. */
+    :root {
+      --wash-start: #3348B2;            /* upper-left corner */
+      --wash-end: #C8CCE3;              /* lower-right corner */
+      --wash-gradient: linear-gradient(to bottom right, var(--wash-start), var(--wash-end));
+      --wash-panel-bg: rgba(255, 255, 255, 0.92);   /* keeps text readable over the dark corner */
+      --wash-panel-radius: 0.75rem;
+      /* Sidebar: background matches the wash's upper-left color */
+      --sidebar-bg: var(--wash-start);
+      --sidebar-text: #FFFFFF;
+      --sidebar-text-muted: rgba(255, 255, 255, 0.78);
+      --sidebar-hover-bg: rgba(255, 255, 255, 0.14);
+      --sidebar-active-bg: rgba(255, 255, 255, 0.26);
+      --sidebar-border: rgba(255, 255, 255, 0.25);
+      --sidebar-logo-bg: rgba(255, 255, 255, 0.18);
+      --sidebar-status-dot: #4ADE80;
+    }
+    html, body { min-height: 100vh; }
+    body { background: var(--wash-gradient) fixed; }
+    .sidebar { background: var(--sidebar-bg); color: var(--sidebar-text); }
+    .sidebar-text { color: var(--sidebar-text); }
+    .sidebar-muted { color: var(--sidebar-text-muted); }
+    .sidebar-logo { background: var(--sidebar-logo-bg); }
+    .sidebar-footer { border-top: 1px solid var(--sidebar-border); color: var(--sidebar-text-muted); }
+    .sidebar-status-dot { background: var(--sidebar-status-dot); box-shadow: 0 0 4px var(--sidebar-status-dot); }
+    .sidebar-btn { color: var(--sidebar-text-muted); }
+    .sidebar-btn:hover { color: var(--sidebar-text); background: var(--sidebar-hover-bg); }
+    .sidebar-link { color: var(--sidebar-text-muted); }
+    .sidebar-link:hover { color: var(--sidebar-text); background: var(--sidebar-hover-bg); }
+    .sidebar-link.is-active { color: var(--sidebar-text); background: var(--sidebar-active-bg); font-weight: 600; }
+    .wash-panel { background: var(--wash-panel-bg); border-radius: var(--wash-panel-radius); }
+    #main-content { margin-top: 1.5rem; margin-bottom: 1.5rem; background: var(--wash-panel-bg); border-radius: var(--wash-panel-radius); }
     body { font-size: 14px; line-height: 1.6; color: #37352F; }
     .transition-default { transition: all 150ms ease-out; }
     /* Smooth htmx transitions */
@@ -70,7 +102,7 @@
     ::-webkit-scrollbar-thumb:hover { background: #CFCDC9; }
   </style>
 </head>
-<body class="h-full bg-notion-bg font-sans"
+<body class="h-full font-sans"
       x-data="{
         sidebarOpen: true,
         activePath: window.location.pathname,
@@ -86,18 +118,18 @@
     {# ── Sidebar ──────────────────────────────────────────────── #}
     <aside
       :class="sidebarOpen ? 'w-60' : 'w-0 overflow-hidden'"
-      class="flex-shrink-0 bg-notion-accent flex flex-col transition-all duration-200 ease-out h-screen sticky top-0"
+      class="sidebar flex-shrink-0 flex flex-col transition-all duration-200 ease-out h-screen sticky top-0"
     >
       <div class="p-4 flex items-center justify-between min-w-[240px]">
         <div class="flex items-center gap-2">
-          <div class="w-6 h-6 rounded bg-white/15 flex items-center justify-center">
-            <span class="text-white text-xs font-bold">AI</span>
+          <div class="w-6 h-6 rounded sidebar-logo flex items-center justify-center">
+            <span class="sidebar-text text-xs font-bold">AI</span>
           </div>
-          <span class="text-sm font-semibold text-white truncate">AI Team Workspace</span>
+          <span class="text-sm font-semibold sidebar-text truncate">AI Team Workspace</span>
         </div>
         <button
           @click="sidebarOpen = false"
-          class="text-white/70 hover:text-white hover:bg-white/10 transition-default p-0.5 rounded"
+          class="sidebar-btn transition-default p-0.5 rounded"
           title="Collapse sidebar"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/></svg>
@@ -128,8 +160,8 @@
           hx-push-url="true"
           {% endif %}
           @click="activePath = '{{ href }}'"
-          class="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md transition-default"
-          :class="isActive('{{ href }}') ? 'bg-white/20 text-white font-semibold' : 'text-white/80 hover:bg-white/10 hover:text-white'"
+          class="sidebar-link flex items-center gap-2.5 px-2.5 py-1.5 rounded-md transition-default"
+          :class="isActive('{{ href }}') ? 'is-active' : ''"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">{{ icon_path | safe }}</svg>
           <span>{{ label }}</span>
@@ -137,9 +169,9 @@
         {% endfor %}
       </nav>
 
-      <div class="p-3 border-t border-white/15 text-xs text-white/70 min-w-[240px]">
+      <div class="sidebar-footer p-3 text-xs min-w-[240px]">
         <div class="flex items-center gap-1.5">
-          <div class="w-1.5 h-1.5 rounded-full bg-green-400 shadow-[0_0_4px_rgba(74,222,128,0.7)]"></div>
+          <div class="w-1.5 h-1.5 rounded-full sidebar-status-dot"></div>
           Workspace active
         </div>
       </div>

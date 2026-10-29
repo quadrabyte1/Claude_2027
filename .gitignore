@@ -8,3 +8,4 @@ x.py
 __pycache__/
 SHARED_WORK_FOLDER/owner_inbox/diagnostics/
 SHARED_WORK_FOLDER/journal/_dashboard/
+*__degridded.png

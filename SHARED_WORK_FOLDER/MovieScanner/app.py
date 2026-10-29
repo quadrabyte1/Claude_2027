@@ -33,7 +33,7 @@ app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.jinja_env.auto_reload = True
 app.secret_key = "moviescanner-dev"  # required for flash()
 
-APP_VERSION = "V3.27"
+APP_VERSION = "V3.28"
 # V3.27 — Dismissal Reason column. New scan_eliminations table records WHY
 #          each title was dropped by a scanner filter rule (year, rating, votes,
 #          genre, country, plot, only_in_theaters). New Scanner._record_elimination()

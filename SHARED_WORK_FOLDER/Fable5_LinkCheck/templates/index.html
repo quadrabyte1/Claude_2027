@@ -6,15 +6,26 @@
   <title>Fable5 LinkCheck</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
+    /* Background wash: defined once here; every page references the vars. */
+    :root {
+      --wash-start: #3348B2;            /* upper-left corner */
+      --wash-end: #C8CCE3;              /* lower-right corner */
+      --wash-gradient: linear-gradient(to bottom right, var(--wash-start), var(--wash-end));
+      --wash-panel-bg: rgba(255, 255, 255, 0.92);   /* keeps text readable over the dark corner */
+      --wash-panel-radius: 0.75rem;
+    }
+    html, body { min-height: 100vh; }
+    body { background: var(--wash-gradient) fixed; }
+    .wash-panel { background: var(--wash-panel-bg); border-radius: var(--wash-panel-radius); }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
   </style>
 </head>
-<body class="bg-gray-50 min-h-screen flex items-center justify-center p-6 pb-20">
+<body class="min-h-screen flex items-center justify-center p-6 pb-20">
 
   <div class="w-full max-w-xl">
 
     <!-- Header -->
-    <div class="text-center mb-10">
+    <div class="text-center mb-10 wash-panel px-6 py-4">
       <div class="inline-flex items-center gap-2 mb-2">
         <span class="text-2xl">🔗</span>
         <h1 class="text-3xl font-bold text-gray-900 tracking-tight">Fable5 LinkCheck</h1>

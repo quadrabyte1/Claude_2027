@@ -8,6 +8,7 @@
 <style>
   :root {
     --editor-z-modal: 9999;
+    --options-chevron-transition: transform 150ms ease;
     --editor-z-teehole: 22;
     --editor-z-grid-overlay: 30;
     --editor-z-grid-popup: 31;
@@ -75,7 +76,15 @@
   {# ── Per-hole settings ─────────────────────────────────── #}
   <div x-show="imgLoaded" x-cloak
        class="bg-white border border-notion-border rounded-lg px-5 py-4 space-y-3">
-    <div class="flex flex-wrap gap-x-6 gap-y-3 items-end">
+    {# Collapsible "Options" header — all per-hole settings below stay in the DOM (x-show, never x-if) #}
+    <button type="button" id="options-toggle" @click="toggleOptions()" :aria-expanded="optionsOpen"
+            class="flex items-center gap-2 w-full text-left text-sm font-semibold text-notion-text select-none">
+      <svg class="h-4 w-4 text-notion-muted" style="transition:var(--options-chevron-transition)"
+           :class="optionsOpen && OPTIONS_CHEVRON_OPEN_CLASS"
+           viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd"/></svg>
+      <span x-text="OPTIONS_SECTION_LABEL"></span>
+    </button>
+    <div id="options-body" x-show="optionsOpen" x-cloak class="flex flex-wrap gap-x-6 gap-y-3 items-end">
 
       {# Green style #}
       <div class="flex flex-col gap-1 min-w-[130px]"
@@ -784,6 +793,10 @@ const HTTP_HEADERS_JSON = { 'Content-Type': 'application/json' };
 
 // ── Browser storage ──
 const STORAGE_KEY_COLOR_CELLS = 'editorColorCells';            // view pref, never saved in the EGM
+const STORAGE_KEY_OPTIONS_OPEN = 'editorOptionsOpen';        // view pref: Options section open/closed, never saved in the EGM
+const OPTIONS_SECTION_LABEL = 'Options';
+const OPTIONS_DEFAULT_OPEN = false;
+const OPTIONS_CHEVRON_OPEN_CLASS = 'rotate-90';
 const STORAGE_VALUE_ON = '1';
 const STORAGE_VALUE_OFF = '0';
 // ── UI mode (v5.86) — editor-wide input paradigm; per-browser preference, never saved in the EGM ──
@@ -1445,6 +1458,8 @@ function polygonEditor() {
     _slope: null,              // v5.95 Slope command state {phase, picked, a, pts}; null when inactive
     _m2: null,                 // v5.87 in-flight Mode-2 gesture {kind, ...}; null when idle
     lassoPts: null,            // v5.87 freehand lasso samples [{x,y}] in image px while drawing
+    optionsOpen: OPTIONS_DEFAULT_OPEN,  // Options section expanded? (localStorage STORAGE_KEY_OPTIONS_OPEN); not part of the EGM
+    OPTIONS_SECTION_LABEL, OPTIONS_CHEVRON_OPEN_CLASS,
     colorCellsByHeight: true,  // v5.14 view pref (localStorage 'editorColorCells'); not part of the EGM
     _gridActiveCell: null,   // {col, row, idx, canvasPx:{x,y}} or null
     _wheelAcc: 0,            // accumulated wheel px for gridWheel (v5.15)
@@ -1566,8 +1581,14 @@ function polygonEditor() {
       ]
     },
 
+    toggleOptions() {
+      this.optionsOpen = !this.optionsOpen;
+      try { localStorage.setItem(STORAGE_KEY_OPTIONS_OPEN, this.optionsOpen ? STORAGE_VALUE_ON : STORAGE_VALUE_OFF); } catch (e) {}
+    },
+
     init() {
       this.loadUiMode();
+      try { const o = localStorage.getItem(STORAGE_KEY_OPTIONS_OPEN); if (o === STORAGE_VALUE_ON) this.optionsOpen = true; else if (o === STORAGE_VALUE_OFF) this.optionsOpen = false; } catch (e) {}
       try { const c = localStorage.getItem(STORAGE_KEY_COLOR_CELLS); if (c === STORAGE_VALUE_OFF) this.colorCellsByHeight = false; } catch (e) {}
       // v5.77: palette fits the viewport; Grid Off hides it (and leaves paint mode); the canvas re-measures when it appears/disappears.
       this.updatePaletteSize();
