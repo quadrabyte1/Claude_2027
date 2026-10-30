@@ -19,6 +19,7 @@ APP_DIR = Path(__file__).parent.parent
 EDITOR = (APP_DIR / "templates" / "editor.html").read_text()
 sys.path.insert(0, str(Path(__file__).parent))
 import editor_constants as C
+from fake_dom import FAKE_DOM_JS
 
 node = shutil.which("node")
 pytestmark = pytest.mark.skipif(not node, reason="node not installed")
@@ -33,7 +34,7 @@ METHODS = [
     "enterPaintMode", "exitPaintMode", "togglePaintMode", "selectBrush", "paintCursorCss", "applyPaintCursor",
     "paletteColor", "cellColorAt", "paintBrushValueNow", "_imgToCellUV", "_paintCells", "paintBegin", "paintMove",
     "paintEnd", "cancelGridRamp", "cancelGridCell", "removePoly",
-    "slopeStart", "slopeCancel", "_slopePrompt", "_slopePickBrush", "_slopeDown", "_slopeStrokeEnd", "_slopeCommit",
+    "slopeStart", "slopeCancel", "_slopePrompt", "setSlopePromptsSuppressed", "_slopePickBrush", "_slopeDown", "_slopeStrokeEnd", "_slopeCommit",
 ]
 
 SUB_B, SUB_P = C.value("UI_SUB_BOUNDARY"), C.value("UI_SUB_PAINT")
@@ -47,7 +48,7 @@ N = 20   # the mock grid: 20x20 cells, 1 px per cell, origin top-left (so cell (
 
 
 def _method(name):
-    m = re.search(r"\n    (%s\(.*?\n    \}),\n" % re.escape(name), EDITOR, re.S)
+    m = re.search(r"\n    ((?:async )?%s\(.*?\n    \}),\n" % re.escape(name), EDITOR, re.S)
     if not m:   # one-liner methods (isUiMode2 / isTypingTarget)
         m = re.search(r"\n    (%s\(.*?\}),?\n" % re.escape(name), EDITOR)
     assert m, name + " missing"
@@ -61,8 +62,10 @@ def _handle_key():
 
 
 MOCK = """
-globalThis.window = {innerWidth: 1000, innerHeight: 800, l: null,
+globalThis.window = {innerWidth: 1000, innerHeight: 800, l: null, dialogs: [],
+  alert(m) { this.dialogs.push(['alert', m]); }, confirm(m) { this.dialogs.push(['confirm', m]); return true; },
   addEventListener(t, f) { this.l = f; }, removeEventListener() { this.l = null; }};
+""" + FAKE_DOM_JS + """
 const BTN_L = MOUSE_BUTTON_LEFT, BTN_R = MOUSE_BUTTON_RIGHT;
 const o = {
   uiMode: UI_MODE_2, uiSubMode: DEFAULT_UI_SUB_MODE, paintBrush2: null, paintPopup: {open: false, x: 0, y: 0},
@@ -601,16 +604,16 @@ def test_slope_constants_and_spreadsheet_text():
 def test_slope_full_flow_fills_ramp_between_boundaries_as_one_undo_step():
     out = _run(_go_paint() + STROKE + """
 o.m2HandleKey(key(SLOPE_KEY));
-const first = o.flashes[o.flashes.length - 1];
+const first = window.dialogs[window.dialogs.length - 1];
 pick(%d); stroke(2, 2, 14);
-const second = o.flashes[o.flashes.length - 1];
+const second = window.dialogs[window.dialogs.length - 1];
 const lineStaysUntilDone = o._slope.a.pts.length > 1;
 pick(%d, {metaKey: true}); stroke(8, 2, 14);       // Cmd-click must NOT make a 2-brush pair here
 const col = [2, 3, 4, 5, 6, 7, 8].map(j => val(6, j));
 console.log(JSON.stringify({first, second, lineStaysUntilDone, slope: o._slope, col,
   undo: o.undoHistory.length, brush2: o.paintBrush2, outside: val(6, 1) === undefined && val(6, 9) === undefined}));
 """ % (SLOPE_LO, SLOPE_HI))
-    assert out["first"] == MSG_FIRST and out["second"] == MSG_SECOND
+    assert out["first"] == ["notice", MSG_FIRST] and out["second"] == ["notice", MSG_SECOND]
     assert out["lineStaysUntilDone"] and out["slope"] is None and out["brush2"] is None
     col = out["col"]
     assert col[0] == C.value("CELL_COLOR_DELTA_MIN_MM") and col[-1] == C.value("CELL_COLOR_DELTA_MAX_MM")
@@ -656,7 +659,7 @@ def test_slope_leaving_z_painting_cancels_it():
 def test_slope_fill_steps_is_pure_ramp_between_lines():
     out = _run("""
 const A = [{u: 1, v: 3.5}, {u: 12, v: 3.5}], B = [{u: 1, v: 9.5}, {u: 12, v: 9.5}];
-const r = new Map(slopeFillSteps(A, B, %d, %d, %d));
+const r = new Map(slopeFillValues(A, B, %d, %d, %d));
 const at = (c, rw) => r.get((%d - 1 - rw) * %d + c);
 console.log(JSON.stringify({top: at(5, 3), bottom: at(5, 9), mid: at(5, 6), outside: at(5, 2) ?? null}));
 """ % (SLOPE_LO, SLOPE_HI, N, N, N))
@@ -724,7 +727,7 @@ console.log(JSON.stringify({pickedAtStart, afterFirst, blocked, slope: o._slope,
 """ % (SLOPE_LO, SLOPE_HI))
     assert out["pickedAtStart"] is True
     assert out["afterFirst"] == [C.value("SLOPE_PHASE_SECOND"), False, SLOPE_LO]
-    assert out["blocked"][0] is False and MSG_PICK in out["blocked"][1] and MSG_SECOND in out["blocked"][1]
+    assert out["blocked"][0] is False and MSG_PICK in out["blocked"][1] and MSG_SECOND not in out["blocked"][1]
     assert out["slope"] is None and out["undo"] == 1 and out["lo"] < out["hi"]
 
 
@@ -746,3 +749,79 @@ down(5.5, 5.5);
 console.log(JSON.stringify({pickedAtStart, m2: !!o._m2, msg: o.flashes[o.flashes.length - 1]}));
 """.replace("ERASER_ID", json.dumps(ERASER)))
     assert out["pickedAtStart"] is False and out["m2"] is False and MSG_PICK in out["msg"]
+
+
+# ═══════════════ v6.11: the two Slope step messages use the shared small pop-up dialog ═══════════════
+def test_slope_messages_use_shared_dialog_not_status_bar():
+    out = _run(_go_paint() + STROKE + """
+o.m2HandleKey(key(SLOPE_KEY));
+const afterStart = [window.dialogs.slice(), o.flashes.slice()];
+pick(%d); stroke(2, 2, 14);
+const afterFirst = [window.dialogs.slice(), o.flashes.slice()];
+pick(%d); stroke(8, 2, 14);
+console.log(JSON.stringify({afterStart, afterFirst, final: window.dialogs.length, slope: o._slope, undo: o.undoHistory.length}));
+""" % (SLOPE_LO, SLOPE_HI))
+    assert out["afterStart"] == [[["notice", MSG_FIRST]], []]                        # one dialog, nothing in the status bar
+    assert out["afterFirst"] == [[["notice", MSG_FIRST], ["notice", MSG_SECOND]], []]
+    assert out["final"] == 2 and out["slope"] is None and out["undo"] == 1          # no third dialog; workflow completes
+
+
+def test_slope_hints_stay_status_flashes_without_dialog():
+    out = _run(_go_paint() + STROKE + """
+o.paintBrush = ERASER_ID;
+o.m2HandleKey(key(SLOPE_KEY)); const n = window.dialogs.length; down(5.5, 5.5);
+console.log(JSON.stringify({n, after: window.dialogs.length, msg: o.flashes[o.flashes.length - 1]}));
+""".replace("ERASER_ID", json.dumps(ERASER)))
+    assert out["n"] == 1 and out["after"] == 1 and out["msg"] == MSG_PICK
+
+
+def test_dialog_helpers_are_shared_with_grid_resolution_warning():
+    assert "function showNoticeDialog(" in EDITOR and "function showConfirmDialog(" in EDITOR
+    assert "showConfirmDialog(MSG_GRID_RESOLUTION_ERASE)" in EDITOR
+    assert "window.alert(" not in EDITOR
+    assert "this.flash(MSG_SLOPE_FIRST" not in EDITOR and "this.flash(MSG_SLOPE_SECOND" not in EDITOR
+    out = _run("""
+window.dialogs.length = 0; window.confirm = (m) => { window.dialogs.push(['confirm', m]); return false; };
+console.log(JSON.stringify([showConfirmDialog('x'), (showNoticeDialog('y'), window.dialogs)]));""")
+    assert out == [False, [["confirm", "x"], ["notice", "y"]]]
+
+
+# ═══════════════ v6.12: Slope cursor: empty at S, inked on a pick, empty again for boundary 2, restored afterwards ═══════════════
+def test_slope_brush_indicator_flow_empty_then_inked_then_empty_then_inked_then_restored():
+    out = _run(_go_paint() + STROKE + """
+const css = () => decodeURIComponent(o.$refs.canvas.style.cursor);
+o.paintBrush = %d; o.applyPaintCursor();                       // a prior colour is selected
+const normal = css();
+o.m2HandleKey(key(SLOPE_KEY));
+const atS = css(), adopted = o._slope.picked, brushDuring = o.paintBrush;   // 1. empty even though a brush was adopted
+pick(%d);
+const afterPick1 = css();                                      // 2. takes the picked colour at once
+stroke(2, 2, 14);                                              // 3. first boundary
+const afterFirst = css();                                      // 4. empty again until the 2nd pick
+pick(%d);
+const afterPick2 = css();
+stroke(8, 2, 14);
+const afterDone = css();                                       // 5. normal display restored
+o.m2HandleKey(key(SLOPE_KEY)); pick(%d); const inked = css(); o.m2HandleKey(key(M2_KEY_CANCEL));
+const afterEsc = css();
+console.log(JSON.stringify({normal, atS, adopted, brushDuring, afterPick1, afterFirst, afterPick2, afterDone, inked, afterEsc,
+  cLo: o.paletteColor(%d), cHi: o.paletteColor(%d)}));
+""" % (SLOPE_LO, SLOPE_HI, SLOPE_LO, SLOPE_HI, SLOPE_LO, SLOPE_HI))
+    empty = 'fill="%s"' % C.value("CURSOR_NO_COLOR_FILL")
+    ink = lambda s, c: 'fill="%s"' % c in s
+    for k in ("atS", "afterFirst"):
+        assert empty in out[k] and not ink(out[k], out["cLo"]) and not ink(out[k], out["cHi"])
+    assert out["adopted"] is True and out["brushDuring"] == SLOPE_LO          # value untouched; empty despite adoption
+    assert ink(out["afterPick1"], out["cHi"]) and empty not in out["afterPick1"]
+    assert ink(out["afterPick2"], out["cLo"]) and empty not in out["afterPick2"]
+    assert empty not in out["afterDone"] and empty not in out["afterEsc"] and "strike" not in out["atS"]
+    assert ink(out["inked"], out["cHi"])
+
+
+def test_palette_pick_outside_slope_updates_bristles():
+    out = _run(_go_paint() + STROKE + """
+const css = () => decodeURIComponent(o.$refs.canvas.style.cursor);
+pick(%d); const a = css(); pick(%d); const b = css();
+console.log(JSON.stringify({a, b, cLo: o.paletteColor(%d), cHi: o.paletteColor(%d)}));
+""" % (SLOPE_LO, SLOPE_HI, SLOPE_LO, SLOPE_HI))
+    assert 'fill="%s"' % out["cLo"] in out["a"] and 'fill="%s"' % out["cHi"] in out["b"] and out["a"] != out["b"]

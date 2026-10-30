@@ -154,7 +154,7 @@ def test_entering_paint_closes_open_value_box():
 
 
 def test_paint_branches_in_pointer_handlers():
-    md = EDITOR[EDITOR.index("    onMouseDown(e) {"):][:700]
+    md = EDITOR[EDITOR.index("    onMouseDown(e) {"):][:800]
     assert md.index("this.paintMode") < md.index("this.contourMode")       # paint wins over contour / select / drag
     assert "this.paintBegin(e)" in md
     assert "if (this.paintMode) { this.paintMove(e); return; }" in EDITOR
@@ -238,7 +238,7 @@ def test_brush_zero_is_stored_then_eraser_empties_and_undo_restores_exactly():
 def test_typed_zero_empties_but_untouched_explicit_zero_survives_open_and_blur():
     r = _run("""
       o.gridCellHeights = {3: 0, 4: 2.5};
-      o._gridActiveCell = {idx:3}; o._gridInputValue = '0'; o.commitGridCell();      // open + blur untouched
+      o._gridActiveCell = {idx:3}; o._gridInputValue = gridValueText(0); o.commitGridCell();      // open + blur untouched (box reads 0.0 since v6.10)
       const kept = JSON.stringify(o.gridCellHeights);
       o._gridActiveCell = {idx:4}; o._gridInputValue = '0'; o.commitGridCell();      // typed 0 over a value
       const typed = JSON.stringify(o.gridCellHeights);
@@ -251,7 +251,7 @@ def test_typed_zero_empties_but_untouched_explicit_zero_survives_open_and_blur()
 
 def test_load_keeps_explicit_zero_and_no_zero_filter_remains():
     assert "Number(v) !== 0" not in EDITOR
-    assert "Object.assign({}, data.gridCellHeights || {})" in EDITOR
+    assert "roundGridHeights(data.gridCellHeights || {})" in EDITOR   # v6.10: rounded to 0.1 on load
     assert "if (mm === 0) continue" not in EDITOR
 
 
@@ -366,7 +366,7 @@ def test_undo_mode_change_consumes_entry_without_touching_cells():
 
 
 def test_undo_key_uses_the_unified_undo():
-    h = EDITOR[EDITOR.index("// Undo: Cmd+Z / Ctrl+Z"):][:700]
+    h = EDITOR[EDITOR.index("// Undo: Cmd+Z / Ctrl+Z"):][:800]
     assert "this.undo();" in h and "gridUndo" not in h
     assert "pushUndo()" not in _method("pushGridUndo")
     assert "_gridUndo" not in EDITOR and "this.undoStack" not in EDITOR
@@ -427,5 +427,5 @@ def test_edit_group_removed_but_keyboard_paths_remain():
     assert not re.search(r'<span class="eb-cap">Edit</span>', EDITOR)
     for kept in ("togglePaintMode()", "exitPaintMode()", "undo()", "redo()", "setUiSubMode("):
         assert kept in EDITOR, kept
-    assert "this.undo();" in EDITOR[EDITOR.index("// Undo: Cmd+Z / Ctrl+Z"):][:700]
+    assert "this.undo();" in EDITOR[EDITOR.index("// Undo: Cmd+Z / Ctrl+Z"):][:800]
     assert "this.togglePaintMode()" in _handle_key()

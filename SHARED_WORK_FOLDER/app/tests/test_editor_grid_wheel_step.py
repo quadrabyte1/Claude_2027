@@ -64,7 +64,7 @@ def test_shift_step_and_no_clamp():
     assert _run([{"deltaY": -100, "deltaMode": 0, "shiftKey": True}], start="29.5")[-1] == "30.5"   # past 30
     assert _run([{"deltaY": 100, "deltaMode": 0}] * 5, start="0")[-1] == "-0.5"                       # below 0
     # macOS swaps shift+wheel into deltaX
-    assert _run([{"deltaY": 0, "deltaX": -100, "deltaMode": 0, "shiftKey": True}], start="1")[-1] == "2"
+    assert _run([{"deltaY": 0, "deltaX": -100, "deltaMode": 0, "shiftKey": True}], start="1")[-1] == "%.*f" % (C.value("GRID_LABEL_DECIMALS"), 2)   # v6.10: always one decimal
 
 
 @pytest.mark.skipif(not node, reason="node not installed")
