@@ -39,7 +39,7 @@ def _handle_key():
 
 
 def _run(script, state="", clipboard="null"):
-    body = ",\n".join(_handle_key() if n == "handleKey" else _method(n) for n in METHODS + ["handleKey"])
+    body = ",\n".join(_handle_key() if n == "handleKey" else _method(n) for n in METHODS + ["handleGenerateKey", "handleKey"])
     js = C.prelude() + """
 const clipLog = [];
 let clipText = %s;

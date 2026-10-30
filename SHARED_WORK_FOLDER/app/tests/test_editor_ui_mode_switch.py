@@ -140,4 +140,4 @@ def test_version_comes_from_app_py():
     app = (APP_DIR / "app.py").read_text()
     version = re.search(r'^APP_VERSION = "([^"]+)"', app, re.M).group(1)
     assert "Boundary Editor %s" % version in EDITOR[:200] or re.search(r"Boundary Editor v\d+\.\d+", EDITOR[:200])
-    assert "UI Mode" in EDITOR[:3000]
+    assert "UI Mode" in EDITOR.split("\n", 2)[1]   # whole changelog header line (v6.09: no fixed char window)

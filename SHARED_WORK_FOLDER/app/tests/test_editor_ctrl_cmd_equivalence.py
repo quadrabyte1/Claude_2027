@@ -33,7 +33,7 @@ o._gridCellCanvasPx = (c, r) => ({x: c * 10, y: r * 10, w: 10, h: 10});
 
 def _run(script, state=""):
     names = T.METHODS + [n for n in EXTRA if n not in T.METHODS]
-    body = ",\n".join(T._handle_key() if n == "handleKey" else T._method(n) for n in names + ["handleKey"])
+    body = ",\n".join(T._handle_key() if n == "handleKey" else T._method(n) for n in names + ["handleGenerateKey", "handleKey"])
     js = C.prelude() + T.MOCK % (T.N, T.N, body, T.N, T.N) + state + "\n" + script
     out = subprocess.run([T.node, "-e", js], capture_output=True, text=True)
     assert out.returncode == 0, out.stderr

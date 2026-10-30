@@ -1,0 +1,53 @@
+{
+  "event_id": "2026-10-30-0800-track-payments-from-jim",
+  "schedule": [
+    {
+      "event_id": "2026-10-30-0800-track-payments-from-jim",
+      "kind": "heads_up_30",
+      "fire_at": "2026-10-30T07:30:00-04:00",
+      "tz": "America/New_York",
+      "body": "In 30 minutes: track payments from Jim at 8:00 AM.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-30-0800-track-payments-from-jim",
+      "kind": "pre_5",
+      "fire_at": "2026-10-30T07:55:00-04:00",
+      "tz": "America/New_York",
+      "body": "5 minutes: track payments from Jim at 8:00 AM.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-30-0800-track-payments-from-jim",
+      "kind": "strike_0",
+      "fire_at": "2026-10-30T08:00:00-04:00",
+      "tz": "America/New_York",
+      "body": "track payments from Jim is starting now. Tap OK when you see this.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-30-0800-track-payments-from-jim",
+      "kind": "strike_5",
+      "fire_at": "2026-10-30T08:05:00-04:00",
+      "tz": "America/New_York",
+      "body": "Still on? track payments from Jim started 5 minutes ago. Tap OK.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-30-0800-track-payments-from-jim",
+      "kind": "strike_10",
+      "fire_at": "2026-10-30T08:10:00-04:00",
+      "tz": "America/New_York",
+      "body": "Reminder: track payments from Jim \u2014 10 minutes ago. Tap OK.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-30-0800-track-payments-from-jim",
+      "kind": "strike_15",
+      "fire_at": "2026-10-30T08:15:00-04:00",
+      "tz": "America/New_York",
+      "body": "Final reminder. track payments from Jim. Tap OK or I'll log it as missed.",
+      "status": "pending"
+    }
+  ]
+}

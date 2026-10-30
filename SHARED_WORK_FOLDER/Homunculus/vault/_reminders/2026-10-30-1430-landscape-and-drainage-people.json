@@ -1,0 +1,53 @@
+{
+  "event_id": "2026-10-30-1430-landscape-and-drainage-people",
+  "schedule": [
+    {
+      "event_id": "2026-10-30-1430-landscape-and-drainage-people",
+      "kind": "heads_up_30",
+      "fire_at": "2026-10-30T14:00:00-04:00",
+      "tz": "America/New_York",
+      "body": "In 30 minutes: landscape and drainage people at 2:30 PM.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-30-1430-landscape-and-drainage-people",
+      "kind": "pre_5",
+      "fire_at": "2026-10-30T14:25:00-04:00",
+      "tz": "America/New_York",
+      "body": "5 minutes: landscape and drainage people at 2:30 PM.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-30-1430-landscape-and-drainage-people",
+      "kind": "strike_0",
+      "fire_at": "2026-10-30T14:30:00-04:00",
+      "tz": "America/New_York",
+      "body": "landscape and drainage people is starting now. Tap OK when you see this.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-30-1430-landscape-and-drainage-people",
+      "kind": "strike_5",
+      "fire_at": "2026-10-30T14:35:00-04:00",
+      "tz": "America/New_York",
+      "body": "Still on? landscape and drainage people started 5 minutes ago. Tap OK.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-30-1430-landscape-and-drainage-people",
+      "kind": "strike_10",
+      "fire_at": "2026-10-30T14:40:00-04:00",
+      "tz": "America/New_York",
+      "body": "Reminder: landscape and drainage people \u2014 10 minutes ago. Tap OK.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-30-1430-landscape-and-drainage-people",
+      "kind": "strike_15",
+      "fire_at": "2026-10-30T14:45:00-04:00",
+      "tz": "America/New_York",
+      "body": "Final reminder. landscape and drainage people. Tap OK or I'll log it as missed.",
+      "status": "pending"
+    }
+  ]
+}
