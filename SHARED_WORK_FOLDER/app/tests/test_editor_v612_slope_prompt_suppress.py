@@ -1,6 +1,7 @@
 """Editor v6.12: Slope pop-ups are an in-page native-alert look-alike with a "Don't prompt anymore" checkbox.
 Reuses the node harness of test_editor_ui_mode2 (real constants + real methods + fake DOM/localStorage)."""
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -157,5 +158,5 @@ def test_brush_cursor_has_no_strike_and_obsolete_constants_gone():
 
 def test_version_bumped():
     app = (Path(__file__).parent.parent / "app.py").read_text()
-    assert 'APP_VERSION = "v6.12"' in app
-    assert "Boundary Editor v6.12" in EDITOR.splitlines()[1]
+    ver = re.search(r'APP_VERSION = "(v[\d.]+)"', app).group(1)   # v6.13+ bumps keep the v6.12 entry in the changelog line
+    assert "Boundary Editor " + ver in EDITOR.splitlines()[1] and "v6.12" in EDITOR.splitlines()[1]

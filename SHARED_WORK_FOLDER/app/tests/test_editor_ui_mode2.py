@@ -43,7 +43,7 @@ ERASER = C.value("PAINT_BRUSH_ERASER")
 KEY_B, KEY_P, KEY_ESC = C.value("M2_KEY_BOUNDARY"), C.value("M2_KEY_PAINT"), C.value("M2_KEY_CANCEL")
 BTN_L, BTN_R = C.value("MOUSE_BUTTON_LEFT"), C.value("MOUSE_BUTTON_RIGHT")
 THRESH = C.value("M2_DRAG_THRESHOLD_PX")
-STEPS = len(C.value("CELL_COLOR_STOPS"))
+STEPS = C.value("PALETTE_STEP_COUNT")   # v6.13: half-step swatches (was one per colour stop)
 N = 20   # the mock grid: 20x20 cells, 1 px per cell, origin top-left (so cell (i, j) spans x in [i, i+1), y in [j, j+1))
 
 

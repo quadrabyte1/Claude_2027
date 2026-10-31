@@ -77,26 +77,66 @@ def _ev(key, tag="DIV", **kw):
 
 
 # ───────────────────────────── palette ─────────────────────────────
-def test_palette_has_31_steps_plus_eraser_with_labels_per_mode():
+def _delta_step(mm):
+    """Palette index of the delta value `mm` (v6.13: half-step palette)."""
+    return round((mm - C.value("CELL_COLOR_DELTA_MIN_MM")) / C.value("PALETTE_VALUE_STEP"))
+
+
+def _abs_step(mm):
+    return round((mm - C.value("CELL_COLOR_ABSOLUTE_MIN_MM")) / C.value("PALETTE_VALUE_STEP"))
+
+
+def _fmt(v, signed):
+    t = ("%g" % v)
+    return ("+" + t) if (signed and v > 0) else t
+
+
+def test_palette_has_half_steps_plus_eraser_with_labels_per_mode():
     r = _run("""console.log(JSON.stringify({
-        steps: paletteSteps(), n: CELL_COLOR_STOPS.length,
+        steps: paletteSteps(), n: PALETTE_STEP_COUNT,
         delta: paletteSteps().map(s => paletteLabel(s, 'delta')),
+        side: paletteSteps().map(s => paletteSideLabel(s, 'delta')),
         abs: paletteSteps().map(s => paletteLabel(s, 'absolute')),
-        vals: [paintBrushValue(30,'delta'), paintBrushValue(15,'delta'), paintBrushValue(0,'delta'),
-               paintBrushValue(30,'absolute'), paintBrushValue(0,'absolute')]}));""")
-    assert r["n"] == 31 and len(r["steps"]) == 31 and r["steps"][0] == 30 and r["steps"][-1] == 0
-    assert r["delta"][0] == "+15" and r["delta"][15] == "0" and r["delta"][-1] == "-15"
-    assert r["delta"] == [("+%d" % v if v > 0 else str(v)) for v in range(15, -16, -1)]   # +15 (top) .. -15 (bottom)
-    assert r["abs"] == [str(v) for v in range(30, -1, -1)]                                # 30 (top) .. 0 (bottom)
-    assert r["vals"] == [15, 0, -15, 30, 0]
+        vals: [paintBrushValue(PALETTE_STEP_COUNT - 1,'delta'), paintBrushValue(1,'delta'), paintBrushValue(0,'delta'),
+               paintBrushValue(PALETTE_STEP_COUNT - 1,'absolute'), paintBrushValue(0,'absolute')]}));""")
+    step = C.value("PALETTE_VALUE_STEP")
+    dlo, dhi = C.value("CELL_COLOR_DELTA_MIN_MM"), C.value("CELL_COLOR_DELTA_MAX_MM")
+    alo, ahi = C.value("CELL_COLOR_ABSOLUTE_MIN_MM"), C.value("CELL_COLOR_ABSOLUTE_MAX_MM")
+    n = round((dhi - dlo) / step) + 1
+    assert r["n"] == n == C.value("PALETTE_STEP_COUNT") and len(r["steps"]) == n and r["steps"][0] == n - 1 and r["steps"][-1] == 0
+    dvals = [dhi - k * step for k in range(n)]
+    assert r["delta"] == [_fmt(v, True) for v in dvals]                       # +15 (top) .. -15 (bottom), half steps as +1.5
+    assert any(x.endswith(".5") for x in r["delta"]) and "+1.5" in r["delta"] and "-1.5" in r["delta"] and "0.5" not in "".join(x for x in r["delta"] if x == "0")
+    assert r["side"] == [x if float(x) == int(float(x)) else "" for x in r["delta"]]   # side strip: whole steps only
+    assert r["abs"] == [_fmt(ahi - k * step, False) for k in range(n)]
+    assert r["vals"] == [dhi, dlo + step, dlo, ahi, alo]
+
+
+def test_palette_half_step_values_are_stored_and_round_trip_through_the_brush():
+    r = _run("""console.log(JSON.stringify([2, 3].map(s => paintBrushValue(s, 'delta'))));""")
+    step, dlo = C.value("PALETTE_VALUE_STEP"), C.value("CELL_COLOR_DELTA_MIN_MM")
+    assert r == [dlo + 2 * step, dlo + 3 * step]
+    # no integer-only assumption left: the palette index math goes through PALETTE_VALUE_STEP, never a bare 1 mm
+    assert "step * PALETTE_VALUE_STEP" in EDITOR and "CELL_COLOR_STOPS.length - 1)" not in _method("paletteColor")
+
+
+def test_adjacent_swatches_are_visually_distinguishable():
+    stops = C.value("CELL_COLOR_STOPS")
+    r = _run("""console.log(JSON.stringify(paletteSteps().map(s => o.cellColorAt(s / (PALETTE_STEP_COUNT - 1)))));""", ["cellColorAt"])
+    d = [max(abs(a - b) for a, b in zip(r[i], r[i + 1])) for i in range(len(r) - 1)]
+    assert all(x >= 1 for x in d)   # every neighbouring pair differs (labels + tooltip carry the exact value)
 
 
 def test_palette_colors_come_from_the_fixed_scale_not_a_second_list():
     stops = C.value("CELL_COLOR_STOPS")
-    r = _run("""console.log(JSON.stringify(paletteSteps().map(s => [o.paletteColor(s), o.cellColorAt(s/30)])));""",
+    r = _run("""console.log(JSON.stringify(paletteSteps().map(s => [o.paletteColor(s), o.cellColorAt(s/(PALETTE_STEP_COUNT-1))])));""",
              ["paletteColor", "cellColorAt"])
-    for (css, rgb), step in zip(r, range(30, -1, -1)):
-        hexs = stops[step]
+    per = C.value("PALETTE_STEP_COUNT") // (len(stops) - 1)   # swatches per colour stop (whole-mm swatches land exactly on a stop)
+    for (css, rgb), step in zip(r, range(C.value("PALETTE_STEP_COUNT") - 1, -1, -1)):
+        if step % per:
+            assert css == "rgb(%d,%d,%d)" % tuple(rgb)   # half step: interpolated between the neighbouring stops
+            continue
+        hexs = stops[step // per]
         want = [int(hexs[k:k + 2], 16) for k in (1, 3, 5)]
         assert rgb == want and css == "rgb(%d,%d,%d)" % tuple(want)
     # no second hard-coded colour list: the first stop colour literal exists exactly once (the stop table)
@@ -110,9 +150,12 @@ def test_palette_markup_and_swatch_height_fits_viewport():
     r = _run("""console.log(JSON.stringify([400, 600, 800, 1200, 2000].map(h => [h, paletteSwatchHeight(h)])));""")
     for h, sw in r:
         assert C.value("PALETTE_LABEL_MIN_EDGE_PX") <= sw <= C.value("PALETTE_SWATCH_MAX_PX")
-        if h >= 700:   # tall enough that the floor does not apply: 31 swatches + eraser row must fit
-            assert 31 * sw + sw + C.value("PALETTE_ERASER_ROW_EXTRA_PX") <= h
+        if h >= 700:   # tall enough that the floor does not apply: PALETTE_STEP_COUNT swatches + eraser row must fit
+            assert C.value("PALETTE_STEP_COUNT") * sw + sw + C.value("PALETTE_ERASER_ROW_EXTRA_PX") <= h
     assert r[-1][1] == C.value("PALETTE_SWATCH_MAX_PX")
+    # v6.14: side colour boxes are landscape at every viewport height (width > the tallest possible height)
+    assert C.value("PALETTE_SWATCH_WIDTH_PX") > C.value("PALETTE_SWATCH_MAX_PX")
+    assert C.value("PALETTE_POPUP_SWATCH_PX") > C.value("PALETTE_POPUP_SWATCH_H_PX")
 
 
 # ───────────────────────────── enter / exit ─────────────────────────────
@@ -185,12 +228,12 @@ def test_stroke_paints_interpolated_cells_at_both_resolutions(n):
     # cell edge = 20 mm / n  (printSizeMm 20, 1 px per mm): centre of cell (c, r-from-top) is ((c+.5)w, (r+.5)w)
     r = _run("""
       const w = o.printSizeMm / o.gridN, at = (c, rt) => ({x:(c+.5)*w, y:(rt+.5)*w, buttons:1});
-      o.paintBrush = 20;                                               // delta +5
+      o.paintBrush = %(b5)d;                                           // delta +5
       o.paintBegin(at(0, 0));
       o.paintMove(at(%(far)d, 0));                                     // one huge jump: must not skip cells
       o.paintMove(at(%(far)d, 3));
       o.paintEnd();
-      console.log(JSON.stringify({h:o.gridCellHeights, hist:o.undoHistory.length, saves:o.saves, N:o.gridN}));""" % {"far": n // 2},
+      console.log(JSON.stringify({h:o.gridCellHeights, hist:o.undoHistory.length, saves:o.saves, N:o.gridN}));""" % {"far": n // 2, "b5": _delta_step(5)},
              PAINT_METHODS, extra_state="o.gridN = %d;" % n)
     N = r["N"]
     want = {}
@@ -206,15 +249,15 @@ def test_brush_value_follows_mode_and_eraser_deletes_and_zero_is_explicit():
     r = _run("""
       o.gridCellHeights = {5: 9, 6: 4};
       const at = (c) => ({x:c+.5, y:.5, buttons:1});
-      o.gridMode = 'absolute'; o.paintBrush = 12;                      // 12 mm absolute
+      o.gridMode = 'absolute'; o.paintBrush = %(a12)d;                  // 12 mm absolute
       o.paintBegin({x:5.5,y:19.5,buttons:1}); o.paintEnd();            // cell idx = (19-19)*20+5
       const abs = o.gridCellHeights[5];
-      o.gridMode = 'delta'; o.paintBrush = 15;                         // delta 0 = REAL value (v5.80) -> stored
+      o.gridMode = 'delta'; o.paintBrush = %(d0)d;                     // delta 0 = REAL value (v5.80) -> stored
       o.paintBegin({x:5.5,y:19.5,buttons:1}); o.paintEnd();
       const zero = o.gridCellHeights[5];
       o.paintBrush = PAINT_BRUSH_ERASER;
       o.paintBegin({x:6.5,y:19.5,buttons:1}); o.paintEnd();
-      console.log(JSON.stringify({abs, zero, erased: 6 in o.gridCellHeights}));""", PAINT_METHODS)
+      console.log(JSON.stringify({abs, zero, erased: 6 in o.gridCellHeights}));""" % {"a12": _abs_step(12), "d0": _delta_step(0)}, PAINT_METHODS)
     assert r == {"abs": 12, "zero": 0, "erased": False}
 
 
@@ -224,14 +267,14 @@ COMMIT_METHODS = UNDO_METHODS + ["_untouchedExplicitZero", "cancelGridCell"]
 def test_brush_zero_is_stored_then_eraser_empties_and_undo_restores_exactly():
     r = _run("""
       const at = {x:5.5, y:19.5, buttons:1};
-      o.paintBrush = 15;                                               // delta step 15 = 0 mm
+      o.paintBrush = %d;                                               // delta 0 mm
       o.paintBegin(at); o.paintEnd();
       const painted = JSON.parse(JSON.stringify(o.gridCellHeights));   // survives a save/load JSON round trip
       o.paintBrush = PAINT_BRUSH_ERASER; o.paintBegin(at); o.paintEnd();
       const erased = JSON.stringify(o.gridCellHeights);
       o.undo(); const undoErase = JSON.stringify(o.gridCellHeights);   // explicit 0 stays explicit 0
       o.undo(); const undoPaint = JSON.stringify(o.gridCellHeights);   // empty stays empty
-      console.log(JSON.stringify({painted, erased, undoErase, undoPaint}));""", PAINT_METHODS)
+      console.log(JSON.stringify({painted, erased, undoErase, undoPaint}));""" % _delta_step(0), PAINT_METHODS)
     assert r == {"painted": {"5": 0}, "erased": "{}", "undoErase": '{"5":0}', "undoPaint": "{}"}
 
 
@@ -266,11 +309,11 @@ def test_painting_outside_the_grid_is_ignored():
 def test_one_undo_reverts_whole_stroke_including_empty_cells():
     r = _run("""
       o.gridCellHeights = {380: 9, 382: 2};                    // two pre-existing cells under the stroke path (row 0 from top = idx 380..385)
-      o.paintBrush = 20;                                        // +5
+      o.paintBrush = %d;                                        // +5
       o.paintBegin({x:.5,y:.5,buttons:1}); o.paintMove({x:5.5,y:.5,buttons:1}); o.paintEnd();
       const painted = {...o.gridCellHeights};
       o.undo();
-      console.log(JSON.stringify({painted, back:o.gridCellHeights, hist:o.undoHistory.length, label:o.flashes.at(-1)}));""",
+      console.log(JSON.stringify({painted, back:o.gridCellHeights, hist:o.undoHistory.length, label:o.flashes.at(-1)}));""" % _delta_step(5),
              PAINT_METHODS)
     assert r["painted"] == {str(380 + c): 5 for c in range(6)}
     assert r["back"] == {"380": 9, "382": 2}                  # empty cells empty again, old values restored
@@ -376,7 +419,7 @@ def test_undo_key_uses_the_unified_undo():
 def test_brush_cursor_hotspot_is_the_bristle_tip_and_fill_is_the_brush_color():
     r = _run("""
       const out = [];
-      for (const step of [30, 15, 0]) {
+      for (const step of [PALETTE_STEP_COUNT - 1, PALETTE_STEP_COUNT >> 1, 0]) {
         o.paintBrush = step; o.paintMode = true;
         out.push({step, css: o.paintCursorCss(), color: o.paletteColor(step)});
       }
@@ -429,3 +472,10 @@ def test_edit_group_removed_but_keyboard_paths_remain():
         assert kept in EDITOR, kept
     assert "this.undo();" in EDITOR[EDITOR.index("// Undo: Cmd+Z / Ctrl+Z"):][:800]
     assert "this.togglePaintMode()" in _handle_key()
+
+
+def test_two_brush_ramp_steps_by_the_palette_step_and_stores_half_values():
+    lo, hi = _delta_step(1), _delta_step(3)     # +1 .. +3 mm over five cells -> 1, 1.5, 2, 2.5, 3
+    r = _run("""console.log(JSON.stringify([0, 1, 2, 3, 4].map(k => paintBrushValue(rampStepAt(k, 5, %d, %d), 'delta'))));""" % (lo, hi))
+    step = C.value("PALETTE_VALUE_STEP")
+    assert r == [1 + k * step for k in range(5)] and any(v != int(v) for v in r)

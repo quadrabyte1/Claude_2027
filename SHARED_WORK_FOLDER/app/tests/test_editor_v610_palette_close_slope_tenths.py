@@ -28,6 +28,11 @@ node = shutil.which("node")
 pytestmark = pytest.mark.skipif(not node, reason="node not installed")
 
 STEP = C.value("SLOPE_VALUE_STEP")
+
+
+def _delta_step(mm):
+    """Palette index of the delta value `mm` (v6.13: half-step palette)."""
+    return round((mm - C.value("CELL_COLOR_DELTA_MIN_MM")) / C.value("PALETTE_VALUE_STEP"))
 DECIMALS = C.value("SLOPE_VALUE_DECIMALS")
 LABEL_DECIMALS = C.value("GRID_LABEL_DECIMALS")
 N = M2.N
@@ -92,7 +97,7 @@ def test_threshold_flips_text_tone():
 
 
 def test_popup_swatch_is_wide_enough_for_the_longest_label():
-    # longest label: "+15" / "-15" at the label font; ~0.62 em per glyph (tabular digits) + borders
+    # longest label: "-14.5" (half steps) at the label font; ~0.62 em per glyph (tabular digits) + borders
     longest = max(len(x) for x in _js("""console.log(JSON.stringify(paletteSteps().map(s => paletteLabel(s, 'delta'))));"""))
     need = longest * C.value("PALETTE_POPUP_LABEL_FONT_PX") * 0.62 + 2
     assert C.value("PALETTE_POPUP_SWATCH_PX") >= need
@@ -233,13 +238,13 @@ console.log(JSON.stringify(r));""" % N)
 def test_slope_command_stores_tenths_and_undo_redo_roundtrips():
     out = M2._run(M2._go_paint() + M2.STROKE + """
 o.m2HandleKey(key(SLOPE_KEY));
-pick(15); stroke(2, 2, 14); pick(16); stroke(8, 2, 14);                   // brush values 0 -> +1 over 7 rows
+pick(%d); stroke(2, 2, 14); pick(%d); stroke(8, 2, 14);                   // brush values 0 -> +1 over 7 rows
 const col = [2, 3, 4, 5, 6, 7, 8].map(j => val(6, j));
 const snap = JSON.stringify(o.gridCellHeights);
 o.handleKey(key('z', {metaKey: true})); const afterUndo = Object.keys(o.gridCellHeights).length;
 o.handleKey(key('z', {metaKey: true, shiftKey: true})); const afterRedo = JSON.stringify(o.gridCellHeights);
 console.log(JSON.stringify({col, undoN: o.undoHistory.length, afterUndo, same: afterRedo === snap || afterRedo === '{}'}));
-""")
+""" % (_delta_step(0), _delta_step(1)))
     col = out["col"]
     assert col[0] == 0 and col[-1] == 1 and col == sorted(col)
     assert any(0 < v < 1 for v in col) and all(_is_tenth(v) for v in col)   # fractional values were stored

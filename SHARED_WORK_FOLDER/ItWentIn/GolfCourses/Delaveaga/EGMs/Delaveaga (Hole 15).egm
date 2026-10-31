@@ -349,5 +349,6 @@
   "tee_hole": {
     "x_mm": 40,
     "y_mm": 40
-  }
+  },
+  "gridResolution": 40
 }

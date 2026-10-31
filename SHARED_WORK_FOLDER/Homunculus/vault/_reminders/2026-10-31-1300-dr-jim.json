@@ -1,0 +1,53 @@
+{
+  "event_id": "2026-10-31-1300-dr-jim",
+  "schedule": [
+    {
+      "event_id": "2026-10-31-1300-dr-jim",
+      "kind": "heads_up_30",
+      "fire_at": "2026-10-31T12:30:00-04:00",
+      "tz": "America/New_York",
+      "body": "In 30 minutes: Dr. Jim at 1:00 PM.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-31-1300-dr-jim",
+      "kind": "pre_5",
+      "fire_at": "2026-10-31T12:55:00-04:00",
+      "tz": "America/New_York",
+      "body": "5 minutes: Dr. Jim at 1:00 PM.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-31-1300-dr-jim",
+      "kind": "strike_0",
+      "fire_at": "2026-10-31T13:00:00-04:00",
+      "tz": "America/New_York",
+      "body": "Dr. Jim is starting now. Tap OK when you see this.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-31-1300-dr-jim",
+      "kind": "strike_5",
+      "fire_at": "2026-10-31T13:05:00-04:00",
+      "tz": "America/New_York",
+      "body": "Still on? Dr. Jim started 5 minutes ago. Tap OK.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-31-1300-dr-jim",
+      "kind": "strike_10",
+      "fire_at": "2026-10-31T13:10:00-04:00",
+      "tz": "America/New_York",
+      "body": "Reminder: Dr. Jim \u2014 10 minutes ago. Tap OK.",
+      "status": "pending"
+    },
+    {
+      "event_id": "2026-10-31-1300-dr-jim",
+      "kind": "strike_15",
+      "fire_at": "2026-10-31T13:15:00-04:00",
+      "tz": "America/New_York",
+      "body": "Final reminder. Dr. Jim. Tap OK or I'll log it as missed.",
+      "status": "pending"
+    }
+  ]
+}
