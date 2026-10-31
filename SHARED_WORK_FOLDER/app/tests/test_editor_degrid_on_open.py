@@ -40,12 +40,12 @@ def _run(pending, view, response):
 const fetched = [];
 globalThis.fetch = (url, opts) => { fetched.push(url); return Promise.resolve({json: () => Promise.resolve(%s)}); };
 const o = {selectedImage: 'a.png', selectedImageCourse: 'C', degridUrls: null, imageView: %s, imgLoaded: true,
-  _pendingDegrid: %s, nowLoads: 0, _loadImageNow() { this.nowLoads++; }};
+  _pendingDegrid: %s, _degridTabId: 't', _degridHeld: null, nowLoads: 0, _loadImageNow() { this.nowLoads++; }};
 const M = {%s};
 for (const k in M) Object.defineProperty(o, k, Object.getOwnPropertyDescriptor(M, k));
 o.loadImage();
 setTimeout(() => console.log(JSON.stringify({fetched, urls: o.degridUrls, view: o.imageView, loads: o.nowLoads})), 20);
-""" % (json.dumps(response), json.dumps(view), json.dumps(pending), _method("loadImage"))
+""" % (json.dumps(response), json.dumps(view), json.dumps(pending), _method("loadImage") + "," + _method("_requestDegrid") + "," + _method("releaseDegrid"))
     out = subprocess.run([node, "-e", js], capture_output=True, text=True)
     assert out.returncode == 0, out.stderr
     return json.loads(out.stdout.strip().splitlines()[-1])

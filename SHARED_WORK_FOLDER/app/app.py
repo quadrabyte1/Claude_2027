@@ -12,6 +12,7 @@ from datetime import datetime, date
 from pathlib import Path
 
 import heatmap_degrid
+import degrid_cleanup
 import dependency_preflight
 from dotenv import load_dotenv
 
@@ -26,7 +27,7 @@ app = Flask(__name__)
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "db", "workspace.db")
 
-APP_VERSION = "v6.14"  # unified version for all main-app pages, shown in every sticky footer
+APP_VERSION = "v6.17"  # unified version for all main-app pages, shown in every sticky footer
 
 # Tier -> concrete model (single source of truth for Team page + Dashboard).
 # Keep in sync with the mapping in team/README.md.
@@ -96,6 +97,7 @@ STATUS_ERROR = "error"
 ROUTE_EDITOR = "/editor"
 ROUTE_API_TASKS_RUNNING_COUNT = "/api/tasks/running_count"   # editor: API_RUNNING_TASKS_COUNT
 ROUTE_API_DEGRID_IMAGE = "/api/degrid_image"
+ROUTE_API_DEGRID_RELEASE = "/api/degrid_release"      # editor: DEGRID_RELEASE_URL (v6.15 cleanup)
 ROUTE_API_IMAGES = "/api/images"                             # editor: API_IMAGES
 ROUTE_API_COURSES = "/api/courses"                           # editor: API_COURSES
 ROUTE_TEAM_INBOX = "/team_inbox/<path:filename>"             # editor: IMAGE_URL_TEAM_INBOX (prefix)
@@ -167,6 +169,8 @@ KEY_WARNINGS = "warnings"
 KEY_FOUND = "found"
 KEY_ORIGINAL_URL = "originalUrl"
 KEY_DEGRIDDED_URL = "degriddedUrl"
+KEY_TAB_ID = "tabId"                   # degrid_image / degrid_release: which editor tab (multi-tab safety)
+KEY_REASON = "reason"
 KEY_GPS_BACKEND = "gpsBackend"
 KEY_GPS_ENABLED = "enabled"
 KEY_GPS_FILE = "gpsFile"
@@ -1264,6 +1268,7 @@ def degrid_image():
     if original_url is None:
         return jsonify({KEY_STATUS: STATUS_OK, KEY_FOUND: False, KEY_ORIGINAL_URL: None, KEY_DEGRIDDED_URL: None})
     out_path = heatmap_degrid.degridded_path(img_path)
+    degrid_cleanup.TRACKER.touch(out_path, data.get(KEY_TAB_ID, ""))   # v6.15: this tab now holds the copy
     # cache is reused only if newer than the source AND stamped with the current algorithm version
     fresh = heatmap_degrid.cache_is_fresh(img_path, out_path)
     if not fresh:
@@ -1272,6 +1277,34 @@ def degrid_image():
             return jsonify({KEY_STATUS: STATUS_OK, KEY_FOUND: False, KEY_ORIGINAL_URL: original_url, KEY_DEGRIDDED_URL: None})
     return jsonify({KEY_STATUS: STATUS_OK, KEY_FOUND: True, KEY_ORIGINAL_URL: original_url,
                     KEY_DEGRIDDED_URL: _image_url_for_path(out_path)})
+
+
+def _degrid_allowed_dirs():
+    """Folders in which a generated degridded PNG may live (and be deleted): every course Images/ + team_inbox."""
+    dirs = [os.path.abspath(_TEAM_INBOX)]
+    if os.path.isdir(_EGM_BASE):
+        for entry in os.listdir(_EGM_BASE):
+            dirs.append(os.path.abspath(os.path.join(_EGM_BASE, entry, COURSE_SUBDIR_IMAGES)))
+    return dirs
+
+
+@app.route(ROUTE_API_DEGRID_RELEASE, methods=[METHOD_POST])
+def degrid_release():
+    """v6.15: the editor no longer needs the degridded copy of an image -> delete it if safe.
+
+    Body: {"image": filename, "imageCourse": course, "tabId": id}.  The client never names a path: the
+    copy is derived from the ORIGINAL image's resolved path, then must pass degrid_cleanup's guard
+    (strict name, not a symlink, inside an allowed Images folder, stamped by heatmap_degrid) and no other
+    live tab / running Generate may need it.  The original image is never deleted.  Always replies 200.
+    """
+    data = request.get_json(silent=True, force=True) or {}
+    image_name = data.get(KEY_IMAGE, "")
+    img_path = _find_image_path(image_name, preferred_course=data.get(KEY_IMAGE_COURSE, "")) if image_name else None
+    if img_path is None:
+        return jsonify({KEY_STATUS: STATUS_OK, KEY_REASON: degrid_cleanup.R_MISSING})
+    reason = degrid_cleanup.TRACKER.release(
+        heatmap_degrid.degridded_path(img_path), data.get(KEY_TAB_ID, ""), _degrid_allowed_dirs())
+    return jsonify({KEY_STATUS: STATUS_OK, KEY_REASON: reason})
 
 
 def _collect_course_images():
@@ -2155,6 +2188,12 @@ def api_dependencies():
 
 @app.route(ROUTE_API_GENERATE_MODELS, methods=[METHOD_POST])
 def generate_models():
+    """v6.15: a running Generate pins every degridded copy (cleanup waits until it finishes)."""
+    with degrid_cleanup.TRACKER.generate_guard():
+        return _generate_models_impl()
+
+
+def _generate_models_impl():
     """Run the full gradient surface pipeline for a course/hole.
 
     Expects JSON: {"course": "<course name>", "hole": "<hole number>", ...}
@@ -3263,6 +3302,8 @@ if __name__ == "__main__":
             print("[startup] WARNING: " + _dep_status["message"])
     except Exception as _dep_exc:
         print(f"[startup] Dependency check itself failed: {_dep_exc}")
+    # v6.15: remove orphaned degridded PNGs left by crashed/killed tabs (now, then hourly).
+    degrid_cleanup.start_sweeper(_degrid_allowed_dirs)
     # use_reloader explicit so edits pick up regardless of how the process is launched.
     # debug=False avoids Werkzeug's DebuggedApplication wrapper, which creates a
     # multiprocessing.Value POSIX semaphore that leaked after ~16h and deadlocked

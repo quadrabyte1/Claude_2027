@@ -38,8 +38,10 @@ def test_one_cell_gets_first_and_descending_ramp():
 
 
 @pytest.mark.skipif(not node, reason="node not installed")
-def test_rounded_to_tenth_and_clamped_by_mode():
-    assert [p[1] for p in _run([1, 2, 3, 4], 0, 1)] == [0, 0.3, 0.7, 1]
+def test_rounded_to_store_step_and_clamped_by_mode():
+    # v6.17: ramp values are stored at GRID_VALUE_STORE_STEP (0.01; was 0.1)
+    step = C.value("GRID_VALUE_STORE_STEP")
+    assert [p[1] for p in _run([1, 2, 3, 4], 0, 1)] == [0, round(round(1 / 3 / step) * step, 2), round(round(2 / 3 / step) * step, 2), 1]
     assert [p[1] for p in _run([1, 2], 25, 40, "absolute")] == [25, 30]
     assert [p[1] for p in _run([1, 2], -30, 30, "delta")] == [-20, 20]
     assert [p[1] for p in _run([1, 2], -5, 5, "absolute")] == [0, 5]
@@ -106,7 +108,7 @@ def test_undo_ramp_fill_and_label_and_absolute_mode():
       o._gridRampFirst='3'; o._gridRampLast='10'; o.commitGridRamp();
       const mid = JSON.stringify(o.gridCellHeights); const label = o.undoHistory[0].label; o.undo();
       console.log(JSON.stringify({mid, label, back:o.gridCellHeights}));""")
-    assert json.loads(r["mid"]) == {"1": 3, "2": 5, "5": 5.3, "6": 7.7, "7": 10}
+    assert json.loads(r["mid"]) == {"1": 3, "2": 5, "5": 5.33, "6": 7.67, "7": 10}   # v6.17: 0.01 store step
     assert r["label"] == "ramp fill (4 cells)"
     assert r["back"] == {"1": 2, "2": 5}
 

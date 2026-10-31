@@ -131,7 +131,7 @@ const o = {
   degridUrls: {}, _imgSrcKey: 'k', imageView: DEGRID_VIEW_HIDE, _pendingDetect: true, _pendingDegrid: true,
   showNewDialog: true, showOpenDialog: true, selectedOpenProject: {}, initialEgmPath: '/tmp/a.egm', lassoPts: null, rubberBand: false,
   $refs: {canvas: {style: {cursor: 'x'}, width: 5, height: 5, getContext() { return {clearRect() { calls.push(['clear']); }}; }}},
-  flashes: [], flash(m, ok) { this.flashes.push([m, ok]); }, flashDismiss() {}, applyPaintCursor() {}, saves: 0,
+  flashes: [], flash(m, ok) { this.flashes.push([m, ok]); }, flashDismiss() {}, applyPaintCursor() {}, releaseDegrid() {}, saves: 0,
   async autoSave() { calls.push(['autoSave']); return %s; }, draw() {},
 };
 const M = {%s};
@@ -316,7 +316,7 @@ console.log(JSON.stringify(gridClipTargets(parsed, 105, 20).map(t => t[1])));
 """)
     assert r == [1.2, 0, 2.5, None]
     paste = _method("applyGridPattern")
-    assert "roundMm(" in paste                                       # clipboard text from outside is rounded on store
+    assert "roundGridValue(" in paste                                       # clipboard text from outside is rounded on store
 
 
 def test_label_hover_and_canvas_use_the_same_one_decimal_formatter():

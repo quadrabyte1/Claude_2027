@@ -88,7 +88,7 @@ def _abs_step(mm):
 
 def _fmt(v, signed):
     t = ("%g" % v)
-    return ("+" + t) if (signed and v > 0) else t
+    return t  # v6.16: palette labels carry no "+" prefix (signed kept for call-site compatibility)
 
 
 def test_palette_has_half_steps_plus_eraser_with_labels_per_mode():
@@ -106,7 +106,7 @@ def test_palette_has_half_steps_plus_eraser_with_labels_per_mode():
     assert r["n"] == n == C.value("PALETTE_STEP_COUNT") and len(r["steps"]) == n and r["steps"][0] == n - 1 and r["steps"][-1] == 0
     dvals = [dhi - k * step for k in range(n)]
     assert r["delta"] == [_fmt(v, True) for v in dvals]                       # +15 (top) .. -15 (bottom), half steps as +1.5
-    assert any(x.endswith(".5") for x in r["delta"]) and "+1.5" in r["delta"] and "-1.5" in r["delta"] and "0.5" not in "".join(x for x in r["delta"] if x == "0")
+    assert any(x.endswith(".5") for x in r["delta"]) and "1.5" in r["delta"] and "-1.5" in r["delta"] and "0.5" not in "".join(x for x in r["delta"] if x == "0")
     assert r["side"] == [x if float(x) == int(float(x)) else "" for x in r["delta"]]   # side strip: whole steps only
     assert r["abs"] == [_fmt(ahi - k * step, False) for k in range(n)]
     assert r["vals"] == [dhi, dlo + step, dlo, ahi, alo]
