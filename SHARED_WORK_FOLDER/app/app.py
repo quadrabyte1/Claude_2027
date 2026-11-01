@@ -14,6 +14,7 @@ from pathlib import Path
 import heatmap_degrid
 import degrid_cleanup
 import dependency_preflight
+from generation_id import make_generation_id
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent / ".env")
@@ -27,7 +28,7 @@ app = Flask(__name__)
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "db", "workspace.db")
 
-APP_VERSION = "v6.17"  # unified version for all main-app pages, shown in every sticky footer
+APP_VERSION = "v6.18"  # unified version for all main-app pages, shown in every sticky footer
 
 # Tier -> concrete model (single source of truth for Team page + Dashboard).
 # Keep in sync with the mapping in team/README.md.
@@ -164,6 +165,7 @@ KEY_CONTOURS = "contours"
 KEY_PRINT_SIZE_MM = "print_size_mm"
 KEY_FRINGE_XY_EXPANSION_MM = "fringe_xy_expansion_mm"
 KEY_SLICER_OPENED = "slicer_opened"
+KEY_GENERATION_ID = "generation_id"     # API: per-run ID that names the output 3MF
 KEY_SLICER_ERROR = "slicer_error"
 KEY_WARNINGS = "warnings"
 KEY_FOUND = "found"
@@ -2202,7 +2204,7 @@ def _generate_models_impl():
     Returns:
         {KEY_STATUS: STATUS_OK, "file": {"name": ..., "path": ..., "type": "3mf"}}
     """
-    # v5.75: dependency preflight BEFORE importing the pipeline, burning a serial,
+    # v5.75: dependency preflight BEFORE importing the pipeline, creating a generation ID,
     # or doing any heavy work. Missing packages stop generation with a clear message.
     try:
         dependency_preflight.check_dependencies()
@@ -2266,7 +2268,7 @@ def _generate_models_impl():
     print(f"[generate_models] EGM path:        {egm_path}")
 
     # ── GPS backend pre-check ─────────────────────────────────────────────────
-    # Read the EGM to inspect gpsBackend before committing a serial number.
+    # Read the EGM to inspect gpsBackend before starting the run.
     # Fail fast with a 400 + helpful message if GPS prereqs are not satisfied.
     import json as _json
     try:
@@ -2279,14 +2281,11 @@ def _generate_models_impl():
     if not _gps_ok:
         return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: _gps_err}), HTTP_BAD_REQUEST
 
-    # ── Commit global serial at click time ───────────────────────────────────
-    # The serial is burned here, BEFORE calling into the pipeline, so that:
-    #  (a) The filename reflects this exact Generate press.
-    #  (b) Even a pipeline failure leaves the counter advanced (serials are
-    #      cheap; we never reuse one, even on error).
-    from serial_engraver import commit_global_serial as _commit_global_serial
-    _serial = _commit_global_serial()
-    print(f"[generate_models] Global serial:   {_serial}")
+    # ── One generation ID per Generate click ─────────────────────────────────
+    # year.month.date.hour24.minute.second.username — names this run's output
+    # file; no shared counter or state file is involved.
+    _generation_id = make_generation_id()
+    print(f"[generate_models] Generation ID:   {_generation_id}")
 
     try:
         three_mf_path = run_pipeline(
@@ -2294,17 +2293,17 @@ def _generate_models_impl():
             include_boundary_region=include_boundary_region,
             apply_fringe_frame_cap=apply_fringe_frame_cap,
             include_fringe_without_grass=include_fringe_without_grass,
-            serial=_serial,
+            generation_id=_generation_id,
         )
     except Exception as exc:
         return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: str(exc)}), HTTP_SERVER_ERROR
 
-    # run_pipeline returns the absolute path with serial in the filename.
+    # run_pipeline returns the absolute path with the generation ID in the filename.
     # If for any reason it returns None (old callers), fall back to the plain name.
     if three_mf_path and os.path.exists(three_mf_path):
         three_mf_name = os.path.basename(three_mf_path)
     else:
-        # Fallback: old-style name without serial (file may not exist yet)
+        # Fallback: plain name without the ID (file may not exist yet)
         three_mf_name = THREE_MF_FILENAME_FMT.format(course=course, hole_label=hole_label)
         three_mf_dir = os.path.abspath(os.path.join(_EGM_BASE, course, COURSE_SUBDIR_3MFS))
         three_mf_path = os.path.join(three_mf_dir, three_mf_name)
@@ -2354,6 +2353,7 @@ def _generate_models_impl():
 
     import gradient_surface_diagnostic as _gsd
     return jsonify({KEY_STATUS: STATUS_OK, KEY_FILE: result,
+                    KEY_GENERATION_ID: _generation_id,
                     KEY_SLICER_OPENED: slicer_opened, KEY_SLICER_ERROR: slicer_error,
                     KEY_WARNINGS: list(_gsd.PIPELINE_WARNINGS)})
 

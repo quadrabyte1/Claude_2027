@@ -319,6 +319,8 @@ from scipy.ndimage import gaussian_filter, uniform_filter, median_filter
 from scipy.interpolate import splprep, splev
 import trimesh
 from dependency_preflight import check_dependencies, MissingDependencyError
+from generation_id import make_generation_id, FILENAME_ID_BRACKET_FMT
+from fringe_label_engraver import engrave_fringe_label, label_from_filename
 from shapely.geometry import Polygon as ShapelyPolygon, box as shapely_box, MultiPolygon as ShapelyMultiPolygon
 from skimage import measure
 
@@ -489,6 +491,7 @@ LOG_TAG_TPS: str = "[TPS]"
 LOG_TAG_TPS_GRID: str = "[TPS-grid]"
 LOG_TAG_GREEN_CARVE: str = "[green_carve]"
 LOG_TAG_GENERATE: str = "[generate]"
+OUTPUT_3MF_FILENAME_FMT: str = "{course} (Hole {hole_label}) {id_tag}.3mf"   # e.g. "Delaveaga (Hole 11) [2026.11.01.14.05.09.jgreen].3mf"
 LOG_TAG_CONFIG: str = "[config]"
 
 # ---------------------------------------------------------------------------
@@ -1099,7 +1102,7 @@ def _prepare_egm_geometry(data: dict, green_poly: dict) -> np.ndarray:
         # (well under the printer's XY resolution). This keeps the curve
         # visually identical while dropping vertex count ~20-40×. Without
         # this, the trap slab produces thousands of near-degenerate wall
-        # triangles that break as non-manifold during serial engraving.
+        # triangles that break as non-manifold during label engraving.
         try:
             from shapely.geometry import LinearRing as _LR
             _ring = _LR(_dense)
@@ -1887,7 +1890,7 @@ BASE_THICKNESS_MM: float = 1.5    # flat base below lowest point
 # from the fringe Z math (task 483) — the fringe now holds green-edge Z flat
 # all the way to the frame instead of ramping to a per-hole rectangle-edge
 # target. The EGM key is intentionally preserved on-disk for backward
-# compatibility with existing .egm / serial.json files.
+# compatibility with existing .egm files.
 N_CONTOUR_LEVELS: int = 27        # steps for quantized surface
 
 # Signed XY offset applied to the fringe outer bbox.
@@ -10740,7 +10743,7 @@ def run_pipeline(
     include_boundary_region: bool | None = None,
     apply_fringe_frame_cap: bool | None = None,
     include_fringe_without_grass: bool | None = None,
-    serial: int | None = None,
+    generation_id: str | None = None,
 ) -> str:
     """Run the full gradient surface pipeline for a given EGM file path.
 
@@ -10770,10 +10773,11 @@ def run_pipeline(
         generated with the grassy fringe.  When None, fall back to the
         ``includeFringeWithoutGrass`` flag persisted inside the EGM file
         (missing → False).
-    serial : int | None, optional
-        Global serial number for this generate run.  Obtained by the caller
-        via ``commit_global_serial()`` BEFORE calling run_pipeline.  When
-        None, the serial is omitted from the filename.
+    generation_id : str | None, optional
+        ``year.month.date.hour24.minute.second.username`` identifier for this
+        Generate run (see ``generation_id.make_generation_id``).  The caller
+        builds it once per run; when None, a fresh one is made here.  It is
+        used in the output 3MF filename and the diagnostic image names.
 
     Returns the absolute path to the generated .3mf file.
     """
@@ -11038,7 +11042,9 @@ def run_pipeline(
 
     # ── 5. Save diagnostic images → owner_inbox/diagnostics/ (not course Images/) ──
     _diag_paths: list[str] = []
-    _diag_tag = f"[{serial}]" if serial is not None else __import__("time").strftime("%Y%m%d-%H%M%S")
+    if generation_id is None:
+        generation_id = make_generation_id()
+    _diag_tag = FILENAME_ID_BRACKET_FMT.format(generation_id=generation_id)
 
     def _save_diag(kind, fn, *a):
         if not SAVE_DIAGNOSTIC_IMAGES:
@@ -11517,16 +11523,12 @@ def run_pipeline(
     # ── 10. Assemble 3MF ────────────────────────────────────────────────────
     print("\n[10] Assembling 3MF…")
 
-    # ── 10b. Build filename with global serial ───────────────────────────────
-    # The serial was committed by the caller (Flask route or CLI) before entering
-    # the pipeline.  We simply use the value that was passed in.
-    from serial_engraver import engrave_scene_geometries as _engrave_scene
-    serial_number = serial   # may be None if caller didn't provide one
+    # ── 10b. Build filename with the per-run generation ID ───────────────────
+    # The ID was built once by the caller (Flask route or CLI) for this run.
     hole_label = str(hole).zfill(2) if str(hole).isdigit() else str(hole)
-    if serial_number is not None:
-        fname_3mf = f"{course} (Hole {hole_label}) [{serial_number}].3mf"
-    else:
-        fname_3mf = f"{course} (Hole {hole_label}).3mf"
+    fname_3mf = OUTPUT_3MF_FILENAME_FMT.format(
+        course=course, hole_label=hole_label,
+        id_tag=FILENAME_ID_BRACKET_FMT.format(generation_id=generation_id))
     path_3mf = os.path.abspath(os.path.join(_3mf_dir, fname_3mf))
     print(f"    {LOG_TAG_GENERATE} output 3MF file:     {path_3mf}")
 
@@ -11569,18 +11571,17 @@ def run_pipeline(
     # Plate-2 smooth fringe sample (task 724) — added AFTER all plate-1 objects so
     # its object ID (N+1) is highest, and the injection function maps it to plate 2.
     # The name "fringe_no_grass_sample" routes to extruder 2 via _filament_for_scene_name
-    # ("fringe" prefix).  Serial engraving is NOT applied to the sample (it's a
-    # smooth-surface reference piece, not a serialised plaque).
+    # ("fringe" prefix).  The label engraving is NOT applied to the sample (its node
+    # name differs from the fringe's).
     # Only present when include_fringe_without_grass=True.
     if isinstance(fringe_no_grass_sample, trimesh.Trimesh):
         scene.add_geometry(fringe_no_grass_sample, node_name=SCENE_NAME_FRINGE_NO_GRASS_SAMPLE)
         scene_names.append(SCENE_NAME_FRINGE_NO_GRASS_SAMPLE)
         print(f"  Plate-2 smooth fringe sample (no grass) added to scene.")
 
-    print(f"\n[10b] Engraving serial s/n: {serial_number} on {len(scene_names)} item(s)…")
-    # Fringe also gets the file name (minus serial/extension) as a 2nd line.
-    from serial_engraver import label_from_filename as _label_from_fname
-    _engrave_scene(scene, serial_number, fringe_label=_label_from_fname(fname_3mf))
+    # Course/hole-name label on the fringe only (no serial text is engraved).
+    print(f"\n[10b] Engraving fringe label…")
+    engrave_fringe_label(scene, label_from_filename(fname_3mf))
 
     # Repair pass: collapse float-ops slivers and dedupe before manifold check.
     for _node_name, _m in scene.geometry.items():
@@ -11652,11 +11653,7 @@ def run_pipeline(
     except Exception as exc:
         print(f"  WARNING: failed to inject extruder metadata: {exc}")
 
-    # ── 10c. Serial was already committed by the caller before run_pipeline. ──
-    # Nothing to do here — the global counter was incremented at the Generate
-    # click (Flask route or CLI entrypoint) before we were called.
-    if serial_number is not None:
-        print(f"  Serial used: s/n {serial_number} (committed by caller)")
+    print(f"  Generation ID: {generation_id}")
 
     print("\n" + LOG_RULE)
     print("Done.")
@@ -11672,11 +11669,10 @@ def run_pipeline(
 def main() -> None:
     search = sys.argv[1] if len(sys.argv) > 1 else "Moffett"
     egm_path = find_egm(search)
-    # Burn a global serial — running the CLI is another form of pressing Generate.
-    from serial_engraver import commit_global_serial as _commit_global
-    _cli_serial = _commit_global()
-    print(f"[gradient_surface_diagnostic] Global serial: {_cli_serial}")
-    run_pipeline(egm_path, serial=_cli_serial)
+    # Running the CLI is another form of pressing Generate: one ID per run.
+    _cli_generation_id = make_generation_id()
+    print(f"[gradient_surface_diagnostic] Generation ID: {_cli_generation_id}")
+    run_pipeline(egm_path, generation_id=_cli_generation_id)
 
 
 if __name__ == "__main__":

@@ -1,53 +1,33 @@
 """
-serial_engraver.py — Global serial-number engraving for generated 3MF items.
+fringe_label_engraver.py — course/hole-name label engraving on the fringe piece.
 
-A single global counter (app/global_serial.json) increments on every Generate
-click, regardless of course or hole.  Serial numbers are cheap; burning one on
-a failed generate is fine.  Filenames still carry course+hole context, so
-serial + filename together uniquely identify any print.
+The old serial-number engraving (``s/n: NNN`` on every piece, driven by
+``app/global_serial.json``) has been removed: the per-run generation ID
+(see ``generation_id.py``) is too long to engrave and now lives only in the
+output filename.
 
-Text format: ``s/n: NNN`` (e.g. ``s/n: 1042``)
-Font size  : 8 point (1 pt = 1/72 inch ≈ 0.3528 mm)
-Depth      : 1 mm recessed into the back face
+What remains is the single-line course/hole label (e.g. ``Delaveaga H5f``)
+cut into the back face of the ``fringe`` scene node only.
 
-Global counter is persisted at ``app/global_serial.json`` with the shape
-``{"next_serial": 1001}`` and is written atomically (tmp + os.replace) so a
-crash mid-generate never corrupts it.
-
-Public API (v2):
-    peek_next_global_serial() -> int
-        Read (without advancing) the serial that would be used next.
-    commit_global_serial() -> int
-        Atomically increment the counter and return the value just used.
-        Call this at the TOP of every Generate handler, before calling into
-        the pipeline.  Never call it inside the pipeline itself.
-    engrave_serial_on_mesh(mesh, serial_number, ...) -> trimesh.Trimesh
-        Return a new mesh with ``s/n: NNN`` carved 1 mm deep into the back
-        (z ≈ 0) face.  Unchanged from v1.
-    engrave_scene_geometries(scene, serial_number) -> None
-        In-place: engrave every geometry in a trimesh.Scene.  Unchanged.
-
-Deprecated shims (remove in v0.2 after full audit):
-    peek_next_serial(course) -> int
-        Logs DeprecationWarning; routes to peek_next_global_serial().
-    commit_serial(course) -> int
-        Logs DeprecationWarning; routes to commit_global_serial().
+Public API:
+    label_from_filename(path) -> Optional[str]
+    build_label_text_mesh(label, ...) -> trimesh.Trimesh
+    engrave_label_on_mesh(mesh, label, ...) -> trimesh.Trimesh
+    engrave_fringe_label(scene, label) -> dict
 """
 
 from __future__ import annotations
 
-import json
 import os
-import threading
-import warnings
+import re
 from typing import Optional
 
 import numpy as np
 import trimesh
 
-# Re-use the robust TextPath → polygon → extrude pipeline from plate_text.py.
-# Only the *mesh builder* is reused; sizing here is driven by point-size
-# instead of cap-height because a serial number is a fixed-size engraving.
+from generation_id import strip_generation_id_tag
+
+# Re-use the robust TextPath -> polygon -> extrude pipeline from plate_text.py.
 try:
     from plate_text import render_text_mesh as _plate_render_text_mesh
 except ImportError:
@@ -59,223 +39,62 @@ except ImportError:
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
-# --- Global counter (v2) ---
-# Higher than any existing per-course serial (~252 max as of 2026-09-21),
-# so old and new serials are immediately distinguishable at a glance.
-STARTING_GLOBAL_SERIAL: int = 1000
-GLOBAL_SERIAL_FILENAME: str = "global_serial.json"
-# Resolved at import time; patched to a tmp path during tests.
-GLOBAL_SERIAL_PATH: str = os.path.join(os.path.dirname(__file__), GLOBAL_SERIAL_FILENAME)
-
-# Thread-safety lock for the global counter
-_GLOBAL_SERIAL_LOCK = threading.Lock()
-
-# --- Per-course counter (v1, deprecated) ---
-STARTING_SERIAL: int = 100
-SERIAL_FILENAME: str = "serial.json"
-
 # Engraving geometry
 ENGRAVE_DEPTH_MM: float = 1.0           # 1 mm relief
 ENGRAVE_FONT_PT: float = 8.0            # 8 point type
-PT_TO_MM: float = 25.4 / 72.0           # 1 pt ≈ 0.3528 mm
+PT_TO_MM: float = 25.4 / 72.0           # 1 pt ~ 0.3528 mm
 ENGRAVE_FONT_FAMILY: str = "DejaVu Sans"
 ENGRAVE_BOLD: bool = True               # bold reads better as a relief
 # Relative offset (XY) from the part's back-face centroid, in mm.
-# (0, 0) keeps the engraving dead-centre on the back face.
 ENGRAVE_OFFSET_XY: tuple = (0.0, 0.0)
 
-# Fringe-only single line "<Course> H<hole>, <serial>" (tasks 544/547).
+# Fringe-only single line "<Course> H<hole>" (tasks 544/547).
 LABEL_MAX_WIDTH_MM: float = 56.0        # longer names shrink proportionally (8 pt kept up to here)
 LABEL_NODE_NAME: str = "fringe"         # only this scene node gets the label
+LABEL_HOLE_PREFIX: str = "H"
+LABEL_FILENAME_RE = re.compile(r"^(.+?)\s*\(\s*Hole\s+([^,)\s]+)[^)]*\)$", re.IGNORECASE)
+LABEL_FMT: str = "{course} " + LABEL_HOLE_PREFIX + "{hole}"
+CUTTER_BOTTOM_EPS_MM: float = 0.05      # cutter dips this far below the back face
+CUTTER_HALF_DEPTH_FRACTION: float = 0.5
+MIRROR_Y_AXIS_INDEX: int = 1
+LOG_TAG: str = "[fringe_label_engraver]"
 
 
 def label_from_filename(path) -> Optional[str]:
-    """``'/x/Delaveaga (Hole 5f) [1500].3mf'`` -> ``'Delaveaga H5f'``.
+    """``'/x/Delaveaga (Hole 5f) [2026.11.01.14.05.09.jgreen].3mf'`` -> ``'Delaveaga H5f'``.
 
     Course name + "H" + the first token inside ``(Hole ...)`` (text before any
-    comma; zero-padding/suffix kept).  ``'Stanford (Hole 8, 5396)'`` ->
-    ``'Stanford H8'`` (the extra token is discarded).  Returns None when there
-    is no name or no ``(Hole N)`` part, so the fringe falls back to serial-only.
+    comma; zero-padding/suffix kept).  A trailing ``[<generation id>]`` or
+    legacy ``[NNNN]`` tag is ignored.  Returns None when there is no name or
+    no ``(Hole N)`` part (the fringe then gets no label).
     """
-    import re
     if not path:
         return None
     base = os.path.splitext(os.path.basename(str(path)))[0]
-    base = re.sub(r"\s*\[\d+\]\s*$", "", base).strip()
-    m = re.match(r"^(.+?)\s*\(\s*Hole\s+([^,)\s]+)[^)]*\)$", base, re.IGNORECASE)
+    base = strip_generation_id_tag(base)
+    m = LABEL_FILENAME_RE.match(base)
     if not m:
         return None
-    return f"{m.group(1)} H{m.group(2)}"
+    return LABEL_FMT.format(course=m.group(1), hole=m.group(2))
 
 
-def fringe_text(serial_number: int, label: Optional[str]) -> str:
-    """Text engraved on the fringe: ``'Delaveaga H5f, 1500'`` or ``'s/n: 1500'``."""
-    if label:
-        return f"{label}, {int(serial_number)}"
-    return f"s/n: {int(serial_number)}"
-
-
-# ── Course path resolution ───────────────────────────────────────────────────
-
-def _course_dir(course: str) -> str:
-    """Resolve a course's root directory under ItWentIn/GolfCourses/.
-
-    Falls back to owner_inbox/ if the course directory doesn't exist (e.g. a
-    test run with an unknown course name).
-    """
-    from generate_stl_3mf import EGM_BASE, OWNER_INBOX
-    candidate = os.path.join(EGM_BASE, course)
-    if os.path.isdir(candidate):
-        return candidate
-    # Fallback: per-course subdir under owner_inbox/ so counters are still
-    # persisted somewhere deterministic and not colliding with other courses.
-    fallback = os.path.join(OWNER_INBOX, "_serials", course or "unknown")
-    os.makedirs(fallback, exist_ok=True)
-    return fallback
-
-
-def _serial_path(course: str) -> str:
-    return os.path.join(_course_dir(course), SERIAL_FILENAME)
-
-
-# ── Counter read / write ─────────────────────────────────────────────────────
-
-def _read_counter(path: str) -> int:
-    """Read ``next_serial`` from disk; return STARTING_SERIAL if absent/corrupt."""
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        val = int(data.get("next_serial", STARTING_SERIAL))
-        if val < STARTING_SERIAL:
-            val = STARTING_SERIAL
-        return val
-    except (FileNotFoundError, json.JSONDecodeError, ValueError, TypeError):
-        return STARTING_SERIAL
-
-
-def _write_counter(path: str, next_serial: int) -> None:
-    """Atomically persist ``next_serial`` to the course's serial.json."""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"next_serial": int(next_serial)}, f, indent=2)
-        f.write("\n")
-    os.replace(tmp, path)
-
-
-# ── Global counter read / write ─────────────────────────────────────────────
-
-def _read_global_counter() -> int:
-    """Read ``next_serial`` from the global serial file.
-
-    Returns STARTING_GLOBAL_SERIAL if the file is absent or corrupt.
-    """
-    try:
-        with open(GLOBAL_SERIAL_PATH, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        val = int(data.get("next_serial", STARTING_GLOBAL_SERIAL))
-        if val < STARTING_GLOBAL_SERIAL:
-            val = STARTING_GLOBAL_SERIAL
-        return val
-    except (FileNotFoundError, json.JSONDecodeError, ValueError, TypeError):
-        return STARTING_GLOBAL_SERIAL
-
-
-def _write_global_counter(next_serial: int) -> None:
-    """Atomically persist ``next_serial`` to the global serial file."""
-    os.makedirs(os.path.dirname(os.path.abspath(GLOBAL_SERIAL_PATH)), exist_ok=True)
-    tmp = GLOBAL_SERIAL_PATH + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"next_serial": int(next_serial)}, f, indent=2)
-        f.write("\n")
-    os.replace(tmp, GLOBAL_SERIAL_PATH)
-
-
-def peek_next_global_serial() -> int:
-    """Return the serial that the next Generate call will use (no increment).
-
-    This is safe to call multiple times; it never advances the counter.
-    Useful for UI preview or logging.
-    """
-    return _read_global_counter()
-
-
-def commit_global_serial() -> int:
-    """Atomically increment the global counter; return the value just used.
-
-    Call at the TOP of every Generate handler (Flask route or CLI entrypoint),
-    before calling into the pipeline.  The pipeline receives the returned int
-    as an explicit argument — it must NOT call this function itself.
-
-    Thread-safe: uses a process-level lock so concurrent Flask workers can't
-    both see the same counter value.  For multi-process deployments an OS-level
-    file lock would be needed; single-process Werkzeug/gunicorn-with-threads is
-    the target here.
-    """
-    with _GLOBAL_SERIAL_LOCK:
-        used = _read_global_counter()
-        _write_global_counter(used + 1)
-        return used
-
-
-# ── Per-course counter (v1) — deprecated, shims only ───────────────────────
-
-def peek_next_serial(course: str) -> int:
-    """DEPRECATED — routes to peek_next_global_serial(); ignores `course`.
-
-    The per-course serial scheme was replaced by a single global counter in
-    September 2026 (task 562).  These shims exist so any lingering callers
-    surface a warning rather than breaking silently.  Remove in v0.2 after a
-    full caller audit.
-    """
-    warnings.warn(
-        "peek_next_serial(course) is deprecated; use peek_next_global_serial() instead. "
-        "The course argument is ignored.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return peek_next_global_serial()
-
-
-def commit_serial(course: str) -> int:
-    """DEPRECATED — routes to commit_global_serial(); ignores `course`.
-
-    See peek_next_serial() deprecation notice above.
-    """
-    warnings.warn(
-        "commit_serial(course) is deprecated; use commit_global_serial() instead. "
-        "The course argument is ignored.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return commit_global_serial()
-
-
-# ── Text mesh construction ───────────────────────────────────────────────────
-
-def _build_serial_text_mesh(
-    serial_number: int,
+def build_label_text_mesh(
+    label: str,
     depth_mm: float = ENGRAVE_DEPTH_MM,
     font_pt: float = ENGRAVE_FONT_PT,
     font_family: str = ENGRAVE_FONT_FAMILY,
     bold: bool = ENGRAVE_BOLD,
-    label: Optional[str] = None,
 ) -> trimesh.Trimesh:
-    """Build an extruded text mesh: ``s/n: NNN``, or, when ``label`` is given,
-    the single line ``<label>, NNN`` (fringe).
+    """Build an extruded single-line text mesh of ``label``.
 
-    Cap-height ≈ ``font_pt * PT_TO_MM`` (8 pt ≈ 2.82 mm).  The mesh is centred
-    on X=0, Y=0 and extrudes in +Z from z=0 to z=depth_mm.
+    Cap-height ~ ``font_pt * PT_TO_MM``.  The mesh is centred on X=0, Y=0 and
+    extrudes in +Z from z=0 to z=depth_mm.
     """
-    text = fringe_text(serial_number, label)
-    height_mm = float(font_pt) * PT_TO_MM
     return _plate_render_text_mesh(
-        text=text,
-        height_mm=height_mm,
+        text=label,
+        height_mm=float(font_pt) * PT_TO_MM,
         depth_mm=depth_mm,
-        # Plain serial: 40 mm cap (fits any trap).  Fringe line is longer, so
-        # allow more; render_text_mesh shrinks proportionally beyond the cap.
-        max_width_mm=LABEL_MAX_WIDTH_MM if label else 40.0,
+        max_width_mm=LABEL_MAX_WIDTH_MM,
         font_family=font_family,
         bold=bold,
         italic=False,
@@ -494,7 +313,7 @@ def _boolean_difference(a: trimesh.Trimesh, b: trimesh.Trimesh) -> Optional[trim
             return result
         if last is not None:
             # Surface the last error when all engines failed on this pass
-            print(f"[serial_engraver]   boolean.difference: all engines failed "
+            print(f"[fringe_label_engraver]   boolean.difference: all engines failed "
                   f"(last error: {last})")
         return None
 
@@ -532,7 +351,7 @@ def _engrave_by_vertex_push(
     This creates a recessed impression without a boolean operation.  It
     won't produce crisp glyph edges (resolution is limited by the existing
     triangulation), but it reliably marks non-manifold meshes with a visible
-    serial-number impression.
+    label impression.
 
     Returns a new mesh, or None if no back-face vertices could be found.
     """
@@ -574,7 +393,7 @@ def _engrave_by_vertex_push(
         trimesh.repair.fix_normals(new_mesh)
     except Exception:
         pass
-    print(f"[serial_engraver]   vertex-push fallback: pushed {moved} "
+    print(f"[fringe_label_engraver]   vertex-push fallback: pushed {moved} "
           f"back-face vertex(es) up by {depth_mm} mm")
     return new_mesh
 
@@ -627,7 +446,7 @@ def _engrave_by_plane_surgery(
     bot_mask = (np.abs(z_of_face_verts - z_min) < plane_tol).all(axis=1)
     n_bot = int(bot_mask.sum())
     if n_bot == 0:
-        print(f"[serial_engraver]   plane-surgery: no bottom faces at z={z_min:.3f} — abort")
+        print(f"[fringe_label_engraver]   plane-surgery: no bottom faces at z={z_min:.3f} — abort")
         return None
 
     bot_faces = faces[bot_mask]
@@ -643,7 +462,7 @@ def _engrave_by_plane_surgery(
 
     boundary_edges = [e for e, n in edge_count.items() if n == 1]
     if not boundary_edges:
-        print("[serial_engraver]   plane-surgery: no boundary edges found — abort")
+        print("[fringe_label_engraver]   plane-surgery: no boundary edges found — abort")
         return None
 
     # Build adjacency to trace loops
@@ -684,7 +503,7 @@ def _engrave_by_plane_surgery(
             loops_vidx.append(loop)
 
     if not loops_vidx:
-        print("[serial_engraver]   plane-surgery: failed to trace any loops — abort")
+        print("[fringe_label_engraver]   plane-surgery: failed to trace any loops — abort")
         return None
 
     # Convert vertex-index loops to XY polygons (drop the closing repeat if any)
@@ -723,7 +542,7 @@ def _engrave_by_plane_surgery(
         except Exception:
             continue
     if not raw_polys:
-        print("[serial_engraver]   plane-surgery: no valid bottom polygon — abort")
+        print("[fringe_label_engraver]   plane-surgery: no valid bottom polygon — abort")
         return None
 
     # Sort by area DESC; largest is the outer; everything strictly inside is
@@ -777,7 +596,7 @@ def _engrave_by_plane_surgery(
                     n_holes_after = sum(len(g.interiors) for g in pp.geoms
                                         if g.geom_type == "Polygon")
                 if n_holes_after != n_holes_before:
-                    print(f"[serial_engraver]   plane-surgery: WARNING outer #{i} "
+                    print(f"[fringe_label_engraver]   plane-surgery: WARNING outer #{i} "
                           f"holes {n_holes_before} → {n_holes_after} after validity "
                           f"repair; type={pp.geom_type}")
                 final.append(pp)
@@ -785,7 +604,7 @@ def _engrave_by_plane_surgery(
         except Exception:
             continue
     if not final:
-        print("[serial_engraver]   plane-surgery: final polygon assembly failed — abort")
+        print("[fringe_label_engraver]   plane-surgery: final polygon assembly failed — abort")
         return None
 
     bottom_poly = _uu(final)   # may be a MultiPolygon
@@ -796,7 +615,7 @@ def _engrave_by_plane_surgery(
         _bp_holes = len(bottom_poly.interiors)
     elif bottom_poly.geom_type == "MultiPolygon":
         _bp_holes = sum(len(g.interiors) for g in bottom_poly.geoms if g.geom_type == "Polygon")
-    print(f"[serial_engraver]   plane-surgery: bottom_poly type={bottom_poly.geom_type} "
+    print(f"[fringe_label_engraver]   plane-surgery: bottom_poly type={bottom_poly.geom_type} "
           f"holes={_bp_holes} area={bottom_poly.area:.1f} mm² "
           f"(from {len(final)} outer polys, {len(raw_polys)} raw)")
 
@@ -817,11 +636,11 @@ def _engrave_by_plane_surgery(
     # without preserving the 5 interior hole rings — producing 2 giant z=0
     # triangles spanning the full ±85.2 mm bed and re-plugging every trap
     # footprint. Vertex-push (return None) preserves the traps at the cost of
-    # losing serial engraving on the fringe bottom — acceptable per task 715
+    # losing the label engraving on the fringe bottom — acceptable per task 715
     # regression discipline (DeLaveaga #11 [200] shipped fine without fringe
-    # engraving; the serial is legible on green_surface + trap bottoms).
+    # engraving; the label is fringe-only now).
     if len(raw_polys) > 6 or _bp_holes < 3:
-        print(f"[serial_engraver]   plane-surgery: aborting — bottom loop count "
+        print(f"[fringe_label_engraver]   plane-surgery: aborting — bottom loop count "
               f"({len(raw_polys)} raw, {_bp_holes} holes preserved) exceeds "
               f"the classifier's reliable range. Falling back to vertex-push "
               f"to preserve trap/green cutouts (task 715, tightened 715 gate "
@@ -832,16 +651,16 @@ def _engrave_by_plane_surgery(
     text_union = _uu(text_polys_xy)
 
     # Clip text to the bottom polygon so we never carve past the part's
-    # footprint (e.g. if the serial centre is near an edge)
+    # footprint (e.g. if the label centre is near an edge)
     text_clipped = text_union.intersection(bottom_poly)
     if text_clipped.is_empty:
-        print("[serial_engraver]   plane-surgery: text doesn't land inside bottom — skipping engraving")
+        print("[fringe_label_engraver]   plane-surgery: text doesn't land inside bottom — skipping engraving")
         return None
 
     # New bottom face shape: bottom polygon minus text
     new_bottom = bottom_poly.difference(text_clipped)
     if new_bottom.is_empty:
-        print("[serial_engraver]   plane-surgery: bottom-minus-text empty — abort")
+        print("[fringe_label_engraver]   plane-surgery: bottom-minus-text empty — abort")
         return None
 
     # --- 3..5. Build replacement geometry via two small extrusions ---
@@ -864,7 +683,7 @@ def _engrave_by_plane_surgery(
 
     new_bottom_list = _as_polygon_list_outer(new_bottom)
     if not new_bottom_list:
-        print("[serial_engraver]   plane-surgery: new bottom polygon is empty — abort")
+        print("[fringe_label_engraver]   plane-surgery: new bottom polygon is empty — abort")
         return None
 
     try:
@@ -888,7 +707,7 @@ def _engrave_by_plane_surgery(
         bot_slab_verts = np.concatenate(bot_verts_list, axis=0)
         new_bot_faces = np.concatenate(bot_faces_list, axis=0)
     except Exception as exc:
-        print(f"[serial_engraver]   plane-surgery: new-bottom extrude failed: {exc}")
+        print(f"[fringe_label_engraver]   plane-surgery: new-bottom extrude failed: {exc}")
         return None
 
     # Helper: normalise text_clipped (Polygon or MultiPolygon) → list of Polygons
@@ -905,7 +724,7 @@ def _engrave_by_plane_surgery(
 
     text_polys_list = _as_polygon_list(text_clipped)
     if not text_polys_list:
-        print("[serial_engraver]   plane-surgery: text_clipped produced no polygons")
+        print("[fringe_label_engraver]   plane-surgery: text_clipped produced no polygons")
         return None
 
     # Pocket ceiling: extrude each text polygon as a zero-thin slab; keep
@@ -930,7 +749,7 @@ def _engrave_by_plane_surgery(
         new_pocket_faces = (np.concatenate(pocket_faces_list, axis=0)
                             if pocket_faces_list else np.zeros((0, 3), dtype=int))
     except Exception as exc:
-        print(f"[serial_engraver]   plane-surgery: pocket-ceiling extrude failed: {exc}")
+        print(f"[fringe_label_engraver]   plane-surgery: pocket-ceiling extrude failed: {exc}")
         return None
 
     # Walls: extrude each text polygon by depth_mm, keep side faces only.
@@ -958,7 +777,7 @@ def _engrave_by_plane_surgery(
         new_wall_faces = (np.concatenate(wall_faces_list, axis=0)
                           if wall_faces_list else np.zeros((0, 3), dtype=int))
     except Exception as exc:
-        print(f"[serial_engraver]   plane-surgery: wall extrude failed: {exc}")
+        print(f"[fringe_label_engraver]   plane-surgery: wall extrude failed: {exc}")
         return None
 
     # --- 6. Reassemble: original mesh minus old bottom faces, plus new pieces ---
@@ -975,7 +794,7 @@ def _engrave_by_plane_surgery(
     try:
         combined = trimesh.util.concatenate([m_remain, m_bot, m_ceil, m_walls])
     except Exception as exc:
-        print(f"[serial_engraver]   plane-surgery: concatenate failed: {exc}")
+        print(f"[fringe_label_engraver]   plane-surgery: concatenate failed: {exc}")
         return None
 
     # Merge close vertices so the new bottom edges stitch into the walls
@@ -1004,7 +823,7 @@ def _engrave_by_plane_surgery(
             _drop = [c for c in _comps if len(c.faces) <= _MICRO_FACE_LIMIT]
             if _drop:
                 _n_dropped = sum(len(c.faces) for c in _drop)
-                print(f"[serial_engraver]   plane-surgery: dropped {len(_drop)} "
+                print(f"[fringe_label_engraver]   plane-surgery: dropped {len(_drop)} "
                       f"micro-component(s) ({_n_dropped} faces ≤ "
                       f"{_MICRO_FACE_LIMIT}) — text-pocket carve stragglers; "
                       f"kept {len(_keep)} main + secondary bodies")
@@ -1013,26 +832,27 @@ def _engrave_by_plane_surgery(
                 elif len(_keep) > 1:
                     combined = trimesh.util.concatenate(_keep)
     except Exception as _exc_split:
-        print(f"[serial_engraver]   plane-surgery: component cleanup skipped ({_exc_split})")
+        print(f"[fringe_label_engraver]   plane-surgery: component cleanup skipped ({_exc_split})")
 
-    print(f"[serial_engraver]   plane-surgery: removed {n_bot} old-bottom faces, "
+    print(f"[fringe_label_engraver]   plane-surgery: removed {n_bot} old-bottom faces, "
           f"added {len(new_bot_faces)}+{len(new_pocket_faces)}+{len(new_wall_faces)} "
           f"new faces (bottom/pocket/walls)")
     return combined
 
 
+
+
 def _build_text_polygons_xy(
-    serial_number: int,
+    text: str,
     font_pt: float,
     cx: float,
     cy: float,
     mirror_y: bool = True,
-    text: Optional[str] = None,
     max_width_mm: Optional[float] = None,
 ):
-    """Return the 2-D Shapely polygon(s) for ``s/n: NNN`` rendered at the
-    given centre, for use by the vertex-push fallback.  Matches the mesh
-    produced by _build_serial_text_mesh in shape & orientation.
+    """Return the 2-D Shapely polygon(s) for ``text`` rendered at the given
+    centre, for use by the plane-surgery / vertex-push fallbacks.  Matches the
+    mesh produced by build_label_text_mesh in shape & orientation.
     """
     from matplotlib.textpath import TextPath
     from matplotlib.font_manager import FontProperties
@@ -1044,8 +864,6 @@ def _build_text_polygons_xy(
         weight="bold" if ENGRAVE_BOLD else "normal",
         style="normal",
     )
-    if text is None:
-        text = f"s/n: {int(serial_number)}"
     base_size = 100.0
     tp = TextPath((0, 0), text, size=base_size, prop=fp)
     raw = tp.to_polygons()
@@ -1110,45 +928,35 @@ def _build_text_polygons_xy(
     return polys
 
 
-def engrave_serial_on_mesh(
+def engrave_label_on_mesh(
     mesh: trimesh.Trimesh,
-    serial_number: int,
+    label: str,
     depth_mm: float = ENGRAVE_DEPTH_MM,
     font_pt: float = ENGRAVE_FONT_PT,
     offset_xy: tuple = ENGRAVE_OFFSET_XY,
-    label: Optional[str] = None,
 ) -> trimesh.Trimesh:
-    """Return a copy of ``mesh`` with ``s/n: NNN`` (plus optional ``label``
-    line beneath it) cut 1 mm deep into the
+    """Return a copy of ``mesh`` with ``label`` cut ``depth_mm`` deep into the
     back (lowest-Z) face.
 
-    The text reads *correctly* when looking straight at the back face — i.e.
-    we mirror the glyphs about the X axis so they are not reversed when the
-    print is flipped over (otherwise the text would be a mirror image).
+    The text reads *correctly* when looking straight at the back face — the
+    glyphs are mirrored about the X axis so they are not reversed when the
+    print is flipped over.
     """
     if mesh is None:
         return mesh
 
     # 1. Build text mesh: extrudes from z=0 to z=depth_mm, centred on origin
     try:
-        text_mesh = _build_serial_text_mesh(
-            serial_number=serial_number,
-            depth_mm=depth_mm,
-            font_pt=font_pt,
-            label=label,
-        )
+        text_mesh = build_label_text_mesh(label, depth_mm=depth_mm, font_pt=font_pt)
     except Exception as exc:
-        print(f"[serial_engraver] WARNING: text mesh build failed: {exc}")
+        print(f"{LOG_TAG} WARNING: text mesh build failed: {exc}")
         return mesh
 
-    # 2. Mirror the text about the X axis so it reads correctly when the
-    #    part is flipped over to view the back.
+    # 2. Mirror the text so it reads correctly when the part is flipped over.
     text_mesh = text_mesh.copy()
     T_flip = np.eye(4)
-    T_flip[1, 1] = -1.0      # reflect Y
+    T_flip[MIRROR_Y_AXIS_INDEX, MIRROR_Y_AXIS_INDEX] = -1.0
     text_mesh.apply_transform(T_flip)
-    # Reflection inverts face winding; fix normals so the mesh is still
-    # outward-facing (important for a robust boolean).
     try:
         trimesh.repair.fix_normals(text_mesh)
     except Exception:
@@ -1156,15 +964,12 @@ def engrave_serial_on_mesh(
 
     # 3. Position the text: prefer the back-face centroid but fall back to
     #    an interior point of the back polygon if the centroid is over a
-    #    hole (e.g. the fringe, whose centre is the green cutout).
+    #    hole (the fringe's centre is the green cutout).
     z_back = _find_back_face_z(mesh)
     cx, cy = _centroid_xy(mesh)
-
-    # Measure the rendered text rectangle so we can test it fits
     tbb = text_mesh.bounds
     text_w = float(tbb[1, 0] - tbb[0, 0])
     text_h = float(tbb[1, 1] - tbb[0, 1])
-
     preferred = (cx + float(offset_xy[0]), cy + float(offset_xy[1]))
     tx, ty = _choose_engraving_centre(
         mesh,
@@ -1172,53 +977,36 @@ def engrave_serial_on_mesh(
         text_width_mm=text_w,
         text_height_mm=text_h,
     )
-    # We want the cut to span z in [z_back, z_back + depth_mm] — i.e. the
-    # relief floor sits exactly depth_mm above the back face.  To guarantee
-    # the cutter fully crosses the back plane (so manifold booleans don't
-    # produce slivers), we extend BOTH ends by a small epsilon: build the
-    # cutter tall enough to project below the back face and still reach
-    # z_back + depth.
-    eps = 0.05
-    # Stretch the cutter vertically by eps on the bottom only.  The cutter
-    # was built with z ∈ [0, depth_mm] — shift DOWN by eps so its bottom
-    # dips below z_back while its top stays at exactly z_back + depth_mm.
-    bottom_verts_mask = text_mesh.vertices[:, 2] < (depth_mm * 0.5)
-    text_mesh.vertices[bottom_verts_mask, 2] -= eps
-    tz = z_back
-    text_mesh.apply_translation((tx, ty, tz))
+    # Stretch the cutter down by eps on the bottom only so it fully crosses the
+    # back plane (avoids manifold-boolean slivers).
+    bottom_verts_mask = text_mesh.vertices[:, 2] < (depth_mm * CUTTER_HALF_DEPTH_FRACTION)
+    text_mesh.vertices[bottom_verts_mask, 2] -= CUTTER_BOTTOM_EPS_MM
+    text_mesh.apply_translation((tx, ty, z_back))
 
-    # 4. Engraving strategy chain — try in order of increasing fallback:
-    #    (a) boolean.difference (crisp, requires manifold input)
-    #    (b) plane-surgery on the back face (robust to non-manifold tops;
-    #        only assumes a flat bottom at z_min, which our pipeline always
-    #        produces)
-    #    (c) vertex-push impression (low-resolution but always runs)
+    # 4. Strategy chain: boolean -> plane-surgery -> vertex-push.
     engraved = _boolean_difference(mesh, text_mesh)
     if engraved is None:
-        print(f"[serial_engraver]   boolean failed for mesh "
+        print(f"{LOG_TAG}   boolean failed for mesh "
               f"(verts={len(mesh.vertices)}, faces={len(mesh.faces)}); "
               f"trying plane-surgery fallback…")
         text_polys_xy = _build_text_polygons_xy(
-            serial_number=serial_number,
+            text=label,
             font_pt=font_pt,
             cx=tx,
             cy=ty,
             mirror_y=True,
-            text=fringe_text(serial_number, label) if label else None,
-            max_width_mm=(LABEL_MAX_WIDTH_MM if label else None),
+            max_width_mm=LABEL_MAX_WIDTH_MM,
         )
         engraved = _engrave_by_plane_surgery(mesh, text_polys_xy, depth_mm)
         if engraved is None:
-            print(f"[serial_engraver]   plane-surgery failed; "
-                  f"trying vertex-push fallback…")
+            print(f"{LOG_TAG}   plane-surgery failed; trying vertex-push fallback…")
             engraved = _engrave_by_vertex_push(mesh, text_polys_xy, depth_mm)
         if engraved is None:
-            print(f"[serial_engraver] WARNING: all engraving strategies "
-                  f"failed; returning un-engraved original.")
+            print(f"{LOG_TAG} WARNING: all engraving strategies failed; "
+                  f"returning un-engraved original.")
             return mesh
 
-    # 5. Light repair — fix any small manifold glitches introduced by the
-    #    boolean.  Never hard-fail: caller expects a mesh back no matter what.
+    # 5. Light repair; never hard-fail.
     try:
         trimesh.repair.fix_normals(engraved)
         if not engraved.is_watertight:
@@ -1233,15 +1021,9 @@ def _scene_geom_to_node_names(scene: trimesh.Scene) -> dict:
     """Build a ``{geometry_key: node_name}`` map from the scene graph.
 
     ``Scene.add_geometry(mesh, node_name=X)`` stores the mesh in
-    ``scene.geometry`` under an auto-generated key like ``geometry_0`` while
-    recording the caller-supplied node name (``trap_1``, ``water_1``, …) in
-    the transform graph.  This helper reverses that so log output can name the
-    actual part being engraved instead of the opaque geometry key — crucial
-    for spot-checking that every trap AND every water mesh receives its
-    serial-number engraving (task 709).
-
-    Falls back to an empty dict if the graph isn't inspectable; callers can
-    treat a missing entry as "unknown node — use the geometry key as-is".
+    ``scene.geometry`` under an auto-generated key while recording the
+    caller-supplied node name in the transform graph; this reverses that.
+    Falls back to an empty dict if the graph isn't inspectable.
     """
     out: dict = {}
     graph = getattr(scene, "graph", None)
@@ -1261,66 +1043,37 @@ def _scene_geom_to_node_names(scene: trimesh.Scene) -> dict:
     return out
 
 
-def engrave_scene_geometries(scene: trimesh.Scene, serial_number: int,
-                             fringe_label: Optional[str] = None) -> dict:
-    """Replace every geometry in ``scene`` with its engraved copy, in place.
+def engrave_fringe_label(scene: trimesh.Scene, label: Optional[str]) -> dict:
+    """Engrave ``label`` into the fringe geometry of ``scene``, in place.
 
-    Engraves EVERY geometry in the scene — green surface, fringe, every trap,
-    every water body, every boulders slab, and anything else the caller has
-    added.  There is no filter: if a mesh reaches this function it gets a
-    serial number, so long as one of the engraving strategies (boolean,
-    plane-surgery, vertex-push) succeeds.
+    Only the node named ``LABEL_NODE_NAME`` is touched; every other geometry
+    is left unchanged.  With no/empty ``label`` nothing is engraved.
 
-    Log lines now include the scene-graph node name in addition to the
-    ``geometry_N`` key, so ``trap_1``, ``water_1`` etc. are clearly visible
-    (Thomas asked for this after we couldn't tell from logs whether water was
-    being engraved — task 709).
-
-    Returns a dict summary keyed by geometry key:
-        ``{geom_key: {"node_name": str, "engraved": bool,
-                      "watertight": bool, "faces": int}}``.
+    Returns ``{geom_key: {"node_name", "engraved", "watertight", "faces"}}``
+    for the geometries that were considered (empty when there is no label).
     """
     summary: dict = {}
+    if not label:
+        return summary
     node_by_geom = _scene_geom_to_node_names(scene)
-    # scene.geometry is an OrderedDict; iterate over a snapshot of items so we
-    # can mutate the dict during iteration.
     for name in list(scene.geometry.keys()):
-        original = scene.geometry[name]
         node_name = node_by_geom.get(name, name)
+        if node_name != LABEL_NODE_NAME:
+            continue
+        original = scene.geometry[name]
         try:
-            _lbl = fringe_label if (fringe_label and node_name == LABEL_NODE_NAME) else None
-            engraved = engrave_serial_on_mesh(original, serial_number, label=_lbl)
+            engraved = engrave_label_on_mesh(original, label)
         except Exception as exc:
-            print(f"[serial_engraver]   '{node_name}' ({name}) — "
-                  f"engraving raised: {exc}")
+            print(f"{LOG_TAG}   '{node_name}' ({name}) — engraving raised: {exc}")
             engraved = original
-        was_modified = engraved is not original
         scene.geometry[name] = engraved
         summary[name] = {
             "node_name": node_name,
-            "engraved": was_modified,
+            "engraved": engraved is not original,
             "watertight": bool(getattr(engraved, "is_watertight", False)),
             "faces": int(len(engraved.faces)),
         }
-        flag = "engraved" if was_modified else "unchanged (fallback)"
-        wt = "watertight" if summary[name]["watertight"] else "NOT watertight"
-        print(f"[serial_engraver]   '{node_name}' ({name}): {flag}, {wt}, "
+        print(f"{LOG_TAG}   '{node_name}' ({name}): "
+              f"{'engraved' if summary[name]['engraved'] else 'unchanged (fallback)'}, "
               f"{summary[name]['faces']} faces")
     return summary
-
-
-# ── CLI helper (quick smoke test) ────────────────────────────────────────────
-
-if __name__ == "__main__":
-    import sys as _sys
-    # Build a little demo slab and engrave it, writing to owner_inbox/
-    slab = trimesh.creation.box(extents=(60.0, 30.0, 10.0))
-    # Shift so base sits at z=0 (matches our pipeline's convention)
-    slab.apply_translation((0.0, 0.0, 5.0))
-    serial = int(_sys.argv[1]) if len(_sys.argv) > 1 else 100
-    cut = engrave_serial_on_mesh(slab, serial_number=serial)
-    from generate_stl_3mf import OWNER_INBOX as _OI
-    out = os.path.join(_OI, f"serial_engraver_demo_{serial}.stl")
-    cut.export(out)
-    print(f"Wrote demo: {out}")
-    print(f"Watertight: {cut.is_watertight}")
