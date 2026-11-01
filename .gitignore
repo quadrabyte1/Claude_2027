@@ -4,6 +4,9 @@
 *.part
 x.py
 *blob
+*.3mf
+*.bak
+
 .DS_Store
 __pycache__/
 SHARED_WORK_FOLDER/owner_inbox/diagnostics/
