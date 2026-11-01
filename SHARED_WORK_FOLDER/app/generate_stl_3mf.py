@@ -58,6 +58,7 @@ import numpy as np
 from shapely.geometry import Polygon as ShapelyPolygon
 from shapely.ops import unary_union
 import trimesh
+import egm_embed
 
 from generation_id import FILENAME_ID_BRACKET_FMT, make_generation_id
 
@@ -1028,8 +1029,8 @@ def generate_from_egm(
 
     # Resolve source image path (for color-band scoring in stepped green)
     image_name = egm_data.get(EGM_KEY_IMAGE, "")
-    image_path: str | None = None
-    if image_name:
+    image_path: str | None = egm_embed.materialize(egm_data)   # v6.21: embedded PNG first
+    if image_name and image_path is None:
         # Check course Images/ folder first, then team_inbox as fallback
         paths = course_paths(course)
         for candidate_dir in (paths[PATH_KEY_IMAGES],

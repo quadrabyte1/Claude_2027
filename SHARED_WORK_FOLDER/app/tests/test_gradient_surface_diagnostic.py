@@ -83,6 +83,24 @@ def _load_gsd():
     return mod
 
 
+# ---- sand-rake test constants (single definition each) ----
+RAKE_FIXED_Y_ANGLE_DEG = 90.0          # ridge direction when rake is NOT major-axis aligned (parallel to Y)
+RAKE_ANGLE_TOLERANCE_DEG = 25.0        # tolerance when comparing estimated ridge angle to expectation
+RAKE_ALIGN_DEFAULT_EXPECTED = True     # generator v0.25+: ridges follow the trap's long axis by default
+RAKE_ALIGN_MODES = [True, False]       # both modes of SAND_RAKE_ALIGN_TO_MAJOR_AXIS are exercised
+RAKE_TEST_ANGLES_DEG = [0.0, 30.0, 45.0]   # trap rectangle orientations (CCW from +X)
+
+
+def _expected_ridge_angle_deg(trap_angle_deg: float, align_to_major_axis: bool) -> float:
+    """Ridge direction (mod 180) the rake should produce for a trap whose long axis is at trap_angle_deg."""
+    return (trap_angle_deg % 180.0) if align_to_major_axis else RAKE_FIXED_Y_ANGLE_DEG
+
+
+def _angle_diff_deg(a: float, b: float) -> float:
+    """Smallest difference between two undirected angles (mod 180)."""
+    return abs(((a - b) + 90.0) % 180.0 - 90.0)
+
+
 # ---------------------------------------------------------------------------
 # Shared mesh helper
 # ---------------------------------------------------------------------------
@@ -195,7 +213,7 @@ class TestTrapRakeLines:
         # the unconditional cap / touches block that follows it (task #604:
         # `if _hole_water:` was replaced by the unconditional `touches =`).
         trap_fn_pattern = re.compile(
-            r"apply_sand_texture\(mesh.*?\n(.*?)(?=touches = _polygon_touches_frame_boundary)",
+            r"apply_sand_texture\(work.*?\n(.*?)(?=touches = _polygon_touches_frame_boundary)",
             re.DOTALL,
         )
         m = trap_fn_pattern.search(source)
@@ -905,38 +923,29 @@ class TestRakeMajorAxis:
         sy = sum(math.sin(a) for a in angles_rad2)
         return math.degrees(math.atan2(sy, sx) / 2.0) % 180.0
 
-    def test_rake_follows_major_axis_30deg(self):
+    @pytest.mark.parametrize("align", RAKE_ALIGN_MODES)
+    def test_rake_follows_major_axis_30deg(self, align):
         """
-        Task #610 revert: a trap rectangle oriented at 30° from X must now
-        produce rake ridges along the FIXED Y axis (angle ≈ 90°), NOT along
-        the trap's 30° major axis.
-
-        Task #606 had ridges following the major axis (≈30°).
-        Task #610 reverts to fixed Y-axis rakes: ridge angle ≈ 90° for any
-        trap orientation.
-
-        Tolerance: ±25° from 90°.
-
-        RED (task #606 PCA code): ridges follow 30° long axis (angle ≈ 30°).
-        GREEN (task #610 fixed-Y code): ridges at Y axis (angle ≈ 90°).
+        A trap rectangle oriented at 30 deg from X: with SAND_RAKE_ALIGN_TO_MAJOR_AXIS
+        True (the default since generator v0.25) ridges follow the trap's 30 deg long
+        axis; with it False they are fixed parallel to Y.  Both modes are exercised.
         """
         gsd = _load_gsd()
-        mesh = self._build_rotated_slab(angle_deg=30.0)
+        gsd.SAND_RAKE_ALIGN_TO_MAJOR_AXIS = align
+        trap_angle = 30.0
+        mesh = self._build_rotated_slab(angle_deg=trap_angle)
         gsd.apply_sand_texture(mesh, trap_index=0)
 
         ridge_angle = self._dominant_ridge_angle(mesh)
         assert not math.isnan(ridge_angle), (
             "Could not estimate ridge angle from top-surface vertices."
         )
-
-        # Fixed Y-axis: ridges at ~90° regardless of trap orientation.
-        expected = 90.0
-        diff = abs(((ridge_angle - expected) + 90) % 180 - 90)
-        assert diff <= 25.0, (
-            f"Ridge angle = {ridge_angle:.1f}° for a 30°-rotated trap; "
-            f"expected ~{expected}° (fixed Y-axis, ±25°).  "
-            "apply_sand_texture appears to still use PCA major axis (task #606 code). "
-            "Revert to fixed Y-axis rake per task #610."
+        expected = _expected_ridge_angle_deg(trap_angle, align)
+        diff = _angle_diff_deg(ridge_angle, expected)
+        assert diff <= RAKE_ANGLE_TOLERANCE_DEG, (
+            f"Ridge angle = {ridge_angle:.1f} deg for a {trap_angle} deg trap with "
+            f"align_to_major_axis={align}; expected ~{expected} deg "
+            f"(+-{RAKE_ANGLE_TOLERANCE_DEG})."
         )
 
     def test_rake_y_aligned_trap_still_works(self):
@@ -1773,72 +1782,44 @@ class TestRakeYAxisFixed:
         sy = sum(math.sin(a) for a in angles_rad2)
         return math.degrees(math.atan2(sy, sx) / 2.0) % 180.0
 
-    def test_rake_align_flag_exists_and_is_false(self):
+    def test_rake_align_flag_exists_and_default_is_major_axis(self):
         """
-        SAND_RAKE_ALIGN_TO_MAJOR_AXIS must exist and be False.
-
-        RED before fix: constant does not exist.
-        GREEN after fix: SAND_RAKE_ALIGN_TO_MAJOR_AXIS = False defined.
+        SAND_RAKE_ALIGN_TO_MAJOR_AXIS must exist and default to RAKE_ALIGN_DEFAULT_EXPECTED
+        (True since generator v0.25: ridges follow the trap's long axis).  Fixed-Y
+        raking stays available by setting it False.
         """
         gsd = _load_gsd()
         assert hasattr(gsd, "SAND_RAKE_ALIGN_TO_MAJOR_AXIS"), (
-            "SAND_RAKE_ALIGN_TO_MAJOR_AXIS is not defined.  "
-            "Add SAND_RAKE_ALIGN_TO_MAJOR_AXIS: bool = False to the constants section."
+            "SAND_RAKE_ALIGN_TO_MAJOR_AXIS is not defined."
         )
-        assert gsd.SAND_RAKE_ALIGN_TO_MAJOR_AXIS is False, (
+        assert gsd.SAND_RAKE_ALIGN_TO_MAJOR_AXIS is RAKE_ALIGN_DEFAULT_EXPECTED, (
             f"SAND_RAKE_ALIGN_TO_MAJOR_AXIS = {gsd.SAND_RAKE_ALIGN_TO_MAJOR_AXIS}; "
-            "expected False (straight Y-axis rakes restored, task #610)."
+            f"expected {RAKE_ALIGN_DEFAULT_EXPECTED} (major-axis raking, v0.25+)."
         )
 
-    def test_rake_45deg_trap_ridges_along_y(self):
+    @pytest.mark.parametrize("align", RAKE_ALIGN_MODES)
+    @pytest.mark.parametrize("trap_angle", [45.0, 0.0])
+    def test_rake_ridge_direction_by_mode(self, trap_angle, align):
         """
-        A trap rectangle oriented at 45 deg must produce rake ridges parallel to Y
-        (angle ~90 deg), NOT along the 45-deg major axis.
-
-        RED (v0.06 PCA code): ridge angle ~45 deg (follows major axis).
-        GREEN (v0.07 fixed-Y code): ridge angle ~90 deg (fixed Y axis).
+        Ridge direction for 45 deg and 0 deg (X-aligned) traps in both modes:
+        align=True -> ridges along the trap's long axis (== trap_angle);
+        align=False -> ridges fixed parallel to Y regardless of trap shape.
         """
         gsd = _load_gsd()
-        mesh = self._build_rotated_slab(angle_deg=45.0)
+        gsd.SAND_RAKE_ALIGN_TO_MAJOR_AXIS = align
+        mesh = self._build_rotated_slab(angle_deg=trap_angle)
         gsd.apply_sand_texture(mesh, trap_index=0)
 
         ridge_angle = self._dominant_ridge_angle(mesh)
         assert not math.isnan(ridge_angle), (
             "Could not estimate ridge angle from top-surface vertices."
         )
-
-        expected = 90.0   # Y-axis
-        diff = abs(((ridge_angle - expected) + 90) % 180 - 90)
-        assert diff <= 25.0, (
-            f"Ridge angle = {ridge_angle:.1f} deg for a 45-deg trap; "
-            f"expected ~90 deg (Y-axis, +-25 deg tolerance).  "
-            "apply_sand_texture appears to be using PCA major axis instead of fixed Y."
-        )
-
-    def test_rake_y_axis_regression_0deg_trap(self):
-        """
-        Regression: a trap aligned with X (angle=0, long axis horizontal) must
-        still produce rake ridges at ~90 deg (Y-axis, i.e. parallel to Y).
-
-        RED (v0.06): ridges are at ~0 deg (along X major axis).
-        GREEN (v0.07): ridges are at ~90 deg (Y fixed axis regardless of trap shape).
-        """
-        gsd = _load_gsd()
-        # 40x10 rectangle, long axis along X (angle=0).
-        mesh = self._build_rotated_slab(angle_deg=0.0)
-        gsd.apply_sand_texture(mesh, trap_index=0)
-
-        ridge_angle = self._dominant_ridge_angle(mesh)
-        assert not math.isnan(ridge_angle), (
-            "Could not estimate ridge angle from top-surface vertices."
-        )
-
-        expected = 90.0
-        diff = abs(((ridge_angle - expected) + 90) % 180 - 90)
-        assert diff <= 25.0, (
-            f"Ridge angle = {ridge_angle:.1f} deg for a 0-deg (X-aligned) trap; "
-            f"expected ~90 deg (Y-axis fixed).  "
-            "Rake orientation is not fixed to Y axis."
+        expected = _expected_ridge_angle_deg(trap_angle, align)
+        diff = _angle_diff_deg(ridge_angle, expected)
+        assert diff <= RAKE_ANGLE_TOLERANCE_DEG, (
+            f"Ridge angle = {ridge_angle:.1f} deg for a {trap_angle} deg trap with "
+            f"align_to_major_axis={align}; expected ~{expected} deg "
+            f"(+-{RAKE_ANGLE_TOLERANCE_DEG})."
         )
 
     def test_rake_pca_code_not_in_function_body_when_flag_false(self):

@@ -319,6 +319,7 @@ from scipy.ndimage import gaussian_filter, uniform_filter, median_filter
 from scipy.interpolate import splprep, splev
 import trimesh
 from dependency_preflight import check_dependencies, MissingDependencyError
+import egm_embed
 from generation_id import make_generation_id, FILENAME_ID_BRACKET_FMT
 from fringe_label_engraver import engrave_fringe_label, label_from_filename
 from shapely.geometry import Polygon as ShapelyPolygon, box as shapely_box, MultiPolygon as ShapelyMultiPolygon
@@ -478,6 +479,10 @@ FILAMENT_DEFAULT: int = FILAMENT_GREEN # unknown geometries land on slot 1
 MANIFOLD_TOLERATE_BOUNDARY_EDGES: int = 30
 MANIFOLD_TOLERATE_TRIPLE_SHARED: int = 5
 BAMBU_BED_CENTER_MM: tuple = (128.0, 128.0)   # fallback bed centre when project settings have none
+BAMBU_BED_WIDTH_MM: float = 256.0              # fallback bed X extent (Bambu A1) when project settings have none
+# Bambu Studio lays plates out in a row; plate N's origin is (N-1) * bed_width * (1 + gap).
+# 0.2 is Bambu Studio's LOGICAL_PART_PLATE_GAP (1/5 of a bed width between plates).
+BAMBU_PLATE_GAP_FACTOR: float = 0.2
 BAMBU_PART_ID_BASE: int = 1000
 THREE_MF_MODEL_PATH: str = "3D/3dmodel.model"
 THREE_MF_CONTENT_TYPES_PATH: str = "[Content_Types].xml"
@@ -1146,9 +1151,11 @@ def load_egm(egm_path: str) -> tuple[dict, str, np.ndarray]:
     # different course's folder when creating the project.
     image_course = data.get("imageCourse", "") or course
 
+    # v6.21: an EGM that carries its own PNG never needs the external file.
+    image_path = egm_embed.materialize(data)
+
     # Build search list: imageCourse first, then all other course folders,
     # then legacy locations.
-    image_path = None
     search_dirs = []
     if image_course:
         search_dirs.append(os.path.abspath(course_paths(image_course)[PATH_KEY_IMAGES]))
@@ -1165,7 +1172,7 @@ def load_egm(egm_path: str) -> tuple[dict, str, np.ndarray]:
                 search_dirs.append(candidate_dir)
     search_dirs.extend([TEAM_INBOX, OWNER_INBOX])
 
-    for folder in search_dirs:
+    for folder in ([] if image_path else search_dirs):
         candidate = os.path.join(folder, image_filename)
         if os.path.exists(candidate):
             image_path = os.path.abspath(candidate)
@@ -1891,6 +1898,13 @@ BASE_THICKNESS_MM: float = 1.5    # flat base below lowest point
 # all the way to the frame instead of ramping to a per-hole rectangle-edge
 # target. The EGM key is intentionally preserved on-disk for backward
 # compatibility with existing .egm files.
+# v6.20 (Thomas): the fringe follows the EGM slope all the way to the frame; it is NOT
+# floored at BASE_THICKNESS_MM any more (that made a flat band wherever the slope dipped
+# below the base).  The only clamp left is this printability minimum: the fringe top must
+# stay a few layers (5 x 0.2 mm) above the z=0 bottom so the part is a solid, sliceable slab.
+FRINGE_MIN_THICKNESS_MM: float = 1.0
+FRINGE_TOP_MASK_FRACTION: float = 0.5  # top-surface verts = z above this fraction of FRINGE_MIN_THICKNESS_MM (excludes z=0 floor/walls)
+FRINGE_PLATEAU_TILT_MM: float = 0.10  # peak-to-peak XY ramp so a clamped region is never one exact z (task 717)
 N_CONTOUR_LEVELS: int = 27        # steps for quantized surface
 
 # Signed XY offset applied to the fringe outer bbox.
@@ -3198,7 +3212,7 @@ def drill_tee_hole(
     _verts = mesh.vertices
     _dxy2_v = (_verts[:, 0] - cx) ** 2 + (_verts[:, 1] - cy) ** 2
     _top_mask = _dxy2_v <= (_sample_r ** 2)
-    _top_mask &= _verts[:, 2] > (BASE_THICKNESS_MM * 0.5)  # skip bottom slab / walls
+    _top_mask &= _verts[:, 2] > (FRINGE_MIN_THICKNESS_MM * FRINGE_TOP_MASK_FRACTION)  # skip bottom slab / walls
     if _top_mask.any():
         _local_zs = _verts[_top_mask, 2]
         z_local = float(np.max(_local_zs))
@@ -3583,7 +3597,7 @@ def _replace_fringe_with_watertight_extrusion(
         return new_mesh
 
     # Top-surface only: Z > BASE_THICKNESS_MM / 2 excludes floor / wall bottoms.
-    _top_mask_old = old_verts[:, 2] > (BASE_THICKNESS_MM * 0.5)
+    _top_mask_old = old_verts[:, 2] > (FRINGE_MIN_THICKNESS_MM * FRINGE_TOP_MASK_FRACTION)
     if not _top_mask_old.any():
         print(f"  [{label} watertight-rewrite] no top-surface verts in old mesh — "
               f"leaving new mesh at flat max Z.")
@@ -3626,8 +3640,9 @@ def _replace_fringe_with_watertight_extrusion(
             _sn = top_z_old[idxs_s[np.arange(len(idxs_s)), nearest_col]]
             sampled_z = np.where(_coincident, _sn, sampled_z)
 
-    # Clamp: never above top_z_target (safety), never below BASE_THICKNESS_MM.
-    sampled_z = np.clip(sampled_z, BASE_THICKNESS_MM, top_z_target)
+    # Clamp: never above top_z_target (safety), never below the printability floor
+    # (v6.20: was BASE_THICKNESS_MM, which flattened the fringe slope near the frame).
+    sampled_z = np.clip(sampled_z, FRINGE_MIN_THICKNESS_MM, top_z_target)
 
     new_verts[top_mask_new, 2] = sampled_z
     new_mesh.vertices = new_verts
@@ -3937,18 +3952,17 @@ def _build_tps_grid_height_field(
                 continue
             if grid_mode == GRID_MODE_ABSOLUTE:
                 # Value REPLACES the Poisson default.  Clamp to [0, 30] mm per UI spec,
-                # then floor the resolved Z at BASE_THICKNESS_MM so the cell cannot sit
-                # below the base plate (invalid geometry).
+                # then floor the resolved Z at FRINGE_MIN_THICKNESS_MM (printability only;
+                # NOT the base thickness, which would flatten the slope).
                 val = max(GRID_ABSOLUTE_MIN_MM, min(GRID_ABSOLUTE_MAX_MM, val))
-                cell_defaults[ci] = max(BASE_THICKNESS_MM, val)
+                cell_defaults[ci] = max(FRINGE_MIN_THICKNESS_MM, val)
             else:  # delta (default/legacy)
                 # User value is an ADDITIVE OFFSET in mm over the Poisson-nearest default.
                 # Zero / unset → no change.  Range ±20 mm, clamped defensively here even
                 # though the UI already enforces the same bounds.  Floor the resolved
-                # absolute Z at BASE_THICKNESS_MM so a large negative delta cannot push a
-                # cell below the base plate (invalid geometry).
+                # absolute Z at FRINGE_MIN_THICKNESS_MM (printability only, v6.20).
                 val = max(GRID_DELTA_MIN_MM, min(GRID_DELTA_MAX_MM, val))  # clamp delta to ±20 mm
-                cell_defaults[ci] = max(BASE_THICKNESS_MM, cell_defaults[ci] + val)
+                cell_defaults[ci] = max(FRINGE_MIN_THICKNESS_MM, cell_defaults[ci] + val)
             n_overrides += 1
 
     print(f"  {LOG_TAG_TPS_GRID} mode={grid_mode}; {n_cells} cells: {n_overrides} user-set, "
@@ -3991,7 +4005,7 @@ def _build_tps_grid_height_field(
         BASE_THICKNESS_MM + _elevation_range_mm + 2.0,
         _user_max_mm + 2.0,
     )
-    z_grid = np.clip(z_grid, 0.0, _z_ceiling)
+    z_grid = np.clip(z_grid, FRINGE_MIN_THICKNESS_MM, _z_ceiling)
 
     print(f"  {LOG_TAG_TPS_GRID} surface Z range [{float(z_grid.min()):.3f}, "
           f"{float(z_grid.max()):.3f}] mm")
@@ -4611,10 +4625,8 @@ def build_fringe_mesh(
         # (correct, matches z=0.5 baseline), overlap with green = 0.00
         # (was 5036 mm² at [208]).  Cell counts, top-surface topology,
         # seam-match, and trap/water cutouts all unchanged.
-        FRINGE_PLATEAU_MARGIN_MM = 0.30  # 1.5 → 1.8 mm floor on default BASE
-        FRINGE_PLATEAU_TILT_MM = 0.10    # 0.10 mm peak-to-peak XY ramp
         _tilt = FRINGE_PLATEAU_TILT_MM * (r + c) / (2 * (fringe_grid_res - 1))
-        _floor = BASE_THICKNESS_MM + FRINGE_PLATEAU_MARGIN_MM + _tilt
+        _floor = FRINGE_MIN_THICKNESS_MM + _tilt   # v6.20: printability floor, not BASE
         z_fringe = max(_floor, min(green_edge_h, _effective_z_ceiling_mm))
         return z_fringe
 
@@ -10510,25 +10522,36 @@ def _inject_bambu_extruder_metadata(path_3mf: str, scene_names: list) -> None:
         f'<metadata name="Application">BambuStudio-{_BBL_VERSION_STRING}</metadata>'
     )
 
-    def _bed_center_from_settings(settings_bytes) -> tuple:
-        """Centre of the bounding box of printable_area ("XxY" strings) in the
-        project_settings.config template; falls back to (128, 128) (Bambu A1)."""
+    def _bed_geometry_from_settings(settings_bytes) -> tuple:
+        """(centre_xy, width_x) of the printable_area bounding box in the
+        project_settings.config template; falls back to the Bambu A1 values."""
         try:
             import json as _json
             pts = _json.loads(settings_bytes.decode(XML_ENCODING))["printable_area"]
             xy = [tuple(float(v) for v in str(q).split("x")) for q in pts]
             xs = [q[0] for q in xy]
             ys = [q[1] for q in xy]
-            return ((min(xs) + max(xs)) / 2.0, (min(ys) + max(ys)) / 2.0)
+            return (((min(xs) + max(xs)) / 2.0, (min(ys) + max(ys)) / 2.0),
+                    max(xs) - min(xs))
         except Exception:
-            return BAMBU_BED_CENTER_MM
+            return BAMBU_BED_CENTER_MM, BAMBU_BED_WIDTH_MM
+
+    def _bed_center_from_settings(settings_bytes) -> tuple:
+        return _bed_geometry_from_settings(settings_bytes)[0]
+
+    def _plate_center(center, width, plate_index: int) -> tuple:
+        """World XY centre of plate `plate_index` (1-based) in Bambu's plate row."""
+        return (center[0] + (plate_index - 1) * width * (1.0 + BAMBU_PLATE_GAP_FACTOR),
+                center[1])
 
     def _patch_model_xml_version(xml_str: str, center=BAMBU_BED_CENTER_MM,
-                                 skip_oids=frozenset()) -> str:
+                                 plate2_oids=frozenset(), plate2_center=None) -> str:
         """Idempotently: (1) ensure Application + BambuStudio:3mfVersion metadata
         (Application first - without it Bambu Studio refuses project_settings.config);
         (2) move build items still at translation x=y=0 to the bed centre. Items
-        whose objectid is in skip_oids (plate 2) are left untouched."""
+        whose objectid is in plate2_oids go to plate2_center instead (Bambu does not
+        move an object onto plate N from plater_id alone; the build transform must
+        carry the plate offset)."""
         import re as _re2
         if 'name="Application"' not in xml_str:
             if "BambuStudio:3mfVersion" in xml_str:
@@ -10546,8 +10569,6 @@ def _inject_bambu_extruder_metadata(path_3mf: str, scene_names: list) -> None:
         def _shift(m):
             tag = m.group(0)
             om = _re2.search(r'\bobjectid="([^"]*)"', tag)
-            if om and om.group(1) in skip_oids:
-                return tag
             tm = _re2.search(r'\btransform="([^"]*)"', tag)
             if not tm:
                 return tag
@@ -10559,15 +10580,18 @@ def _inject_bambu_extruder_metadata(path_3mf: str, scene_names: list) -> None:
                     return tag  # already placed
             except ValueError:
                 return tag
-            v[9], v[10] = repr(float(center[0])), repr(float(center[1]))
+            tgt = plate2_center if (om and om.group(1) in plate2_oids
+                                    and plate2_center is not None) else center
+            v[9], v[10] = repr(float(tgt[0])), repr(float(tgt[1]))
             return tag[:tm.start(1)] + " ".join(v) + tag[tm.end(1):]
 
         return _re2.sub(r"<item\b[^>]*>", _shift, xml_str)
 
-    _bed_center = _bed_center_from_settings(project_settings_bytes) \
-        if project_settings_bytes is not None else BAMBU_BED_CENTER_MM
+    _bed_center, _bed_width = _bed_geometry_from_settings(project_settings_bytes) \
+        if project_settings_bytes is not None else (BAMBU_BED_CENTER_MM, BAMBU_BED_WIDTH_MM)
     patched_model_xml = _patch_model_xml_version(
-        model_xml, _bed_center, frozenset(oid for oid, _n in _plate2_items))
+        model_xml, _bed_center, frozenset(oid for oid, _n in _plate2_items),
+        _plate_center(_bed_center, _bed_width, 2))
 
     tmp_path = path_3mf + ".tmp"
     # All files we are replacing/adding — skip their originals in the copy loop.
@@ -11324,7 +11348,7 @@ def run_pipeline(
             _ring_mask = (
                 (_r >= _ring_inner)
                 & (_r <= _ring_outer)
-                & (_flat_verts[:, 2] > BASE_THICKNESS_MM * 0.5)
+                & (_flat_verts[:, 2] > FRINGE_MIN_THICKNESS_MM * FRINGE_TOP_MASK_FRACTION)
             )
             if _ring_mask.any():
                 _ring_z = _flat_verts[_ring_mask, 2]
