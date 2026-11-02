@@ -13,7 +13,7 @@ Public API:
     label_from_filename(path) -> Optional[str]
     build_label_text_mesh(label, ...) -> trimesh.Trimesh
     engrave_label_on_mesh(mesh, label, ...) -> trimesh.Trimesh
-    engrave_fringe_label(scene, label) -> dict
+    engrave_fringe_label(scene, label, short_id=None) -> dict
 """
 
 from __future__ import annotations
@@ -58,6 +58,14 @@ CUTTER_BOTTOM_EPS_MM: float = 0.05      # cutter dips this far below the back fa
 CUTTER_HALF_DEPTH_FRACTION: float = 0.5
 MIRROR_Y_AXIS_INDEX: int = 1
 LOG_TAG: str = "[fringe_label_engraver]"
+
+# v6.28 — short generation ID (first UUID segment, 8 hex chars) engraved on the underside of the
+# GREEN and the FRINGE only (restores the old s/n engraving, same depth/font/size as ENGRAVE_*).
+# Bunkers/traps (too small), water, boulders, the plate-2 grassless sample, plaque etc. are skipped.
+ID_NODE_NAMES: tuple = ("green_surface", LABEL_NODE_NAME)    # exact scene-node names that carry the ID
+ID_LINE_GAP_MM: float = 1.5             # clear gap between the course/hole line and the ID line on the fringe
+ID_LINE_COUNT_WITH_LABEL: int = 2       # fringe: label line + ID line (stacked, label on top when viewed from below)
+ID_PITCH_HALF_FRACTION: float = 0.5     # each line sits half a pitch above / below the block centre
 
 
 def label_from_filename(path) -> Optional[str]:
@@ -930,24 +938,38 @@ def _build_text_polygons_xy(
 
 def engrave_label_on_mesh(
     mesh: trimesh.Trimesh,
-    label: str,
+    label: Optional[str],
     depth_mm: float = ENGRAVE_DEPTH_MM,
     font_pt: float = ENGRAVE_FONT_PT,
     offset_xy: tuple = ENGRAVE_OFFSET_XY,
+    id_text: Optional[str] = None,
 ) -> trimesh.Trimesh:
-    """Return a copy of ``mesh`` with ``label`` cut ``depth_mm`` deep into the
-    back (lowest-Z) face.
+    """Return a copy of ``mesh`` with ``label`` (and/or ``id_text``) cut ``depth_mm``
+    deep into the back (lowest-Z) face.
 
-    The text reads *correctly* when looking straight at the back face — the
-    glyphs are mirrored about the X axis so they are not reversed when the
-    print is flipped over.
+    With both, the label line and the ID line are stacked as one block (label on
+    top when viewed from the underside, ID below) and engraved in ONE pass so the
+    two never overlap.  The text reads *correctly* when looking straight at the
+    back face -- the glyphs are mirrored about the X axis so they are not
+    reversed when the print is flipped over.
     """
     if mesh is None:
         return mesh
+    lines = [t for t in (label, id_text) if t]
+    if not lines:
+        return mesh
 
-    # 1. Build text mesh: extrudes from z=0 to z=depth_mm, centred on origin
+    # 1. Build one text mesh per line (extruded z=0..depth, centred on origin), stacked vertically.
+    pitch = float(font_pt) * PT_TO_MM + ID_LINE_GAP_MM
+    n_lines = len(lines)
+    line_y = [(((n_lines - 1) / 2.0) - i) * pitch for i in range(n_lines)]   # first line on top (pre-mirror +Y)
     try:
-        text_mesh = build_label_text_mesh(label, depth_mm=depth_mm, font_pt=font_pt)
+        parts = []
+        for text, y in zip(lines, line_y):
+            m = build_label_text_mesh(text, depth_mm=depth_mm, font_pt=font_pt).copy()
+            m.apply_translation((0.0, y, 0.0))
+            parts.append(m)
+        text_mesh = parts[0] if n_lines == 1 else trimesh.util.concatenate(parts)
     except Exception as exc:
         print(f"{LOG_TAG} WARNING: text mesh build failed: {exc}")
         return mesh
@@ -989,14 +1011,16 @@ def engrave_label_on_mesh(
         print(f"{LOG_TAG}   boolean failed for mesh "
               f"(verts={len(mesh.vertices)}, faces={len(mesh.faces)}); "
               f"trying plane-surgery fallback…")
-        text_polys_xy = _build_text_polygons_xy(
-            text=label,
-            font_pt=font_pt,
-            cx=tx,
-            cy=ty,
-            mirror_y=True,
-            max_width_mm=LABEL_MAX_WIDTH_MM,
-        )
+        text_polys_xy = []
+        for text, y in zip(lines, line_y):
+            text_polys_xy += _build_text_polygons_xy(
+                text=text,
+                font_pt=font_pt,
+                cx=tx,
+                cy=ty - y,          # the mirror flips the line offset
+                mirror_y=True,
+                max_width_mm=LABEL_MAX_WIDTH_MM,
+            )
         engraved = _engrave_by_plane_surgery(mesh, text_polys_xy, depth_mm)
         if engraved is None:
             print(f"{LOG_TAG}   plane-surgery failed; trying vertex-push fallback…")
@@ -1043,26 +1067,33 @@ def _scene_geom_to_node_names(scene: trimesh.Scene) -> dict:
     return out
 
 
-def engrave_fringe_label(scene: trimesh.Scene, label: Optional[str]) -> dict:
-    """Engrave ``label`` into the fringe geometry of ``scene``, in place.
+def engrave_fringe_label(scene: trimesh.Scene, label: Optional[str],
+                        short_id: Optional[str] = None) -> dict:
+    """Engrave the underside text of ``scene``'s printed pieces, in place.
 
-    Only the node named ``LABEL_NODE_NAME`` is touched; every other geometry
-    is left unchanged.  With no/empty ``label`` nothing is engraved.
+    * ``fringe``      : course/hole ``label`` (if any) plus ``short_id`` (if any), stacked.
+    * ``green_surface``: ``short_id`` only, centred.
+    * every other geometry (bunkers/traps, water, boulders, the plate-2 sample,
+      plaque ...) is left untouched.
 
     Returns ``{geom_key: {"node_name", "engraved", "watertight", "faces"}}``
-    for the geometries that were considered (empty when there is no label).
+    for the geometries that were considered.
     """
     summary: dict = {}
-    if not label:
+    if not label and not short_id:
         return summary
     node_by_geom = _scene_geom_to_node_names(scene)
     for name in list(scene.geometry.keys()):
         node_name = node_by_geom.get(name, name)
-        if node_name != LABEL_NODE_NAME:
+        is_fringe = node_name == LABEL_NODE_NAME
+        carries_id = bool(short_id) and node_name in ID_NODE_NAMES
+        node_label = label if is_fringe else None
+        if not node_label and not carries_id:
             continue
         original = scene.geometry[name]
         try:
-            engraved = engrave_label_on_mesh(original, label)
+            engraved = engrave_label_on_mesh(original, node_label,
+                                             id_text=short_id if carries_id else None)
         except Exception as exc:
             print(f"{LOG_TAG}   '{node_name}' ({name}) — engraving raised: {exc}")
             engraved = original

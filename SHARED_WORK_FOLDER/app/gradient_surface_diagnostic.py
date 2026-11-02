@@ -326,7 +326,7 @@ from scipy.interpolate import splprep, splev
 import trimesh
 from dependency_preflight import check_dependencies, MissingDependencyError
 import egm_embed
-from generation_id import make_generation_id, FILENAME_ID_BRACKET_FMT
+from generation_id import make_generation_id, short_generation_id, FILENAME_ID_BRACKET_FMT
 from fringe_label_engraver import engrave_fringe_label, label_from_filename
 from shapely.geometry import Polygon as ShapelyPolygon, box as shapely_box, MultiPolygon as ShapelyMultiPolygon
 from skimage import measure
@@ -11659,9 +11659,10 @@ def run_pipeline(
         scene_names.append(SCENE_NAME_FRINGE_NO_GRASS_SAMPLE)
         print(f"  Plate-2 smooth fringe sample (no grass) added to scene.")
 
-    # Course/hole-name label on the fringe only (no serial text is engraved).
-    print(f"\n[10b] Engraving fringe label…")
-    engrave_fringe_label(scene, label_from_filename(fname_3mf))
+    # Underside text (v6.28): course/hole label + short generation ID (first UUID segment) on the
+    # fringe; short ID alone on the green.  Bunkers, water, boulders and the plate-2 sample are skipped.
+    print(f"\n[10b] Engraving fringe label + short ID…")
+    engrave_fringe_label(scene, label_from_filename(fname_3mf), short_id=short_generation_id(generation_id))
 
     # Repair pass: collapse float-ops slivers and dedupe before manifold check.
     for _node_name, _m in scene.geometry.items():
