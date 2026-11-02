@@ -12,7 +12,7 @@ Rules under test
   N2  If every texture retry fails, the trap still ships as a plain watertight slab (never dropped)
       and a warning naming the trap is recorded.
   N3  A texture failure on the first attempt is retried (different sample pitch) before degrading.
-Temp output only; the live course folders / DB / serial file are never touched.
+Temp output only; the live course folders / DB are never touched.
 """
 import importlib.util
 import re
@@ -26,7 +26,7 @@ import pytest
 APP_DIR = Path(__file__).parent.parent
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "delaveaga_thomas_test4"
 FIXTURE_EGM_NAME = "thomas_test4.egm"
-PIPELINE_SERIAL = 1
+PIPELINE_GENERATION_ID = "3f2b8c1e-9a47-4d6e-8b0c-5e7a1d2c4f90"
 MODEL_PART = "3D/3dmodel.model"
 OBJECT_TAG_RE = re.compile(r"<object [^>]*>")
 COURSE_KEYS = ("images", "egms", "stls", "3mfs")
@@ -59,7 +59,7 @@ def run(g, tmp_path, monkeypatch):
     shutil.copy(FIXTURE_DIR / FIXTURE_EGM_NAME, egm)
 
     def _go():
-        path = g.run_pipeline(str(egm), serial=PIPELINE_SERIAL)
+        path = g.run_pipeline(str(egm), generation_id=PIPELINE_GENERATION_ID)
         with zipfile.ZipFile(path) as z:
             n_objects = len(OBJECT_TAG_RE.findall(z.read(MODEL_PART).decode()))
         return path, n_objects

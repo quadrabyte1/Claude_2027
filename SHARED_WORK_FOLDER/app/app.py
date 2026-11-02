@@ -13,7 +13,9 @@ from pathlib import Path
 
 import heatmap_degrid
 import degrid_cleanup
+import egm_embed
 import dependency_preflight
+from generation_id import make_generation_id
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent / ".env")
@@ -27,7 +29,7 @@ app = Flask(__name__)
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "db", "workspace.db")
 
-APP_VERSION = "v6.17"  # unified version for all main-app pages, shown in every sticky footer
+APP_VERSION = "v6.27"  # unified version for all main-app pages, shown in every sticky footer
 
 # Tier -> concrete model (single source of truth for Team page + Dashboard).
 # Keep in sync with the mapping in team/README.md.
@@ -164,6 +166,7 @@ KEY_CONTOURS = "contours"
 KEY_PRINT_SIZE_MM = "print_size_mm"
 KEY_FRINGE_XY_EXPANSION_MM = "fringe_xy_expansion_mm"
 KEY_SLICER_OPENED = "slicer_opened"
+KEY_GENERATION_ID = "generation_id"     # API: per-run ID that names the output 3MF
 KEY_SLICER_ERROR = "slicer_error"
 KEY_WARNINGS = "warnings"
 KEY_FOUND = "found"
@@ -1211,6 +1214,10 @@ def _find_image_path(image_name: str, preferred_course: str = "") -> str | None:
 
     Returns the absolute path string, or None if not found.
     """
+    # 0. v6.21: an EGM's embedded PNG (pseudo-course "_embedded_<sha256>", extracted to the cache)
+    embedded = egm_embed.cached_path(preferred_course, image_name)
+    if embedded:
+        return embedded
     search_dirs = []
     # 1. Preferred (source) course first
     if preferred_course and os.path.isdir(_EGM_BASE):
@@ -1246,6 +1253,8 @@ def _image_url_for_path(img_path: str) -> str | None:
     if os.path.abspath(_TEAM_INBOX) == folder:
         return TEAM_INBOX_URL_FMT.format(filename=name)
     parent, leaf = os.path.split(folder)
+    if os.path.dirname(folder) == os.path.abspath(egm_embed.CACHE_ROOT) and egm_embed.SHA256_RE.match(leaf):
+        return EGM_IMAGE_URL_FMT.format(course=egm_embed.course_token(leaf), filename=name)
     if leaf == COURSE_SUBDIR_IMAGES and os.path.dirname(parent) == os.path.abspath(_EGM_BASE):
         return EGM_IMAGE_URL_FMT.format(course=os.path.basename(parent), filename=name)
     return None
@@ -1281,7 +1290,7 @@ def degrid_image():
 
 def _degrid_allowed_dirs():
     """Folders in which a generated degridded PNG may live (and be deleted): every course Images/ + team_inbox."""
-    dirs = [os.path.abspath(_TEAM_INBOX)]
+    dirs = [os.path.abspath(_TEAM_INBOX)] + [os.path.abspath(d) for d in egm_embed.cache_subdirs()]
     if os.path.isdir(_EGM_BASE):
         for entry in os.listdir(_EGM_BASE):
             dirs.append(os.path.abspath(os.path.join(_EGM_BASE, entry, COURSE_SUBDIR_IMAGES)))
@@ -1421,7 +1430,10 @@ def serve_team_inbox(filename):
 
 @app.route(ROUTE_EGM_IMAGE)
 def serve_egm_image(course, filename):
-    """Serve images from a course's Images/ folder."""
+    """Serve images from a course's Images/ folder (or an EGM's extracted embedded PNG)."""
+    sha = egm_embed.sha_from_course_token(course)
+    if sha is not None:
+        return send_from_directory(os.path.abspath(os.path.join(egm_embed.CACHE_ROOT, sha)), filename)
     img_dir = os.path.abspath(os.path.join(_EGM_BASE, course, COURSE_SUBDIR_IMAGES))
     return send_from_directory(img_dir, filename)
 
@@ -1430,6 +1442,66 @@ def _ensure_course_subfolders(course_root: str) -> None:
     """Create 3MFs/, EGMs/, and Images/ under course_root if they don't exist."""
     for sub in COURSE_SUBDIRS:
         os.makedirs(os.path.join(course_root, sub), exist_ok=True)
+
+
+def _read_embedded_block(path):
+    """The ``embeddedImage`` block of an existing EGM file, or None (missing / unreadable / none)."""
+    import json as _json
+    try:
+        with open(path) as f:
+            block = _json.load(f).get(egm_embed.KEY_EMBEDDED_IMAGE)
+    except (OSError, ValueError, AttributeError):
+        return None
+    return block if egm_embed.block_png_bytes(block) is not None else None
+
+
+def _course_of_image_path(img_path):
+    """Course folder name an image path lives in ('' for team_inbox / owner_inbox / elsewhere)."""
+    folder = os.path.abspath(os.path.dirname(img_path))
+    parent, leaf = os.path.split(folder)
+    if leaf == COURSE_SUBDIR_IMAGES and os.path.dirname(parent) == os.path.abspath(_EGM_BASE):
+        return os.path.basename(parent)
+    return ""
+
+
+def _prepare_egm_for_save(data, target_path):
+    """v6.21 auto-embed: make ``data`` self-contained before it is written to ``target_path``.
+
+    The editor never round-trips the PNG, so the block comes from (in order): a valid block already in
+    the payload, the block in the file being overwritten (same image), the extracted cache copy, else the
+    PNG found on disk.  The editor's pseudo imageCourse ("_embedded_<sha>") is turned back into the real
+    source course.  If no PNG is available the EGM is saved as before (legacy, path-only).
+    """
+    image = data.get(KEY_IMAGE, "")
+    image_course = data.get(KEY_IMAGE_COURSE, "")
+    token_sha = egm_embed.sha_from_course_token(image_course)
+    existing = _read_embedded_block(target_path) if os.path.isfile(target_path) else None
+    if existing is not None and existing.get(egm_embed.KEY_EMB_FILENAME) != image:
+        existing = None   # the project switched to a different image
+    block = data.get(egm_embed.KEY_EMBEDDED_IMAGE)
+    if egm_embed.block_png_bytes(block) is None or block.get(egm_embed.KEY_EMB_FILENAME) != image:
+        block = None
+        if token_sha is not None:   # editor is working from an embedded copy: keep it
+            if existing is not None and existing.get(egm_embed.KEY_EMB_SHA256) == token_sha:
+                block = existing
+            else:
+                cached = egm_embed.cached_path(image_course, image)
+                if cached:
+                    with open(cached, "rb") as fh:
+                        block = egm_embed.build_block(fh.read(), image)
+        else:   # external image: embed what is on disk now (covers new projects and image changes)
+            src = _find_image_path(image, preferred_course=image_course) if image else None
+            if src:
+                with open(src, "rb") as fh:
+                    block = egm_embed.build_block(fh.read(), image, _course_of_image_path(src))
+            else:
+                block = existing
+    if block is None:
+        data.pop(egm_embed.KEY_EMBEDDED_IMAGE, None)
+    else:
+        data[egm_embed.KEY_EMBEDDED_IMAGE] = block
+    if token_sha is not None:   # never persist the pseudo-course
+        data[KEY_IMAGE_COURSE] = (block or {}).get(egm_embed.KEY_EMB_SOURCE_COURSE, "")
 
 
 @app.route(ROUTE_API_BOUNDARIES, methods=[METHOD_POST])
@@ -1447,6 +1519,7 @@ def save_boundaries():
         target, err = _validate_egm_path(explicit_path)
         if err:
             return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: err}), HTTP_BAD_REQUEST
+        _prepare_egm_for_save(data, target)
         with open(target, "w") as f:
             _json.dump(data, f, indent=EGM_JSON_INDENT)
         return jsonify({KEY_STATUS: STATUS_OK, KEY_PATH: target, KEY_FILENAME: os.path.basename(target)})
@@ -1459,6 +1532,7 @@ def save_boundaries():
         egm_dir = os.path.join(os.path.dirname(__file__), "..", DIR_OWNER_INBOX)
         os.makedirs(egm_dir, exist_ok=True)
     output = os.path.join(egm_dir, filename)
+    _prepare_egm_for_save(data, output)
     with open(output, "w") as f:
         _json.dump(data, f, indent=EGM_JSON_INDENT)
     return jsonify({KEY_STATUS: STATUS_OK, KEY_PATH: output, KEY_FILENAME: filename})
@@ -1561,6 +1635,14 @@ def _egm_load_response(fpath, by_full_path=False):
     with open(fpath) as f:
         data = _json.load(f)
     data[KEY_STATUS] = STATUS_OK
+    embedded_path = egm_embed.materialize(data)   # v6.21: embedded PNG wins over the external file
+    if embedded_path:
+        block = data[egm_embed.KEY_EMBEDDED_IMAGE]
+        if egm_embed.safe_filename(block.get(egm_embed.KEY_EMB_FILENAME)) and block[egm_embed.KEY_EMB_FILENAME] == data.get(KEY_IMAGE):
+            data = egm_embed.public_view(data)
+            data[KEY_IMAGE_COURSE] = egm_embed.course_token(block[egm_embed.KEY_EMB_SHA256])
+        else:
+            embedded_path = None
     # Expose print constants so the editor can size the fringe-expansion zone.
     # generate_stl_3mf imports trimesh/shapely/numpy at module load; on a fresh
     # machine missing any of those, this route used to 500 with an ImportError
@@ -1581,10 +1663,11 @@ def _egm_load_response(fpath, by_full_path=False):
 
     if by_full_path:
         data[KEY_EGM_PATH] = fpath
-        img_course, warning = _resolve_egm_image_course(data, fpath)
-        data[KEY_IMAGE_COURSE] = img_course
-        if warning:
-            data[KEY_IMAGE_WARNING] = warning
+        if not embedded_path:   # legacy EGM: fall back to the external image file
+            img_course, warning = _resolve_egm_image_course(data, fpath)
+            data[KEY_IMAGE_COURSE] = img_course
+            if warning:
+                data[KEY_IMAGE_WARNING] = warning
     return jsonify(data)
 
 
@@ -2202,7 +2285,7 @@ def _generate_models_impl():
     Returns:
         {KEY_STATUS: STATUS_OK, "file": {"name": ..., "path": ..., "type": "3mf"}}
     """
-    # v5.75: dependency preflight BEFORE importing the pipeline, burning a serial,
+    # v5.75: dependency preflight BEFORE importing the pipeline, creating a generation ID,
     # or doing any heavy work. Missing packages stop generation with a clear message.
     try:
         dependency_preflight.check_dependencies()
@@ -2266,7 +2349,7 @@ def _generate_models_impl():
     print(f"[generate_models] EGM path:        {egm_path}")
 
     # ── GPS backend pre-check ─────────────────────────────────────────────────
-    # Read the EGM to inspect gpsBackend before committing a serial number.
+    # Read the EGM to inspect gpsBackend before starting the run.
     # Fail fast with a 400 + helpful message if GPS prereqs are not satisfied.
     import json as _json
     try:
@@ -2279,14 +2362,11 @@ def _generate_models_impl():
     if not _gps_ok:
         return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: _gps_err}), HTTP_BAD_REQUEST
 
-    # ── Commit global serial at click time ───────────────────────────────────
-    # The serial is burned here, BEFORE calling into the pipeline, so that:
-    #  (a) The filename reflects this exact Generate press.
-    #  (b) Even a pipeline failure leaves the counter advanced (serials are
-    #      cheap; we never reuse one, even on error).
-    from serial_engraver import commit_global_serial as _commit_global_serial
-    _serial = _commit_global_serial()
-    print(f"[generate_models] Global serial:   {_serial}")
+    # ── One generation ID per Generate click ─────────────────────────────────
+    # year.month.date.hour24.minute.second.username — names this run's output
+    # file; no shared counter or state file is involved.
+    _generation_id = make_generation_id()
+    print(f"[generate_models] Generation ID:   {_generation_id}")
 
     try:
         three_mf_path = run_pipeline(
@@ -2294,17 +2374,17 @@ def _generate_models_impl():
             include_boundary_region=include_boundary_region,
             apply_fringe_frame_cap=apply_fringe_frame_cap,
             include_fringe_without_grass=include_fringe_without_grass,
-            serial=_serial,
+            generation_id=_generation_id,
         )
     except Exception as exc:
         return jsonify({KEY_STATUS: STATUS_ERROR, KEY_MSG: str(exc)}), HTTP_SERVER_ERROR
 
-    # run_pipeline returns the absolute path with serial in the filename.
+    # run_pipeline returns the absolute path with the generation ID in the filename.
     # If for any reason it returns None (old callers), fall back to the plain name.
     if three_mf_path and os.path.exists(three_mf_path):
         three_mf_name = os.path.basename(three_mf_path)
     else:
-        # Fallback: old-style name without serial (file may not exist yet)
+        # Fallback: plain name without the ID (file may not exist yet)
         three_mf_name = THREE_MF_FILENAME_FMT.format(course=course, hole_label=hole_label)
         three_mf_dir = os.path.abspath(os.path.join(_EGM_BASE, course, COURSE_SUBDIR_3MFS))
         three_mf_path = os.path.join(three_mf_dir, three_mf_name)
@@ -2354,6 +2434,7 @@ def _generate_models_impl():
 
     import gradient_surface_diagnostic as _gsd
     return jsonify({KEY_STATUS: STATUS_OK, KEY_FILE: result,
+                    KEY_GENERATION_ID: _generation_id,
                     KEY_SLICER_OPENED: slicer_opened, KEY_SLICER_ERROR: slicer_error,
                     KEY_WARNINGS: list(_gsd.PIPELINE_WARNINGS)})
 

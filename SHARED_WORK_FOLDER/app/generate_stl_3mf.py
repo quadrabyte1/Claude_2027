@@ -58,6 +58,9 @@ import numpy as np
 from shapely.geometry import Polygon as ShapelyPolygon
 from shapely.ops import unary_union
 import trimesh
+import egm_embed
+
+from generation_id import FILENAME_ID_BRACKET_FMT, make_generation_id
 
 # Optional heavy deps — imported lazily inside functions that need them
 # cv2, scipy.sparse, scipy.sparse.linalg
@@ -106,6 +109,7 @@ OUT_KEY_NAME: str = "name"
 OUT_KEY_PATH: str = "path"
 OUT_KEY_TYPE: str = "type"
 FILE_TYPE_3MF: str = "3mf"
+EXT_3MF: str = "." + FILE_TYPE_3MF
 FILE_TYPE_STL: str = "stl"
 
 THICKNESS_BY_TYPE: dict[str, float] = {
@@ -949,25 +953,21 @@ def _slugify(text: str) -> str:
     return text
 
 
-def _3mf_filename(course: str, hole: str, serial: int | None = None) -> str:
-    """e.g. "Moffett Field (Hole 09) [105].3mf" (or without brackets if no serial)."""
+def _3mf_filename(course: str, hole: str, generation_id: str | None = None) -> str:
+    """e.g. "Moffett Field (Hole 09) [2026.11.01.14.05.09.jgreen].3mf" (no brackets if no ID)."""
     hole_label = str(hole).zfill(HOLE_LABEL_WIDTH) if str(hole).isdigit() else str(hole)
     base = f"{course} (Hole {hole_label})"
-    if serial is not None:
-        return f"{base} [{serial}].3mf"
-    return f"{base}.3mf"
+    if generation_id is not None:
+        return f"{base} {FILENAME_ID_BRACKET_FMT.format(generation_id=generation_id)}{EXT_3MF}"
+    return f"{base}{EXT_3MF}"
 
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
 
 def generate_from_egm(
     egm_data: dict[str, Any],
     output_dir: str | None = None,
     print_size_mm: float = PRINT_SIZE_MM,
     thickness_override: dict[str, float] | None = None,
-    serial: int | None = None,
+    generation_id: str | None = None,
 ) -> list[dict[str, str]]:
     """
     Generate one combined 3MF from EGM boundary data, containing the green,
@@ -979,11 +979,10 @@ def generate_from_egm(
     output_dir       : Directory for output files.  Defaults to owner_inbox/.
     print_size_mm    : Largest printed dimension in mm (default 178 = 7 inches).
     thickness_override: Map of polygon type → thickness in mm (overrides defaults).
-    serial           : Global serial number for this generate run.  When provided
-                       it is embedded in the filename as ``[N]`` and the global
-                       counter is NOT touched.  Callers (Flask route, CLI) should
-                       obtain this by calling ``commit_global_serial()`` BEFORE
-                       calling into the pipeline.
+    generation_id    : Per-run UUID4
+                       identifier (``generation_id.make_generation_id()``), built
+                       once by the caller.  When provided it is embedded in the
+                       filename as ``[<id>]``.
 
     Returns
     -------
@@ -1030,8 +1029,8 @@ def generate_from_egm(
 
     # Resolve source image path (for color-band scoring in stepped green)
     image_name = egm_data.get(EGM_KEY_IMAGE, "")
-    image_path: str | None = None
-    if image_name:
+    image_path: str | None = egm_embed.materialize(egm_data)   # v6.21: embedded PNG first
+    if image_name and image_path is None:
         # Check course Images/ folder first, then team_inbox as fallback
         paths = course_paths(course)
         for candidate_dir in (paths[PATH_KEY_IMAGES],
@@ -1156,10 +1155,7 @@ def generate_from_egm(
     # --- 8. Export combined 3MF and individual STLs ---
     base_slug = _slugify(f"{course}_hole_{hole}")
     if len(scene.geometry) > 0:
-        # Use the serial passed in by the caller (commit_global_serial() was
-        # called at the route/CLI level before entering the pipeline).
-        # Never peek/commit here — the counter is owned by the caller.
-        fname_3mf = _3mf_filename(course, hole, serial=serial)
+        fname_3mf = _3mf_filename(course, hole, generation_id=generation_id)
         path_3mf = os.path.join(output_dir_3mf, fname_3mf)
         scene.export(path_3mf)
         generated.append({OUT_KEY_NAME: fname_3mf, OUT_KEY_PATH: path_3mf, OUT_KEY_TYPE: FILE_TYPE_3MF})
@@ -1191,7 +1187,7 @@ def generate_from_egm(
 def generate_from_egm_file(
     egm_path: str,
     output_dir: str | None = None,
-    serial: int | None = None,
+    generation_id: str | None = None,
     **kwargs,
 ) -> list[dict[str, str]]:
     """Convenience wrapper: load an .egm file and call generate_from_egm().
@@ -1200,13 +1196,13 @@ def generate_from_egm_file(
     ----------
     egm_path   : Path to the .egm project file.
     output_dir : Directory for output files.  Defaults to owner_inbox/.
-    serial     : Global serial number obtained from commit_global_serial() by
-                 the caller.  When None, the filename has no serial bracket.
+    generation_id : Per-run ID from make_generation_id().  When None, the filename
+                 has no ID bracket.
     **kwargs   : Forwarded to generate_from_egm().
     """
     with open(egm_path) as f:
         data = json.load(f)
-    return generate_from_egm(data, output_dir=output_dir, serial=serial, **kwargs)
+    return generate_from_egm(data, output_dir=output_dir, generation_id=generation_id, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -1223,13 +1219,11 @@ if __name__ == "__main__":
     egm_path = sys.argv[1]
     out_dir = sys.argv[2] if len(sys.argv) > 2 else None
 
-    # Burn a global serial just like a Generate click in the editor.
-    # Running the CLI is another form of pressing Generate.
-    from serial_engraver import commit_global_serial as _commit_global
-    _cli_serial = _commit_global()
-    print(f"[generate_stl_3mf] Global serial: {_cli_serial}")
+    # Running the CLI is another form of pressing Generate: one ID per run.
+    _cli_generation_id = make_generation_id()
+    print(f"[generate_stl_3mf] Generation ID: {_cli_generation_id}")
 
-    results = generate_from_egm_file(egm_path, output_dir=out_dir, serial=_cli_serial)
+    results = generate_from_egm_file(egm_path, output_dir=out_dir, generation_id=_cli_generation_id)
     print("\nGenerated files:")
     for r in results:
         print(f"  [{r[OUT_KEY_TYPE].upper():3s}] {r[OUT_KEY_PATH]}")

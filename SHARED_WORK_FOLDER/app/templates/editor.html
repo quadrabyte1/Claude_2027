@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{# Boundary Editor v6.17 — (1) Side-palette colour boxes are 30% shorter (PALETTE_SWATCH_HEIGHT_SCALE 0.7; popup palette unchanged). (2) Click a numeric label on the side palette to type ANY brush value (e.g. 3.77): Enter loads it as the brush (Cmd/Ctrl+Enter as second brush, Slope boundary value works too), Esc / click away cancels, invalid or out-of-range input (palette range: +-15 delta, 0..30 absolute) shows an inline error and changes nothing; a "Brush: 3.77" readout shows the loaded value and no swatch is highlighted. Cell values are now stored to 0.01 (GRID_VALUE_STORE_STEP; was 0.1); Slope still grades in 0.1 steps; the value box shows 2.0 / 2.5 / 3.77. (v6.16 — Palette value labels (side strip, popup, tooltips) no longer show a leading '+' on positives (15, 1.5; negatives keep '-', zero stays 0); cell value box / grid tooltip unchanged. (v6.15 — The degridded heat-map PNG is now deleted when no longer needed (it is a pure cache, rebuilt on demand by /api/degrid_image): on Close Project, when New/Open Project switches to a different image, on page close (pagehide beacon to /api/degrid_release), and by a server sweep at startup + hourly for orphans older than 1 h. Strict guard: only a stamped "<stem>__degridded.png" inside a course Images folder is ever removed, never the original; another live tab or a running Generate keeps it; a tab that finds its copy gone silently regenerates it. (v6.14 — Side-palette colour boxes are now landscape (wider than tall: width and height swapped, so the 61-swatch strip takes less vertical space); the popup palette was already landscape. (v6.13 — Palettes now have half-step swatches (…+1, +1.5, +2…; 61 per palette, step = PALETTE_VALUE_STEP) with smaller colour boxes; the B two-brush ramp steps by half mm too. (v6.12 — The Slope (S) pop-ups are now an in-page dialog styled like the native macOS alert, with a "Don't prompt anymore" checkbox (one setting for both Slope prompts, per browser, localStorage); Options has a "Show Slope prompts" checkbox to bring them back; the Slope flow awaits the dialog. The Slope brush cursor is now an empty outline-only brush (red strike removed). The grid-resolution warning is unchanged (native confirm). v6.11 — While Slope (S) runs, the brush cursor/indicator shows NO colour (transparent bristles with a red diagonal strike); it returns to the normal brush colour when Slope ends (done, cancelled, Esc, leaving Z-Painting); the brush value itself is never changed. Slope (S): its two step instructions ("Select a brush and draw one / the other boundary ...") now appear in the same small pop-up dialog box as the grid-resolution warning (single OK; Enter/Esc dismisses; keys and clicks are blocked until dismissed) instead of a sticky status-bar message; both go through one shared helper (showNoticeDialog / showConfirmDialog). The grid-resolution warning is unchanged. v6.10 — (1) The right-click popup palette now prints each swatch's value inside its colour box (dark or light text chosen from the swatch's luminance; swatches 24 -> 28 px so the numbers fit). (2) New "Close Project" button beside New/Open Project: flushes the pending autosave (a failed save warns and keeps the project open; a deferred, unsaved change asks first), then returns the editor to its fresh-page no-project state and strips ?egm= from the URL; disabled when no project is open. (3) Slope (S) now grades in 0.1 steps (1.0, 1.1, 1.2 ...) instead of whole numbers; every cell value is rounded to 0.1 on store, save and load (no 1.2000000000000002 noise), the value box / hover tooltip show one decimal, and cell colours interpolate continuously between the palette colours (unchanged behaviour). v6.09 — Selected control points grow only half as much as before (selected boundary's points 8 px -> 6 px radius; clicking is unchanged); a plain click on empty space (no drag past the threshold) now clears ALL selections (points, highlighted boundary, contour, grid cells) in Boundary Editing; Shift/Cmd clicks, drags, Z-Painting/Slope and clicks outside the canvas are unaffected. v6.08 — G or Cmd/Ctrl+G presses Generate (plain G ignored while typing). v6.02 — Open any .egm by double-clicking it in Finder: /editor?egm=<absolute path> auto-opens that EGM through the same loader as Open Project (new /api/boundaries/load_path, .egm + realpath + regular-file checks). Autosave and Generate write back to / read from that exact file, never a course-folder copy; a missing heat-map image shows a clear message. Duplicate filenames across courses no longer matter. v6.01 — Fix (server-side, no editor UI change): a bunker body could go missing from the 3MF while its cavity was still cut into the fringe. Cause: the rake-texture step (apply_sand_texture) sometimes produced a non-watertight mesh for one bunker and the generator then dropped that bunker. The texture is now retried at slightly different sample pitches and, if it still fails, the bunker ships as a plain slab with a warning; a bunker body is never dropped. v6.00 — Fix: the Image switch now always offers Original / Degridded / Hide. Cause: only Create New Project requested the degridded copy, so after Open Project (or Load/reload) the Degridded segment stayed hidden; every image load now asks the server, which builds the degridded copy on demand next to the original (original untouched). Create New still defaults to Degridded; other paths keep the current view. v5.99 — Image switch gets a third segment, Hide: the heat-map PNG (and its fringe hatching / border) is not drawn, so the topology cells, boundaries and tee marker can be manipulated on a plain background; everything stays interactive. Available whenever an image is loaded (Open Project too; Degridded only appears when a degridded copy exists). View only: never saved, never affects Generate/detection/autosave; switching back restores the already-loaded image without a refetch. v5.97 — Slope (S): if a colour brush is already selected when S is pressed it is adopted as brush 1, so the first boundary can be drawn straight away (picking another swatch first still switches it; the Eraser / no brush still requires a pick); the second boundary always needs a pick because the active brush is brush 1. v5.96 — Fix: the right-click popup palette no longer appears at the page's upper-left corner (left:0/top:0) when not invoked. Cause: its :style was a string binding, which Alpine applies with setAttribute('style') and so erased the display:none that x-show had set whenever paintPopup was re-assigned (entering Z-Painting / Slope, mode changes); the binding is now object-form and every hide goes through the single closePaintPopup(). v5.95 — New Z-Painting command S = Slope (Thomas's "Boundary Editor Commands" spreadsheet): press S, pick a brush from the palette and drag one boundary line, pick a second brush and drag the other boundary; both 3 px boundary lines are then removed and the area between them is filled with cross-lines whose cells ramp from brush 1 to brush 2 by the same visit-order rule as the 2-brush drag. Esc (or leaving Z-Painting) cancels; the whole fill is ONE undo step; Ctrl = Cmd as everywhere. v5.94 — Entering paint mode (Z-Painting button, Cmd/Ctrl-P, palette swatch, Mode 1 B key) now deselects any selected boundary control points via the single enterPaintMode() path. v5.92 — Mode 2 is now the ONLY UI: the Mode 1 / Mode 2 switch is removed from the page (hidden behind the single constant UI_MODE_SWITCH_ENABLED = false), uiMode is forced to Mode 2 on load and any stored "Mode 1" is ignored; the Boundary Editing / Z-Painting sub-mode switch stays. Mode 1 code is kept dormant on purpose (set UI_MODE_SWITCH_ENABLED = true to revive). v5.91 — Ctrl now behaves exactly like Cmd everywhere. Palette swatches (side palette, popup palette, Eraser) select on mousedown because macOS never fires `click` for Ctrl+left-click (it becomes a context-menu click); the follow-up click is ignored so a press cannot fire twice, and the context menu is suppressed on swatches. A contextmenu event with Ctrl held (macOS Ctrl+click) is ignored by the canvas, so in Mode 1 a Ctrl-click/drag multi-select no longer clears the grid cell under the pointer; genuine right-click is unchanged. One isCmdLike(e) helper replaces the scattered metaKey||ctrlKey tests (keyboard chords Ctrl-B/P/Z/Shift-Z/Y/Delete included). v5.90 — The "Edit" group (Paint and Undo buttons) is removed from the Grid row; Paint (B in Mode 1, Cmd/Ctrl-P in Mode 2), Esc and Cmd/Ctrl-Z / Cmd/Ctrl-Shift-Z undo/redo remain on the keyboard. v5.89 — Boundary Editing (UI Mode 2): a plain left-click on empty space (no drag past the threshold) and a right-click that is not on a boundary line now unselect any selected control points (Shift + click on empty space keeps the selection; drags still rubber-band; not an undo step). Mode 1 unchanged. v5.88 — The GREEN boundary polygon (line, fill, control points, selected point) is now drawn fuchsia/purple (COLOR_POLY_GREEN #C026D3) instead of green so it stands out on the green heat map; drawn colour is derived from the polygon type, so existing EGMs with a stored green colour also show purple (stored data untouched). Trap/water/boulder colours unchanged. v5.87 — UI Mode 2 implemented (Thomas's "Boundary Editor Commands" spreadsheet). Two sub-modes shown/switchable beside the UI Mode switch: Boundary Editing (Cmd/Ctrl-B, arrow cursor: left-click/drag a point moves it; right-click on a line adds a point that follows the mouse; right-click on a point deletes it; drag on empty space = rubber band; Cmd-drag on empty space = freehand lasso; Shift adds to the selection; selected points = same size/colour with a black border; Esc clears the selection) and Z-Painting (Cmd/Ctrl-P: palette swatch = single brush, Cmd-click a swatch = second brush -> rainbow cursor; Eraser = brush with value null; right-click = popup palette; 1 brush: click/drag paints, Cmd-drag rubber-band fills cells entirely inside; 2 brushes: drag selects cells in visit order and release ramps brush 1 -> brush 2 quantised to palette steps). Every gesture is ONE undo step. Mode 1 is untouched (its B toggle, grid copy/paste and Shift line-lock stay Mode-1 only; Mode 2 leaves the grid value box and contour drawing unreachable). Switching back to Mode 1 leaves paint state and restores the cursor. v5.86 — New "UI Mode" switch (Mode 1 / Mode 2) in its own labelled group on the Grid row: an editor-wide, per-browser preference (localStorage, never saved to the EGM; default Mode 1). Mode 1 = all existing key/mouse bindings, unchanged. Mode 2 is a placeholder that currently behaves exactly like Mode 1; the input seam (isUiMode2() + comments in handleKey / onMouseDown / onMouseMove / onMouseUp) is where the new paradigm will branch. v5.85 — Shift held during a Cmd/Ctrl cell drag locks the selection to a straight line: once the pointer is 2 cells from the start cell the direction is locked (any angle; snaps to exact 0/45/90 within 12 degrees), sideways drift is ignored and cells are added along a 1-cell-wide DDA ray walk, in order, so the far end is the most recent cell (paste anchor); releasing Shift returns to free selection. v5.84 — Bunker body is now a ruled surface: rim 2 mm below the fringe, straight chords between boundary heights across the strongest-gradient direction; grid cells inside a bunker no longer reshape it (server-side change; no editor UI change). v5.83 — Grid cells copy/paste: Cmd/Ctrl+C copies the selected cells with their values (explicit 0 kept) as offsets from the most recently selected cell, to the system clipboard (JSON, type-tagged) and an in-memory fallback; Cmd/Ctrl+V pastes that pattern anchored at the most recently selected cell as one undoable step (cells outside the grid skipped). Native copy/paste in text fields is untouched. v5.82 — Bunkers are now carved from the finished fringe: set cells FULLY inside a bunker belong to that bunker only (the fringe is built without them; partly-inside cells still shape the fringe); the bunker floor is the fringe surface minus 1 mm, and its fully-inside cells shape it smoothly (delta = offsets, absolute = floor height in mm) with the rim always 1 mm below the fringe; a bunker with no set cells stays flat. The red controlling-cell ring overlay and its server route are removed. v5.81 — Fix: the canvas could be sized from a container width measured before the paint palette laid out (palette shows/hides with Grid mode), leaving it wider than its frame so the right edge of the image/polygons was clipped; the canvas now re-measures via a ResizeObserver whenever its container width changes. v5.80 — Removed the -15/+15 colour legend gradient next to "Color cells by height" (the left palette shows the scale) and the "N cells set" badge from the Grid row. A 0 painted with the paint-mode BRUSH is now a REAL value: stored in gridCellHeights (key present = set; explicit 0), drawn with its normal scale colour (delta: the pale-yellow midpoint) and labelled 0.0, kept on reload, and used by the generator like any set cell (TPS constraint, trap controlling cell). The Eraser empties a cell; typing 0 in the value box, right-click and Delete still empty it; undo restores empty vs explicit 0 exactly. Old EGMs (never stored zeros) are unaffected. v5.79 — Below-canvas controls reorganised into labelled groups (Project / Shapes / Image / Output on one row with Generate at the right end; Grid row: mode, resolution, Paint, Undo, colour-by-height) with consistent 32px controls and segmented switches; Remove T Hole gets a subtle danger style; Undo moved from the top bar into the Grid group; the tee-hole Side Left/Right picker (and its dead setTeeHoleSide / teeHoleSide / TEE_SIDE_* code) removed — drag the marker instead. Layout and styling only. v5.78 — Cell value labels scale with the actual cell pixel width on the 40x40 grid (clamped min/max; 20x20 unchanged) so labels like -12.5 fit one cell; with "Color cells by height" on, empty cells (0 / unset) are left uncoloured — only set, non-zero cells get a fill. v5.77 — Paint mode: left-margin colour palette (31 swatches on the fixed v5.76 scale + Eraser; delta +15..-15, absolute 30..0), Paint button / B key / swatch click to enter, Esc / B / button / Grid Off to exit; mouse-down + drag paints cells (interpolated along the drag, 20x20 and 40x40) with a brush-tinted paintbrush cursor (eraser has its own); one stroke = one undo step; undo is now ONE chronological history (max 50 grid steps) shared by grid edits and polygon/contour edits, so polygon edits no longer wipe grid undo. v5.76 — Cell colours use a FIXED scale (colormap matplotlib RdYlBu_r, blue low -> red high): delta -15..+15 mm, absolute 0..30 mm on the same colours; values outside clamp to the end colours; legend shows the fixed ends; auto-scaling (and the 400-cell rule) removed. v5.75 — Generate stops with a clear message when a required Python package (e.g. triangle) is missing instead of producing a degraded model. v5.70 — Named-constants refactor (CLAUDE.md Coding Standard), no behavior change: every tunable, color, size, threshold, API URL, storage key, mode name and repeated UI string now lives in one EDITOR CONSTANTS block at the top of the script (CSS custom properties for markup-only values); tests read the constants via tests/editor_constants.py. v5.69 — Create New Project: the heat-map PNG's baked-in background grid is erased for display (server-side heatmap_degrid.py; cleaned copy saved next to the original, original untouched) with an Original/Degridded view toggle; boundary detection still runs on the original; Open Project is unaffected. v5.68 — Grid resolution switch (20x20 default / 40x40) next to the Grid mode switch; confirm dialog then erases all cell values; saved as EGM `gridResolution` (absent = 20); drawing, hit-testing, overlays and the server TPS/controlling-cell code honour it. v5.21 — Default tee-hole position moved to (40, 40) mm (was 30, 30); saved positions untouched. v5.20 — Grid cell value labels are plain black (delta) with no white outline; absolute keeps orange. v5.19 — Ctrl+Option(Alt)+drag selects cells along the drag path (visit order); popup has first/last boxes, Tab/Enter from the last box spreads first->last linearly (0.1 mm precision). v5.18 — Grid cell value labels/tooltip no longer show a leading '+' on positives (negatives keep '-'). v5.17 — Geo-ref setup dialog removed (orphaned after the GPS panel ⚙ opener was removed); courseGeoRef data still loads/saves untouched. v5.16 — GPS controls removed from the UI (JS state/load/save kept so any EGM gpsBackend block still round-trips). v5.15 — Mouse wheel steps the open grid value box (0.1 mm, Shift = 1.0; no clamp; commit still Enter/Tab). v5.14 — Grid cells colored by value (matplotlib 'terrain', auto-scaled; view-only toggle in localStorage). v5.13 — Only cells FULLY inside a bunker can control it (partial cells ignored). v5.12 — Ring now in delta AND absolute (not off); delta = default + highest cell (was mean). v5.11 — Absolute mode: red ring around the grid cell(s) that control each trap's height (server-computed, mirrors generator). v5.10 — Grid value 0 = empty cell (deleted on commit, dropped on load). Grid lines recolored to indigo; Cmd+drag multi-cell selection with shared-value edit (task 726) #}
+{# Boundary Editor v6.27 — The 2-brush ramp drag now stores its in-between cell values in 0.25 mm steps (RAMP_VALUE_STEP_MM; was whole palette steps = 0.5 mm) so the generated 3MF gets finer slope transitions. Palette swatches (PALETTE_VALUE_STEP 0.5), colours and cell-label format (1 decimal) are unchanged; Slope (S) was already in 0.1 mm steps and is unchanged. (v6.26 — generation ID is now a standard UUID4, server side only.) (v6.24 — Z-Painting: hold Shift while dragging a brush (or the Eraser, or a 2-brush ramp drag) to keep the stroke on a straight row or column. The direction is chosen from the first movement (1 cell) after the stroke starts (or after Shift is pressed mid-stroke, anchored where it was pressed): horizontal if the move is more sideways than up/down, otherwise vertical; the perpendicular movement is then ignored and cells are filled along the line so none are skipped. Releasing Shift returns to free painting. One stroke is still ONE undo step; Shift in Boundary Editing (additive selection) is unchanged. (Brings back the v5.85 line-lock for the Mode-2 UI, H/V only.) (v6.22 — All error / failure messages now appear in ONE shared modal error dialog (title "Error", message, OK; Enter / Esc / OK dismiss, focus moves into it, dimmed backdrop, same look as the Slope notice) instead of the status line at the bottom of the page, which could be scrolled out of view: server error replies, failed fetches, validation failures, Generate / detection / degrid / autosave failures, caught and uncaught JS errors. Several errors queue and show one after another (an identical repeat is not stacked). Non-error status / progress text and hints ("Nothing to undo") stay on the status line. (v6.21 — Self-contained EGMs: every saved .egm now embeds its ORIGINAL heat-map PNG (base64 "embeddedImage" block with filename, SHA-256 and size; added automatically on every save when the image is available). Open Project / Generate / Degrid then run from the embedded copy and no longer depend on the external image file; legacy EGMs without the block still use the external path, and migrate_embed_pngs.py back-fills existing EGMs (backup first, dry-run available). No editor UI change. (v6.17 — (1) Side-palette colour boxes are 30% shorter (PALETTE_SWATCH_HEIGHT_SCALE 0.7; popup palette unchanged). (2) Click a numeric label on the side palette to type ANY brush value (e.g. 3.77): Enter loads it as the brush (Cmd/Ctrl+Enter as second brush, Slope boundary value works too), Esc / click away cancels, invalid or out-of-range input (palette range: +-15 delta, 0..30 absolute) shows an inline error and changes nothing; a "Brush: 3.77" readout shows the loaded value and no swatch is highlighted. Cell values are now stored to 0.01 (GRID_VALUE_STORE_STEP; was 0.1); Slope still grades in 0.1 steps; the value box shows 2.0 / 2.5 / 3.77. (v6.16 — Palette value labels (side strip, popup, tooltips) no longer show a leading '+' on positives (15, 1.5; negatives keep '-', zero stays 0); cell value box / grid tooltip unchanged. (v6.15 — The degridded heat-map PNG is now deleted when no longer needed (it is a pure cache, rebuilt on demand by /api/degrid_image): on Close Project, when New/Open Project switches to a different image, on page close (pagehide beacon to /api/degrid_release), and by a server sweep at startup + hourly for orphans older than 1 h. Strict guard: only a stamped "<stem>__degridded.png" inside a course Images folder is ever removed, never the original; another live tab or a running Generate keeps it; a tab that finds its copy gone silently regenerates it. (v6.14 — Side-palette colour boxes are now landscape (wider than tall: width and height swapped, so the 61-swatch strip takes less vertical space); the popup palette was already landscape. (v6.13 — Palettes now have half-step swatches (…+1, +1.5, +2…; 61 per palette, step = PALETTE_VALUE_STEP) with smaller colour boxes; the B two-brush ramp steps by half mm too. (v6.12 — The Slope (S) pop-ups are now an in-page dialog styled like the native macOS alert, with a "Don't prompt anymore" checkbox (one setting for both Slope prompts, per browser, localStorage); Options has a "Show Slope prompts" checkbox to bring them back; the Slope flow awaits the dialog. The Slope brush cursor is now an empty outline-only brush (red strike removed). The grid-resolution warning is unchanged (native confirm). v6.11 — While Slope (S) runs, the brush cursor/indicator shows NO colour (transparent bristles with a red diagonal strike); it returns to the normal brush colour when Slope ends (done, cancelled, Esc, leaving Z-Painting); the brush value itself is never changed. Slope (S): its two step instructions ("Select a brush and draw one / the other boundary ...") now appear in the same small pop-up dialog box as the grid-resolution warning (single OK; Enter/Esc dismisses; keys and clicks are blocked until dismissed) instead of a sticky status-bar message; both go through one shared helper (showNoticeDialog / showConfirmDialog). The grid-resolution warning is unchanged. v6.10 — (1) The right-click popup palette now prints each swatch's value inside its colour box (dark or light text chosen from the swatch's luminance; swatches 24 -> 28 px so the numbers fit). (2) New "Close Project" button beside New/Open Project: flushes the pending autosave (a failed save warns and keeps the project open; a deferred, unsaved change asks first), then returns the editor to its fresh-page no-project state and strips ?egm= from the URL; disabled when no project is open. (3) Slope (S) now grades in 0.1 steps (1.0, 1.1, 1.2 ...) instead of whole numbers; every cell value is rounded to 0.1 on store, save and load (no 1.2000000000000002 noise), the value box / hover tooltip show one decimal, and cell colours interpolate continuously between the palette colours (unchanged behaviour). v6.09 — Selected control points grow only half as much as before (selected boundary's points 8 px -> 6 px radius; clicking is unchanged); a plain click on empty space (no drag past the threshold) now clears ALL selections (points, highlighted boundary, contour, grid cells) in Boundary Editing; Shift/Cmd clicks, drags, Z-Painting/Slope and clicks outside the canvas are unaffected. v6.08 — G or Cmd/Ctrl+G presses Generate (plain G ignored while typing). v6.02 — Open any .egm by double-clicking it in Finder: /editor?egm=<absolute path> auto-opens that EGM through the same loader as Open Project (new /api/boundaries/load_path, .egm + realpath + regular-file checks). Autosave and Generate write back to / read from that exact file, never a course-folder copy; a missing heat-map image shows a clear message. Duplicate filenames across courses no longer matter. v6.01 — Fix (server-side, no editor UI change): a bunker body could go missing from the 3MF while its cavity was still cut into the fringe. Cause: the rake-texture step (apply_sand_texture) sometimes produced a non-watertight mesh for one bunker and the generator then dropped that bunker. The texture is now retried at slightly different sample pitches and, if it still fails, the bunker ships as a plain slab with a warning; a bunker body is never dropped. v6.00 — Fix: the Image switch now always offers Original / Degridded / Hide. Cause: only Create New Project requested the degridded copy, so after Open Project (or Load/reload) the Degridded segment stayed hidden; every image load now asks the server, which builds the degridded copy on demand next to the original (original untouched). Create New still defaults to Degridded; other paths keep the current view. v5.99 — Image switch gets a third segment, Hide: the heat-map PNG (and its fringe hatching / border) is not drawn, so the topology cells, boundaries and tee marker can be manipulated on a plain background; everything stays interactive. Available whenever an image is loaded (Open Project too; Degridded only appears when a degridded copy exists). View only: never saved, never affects Generate/detection/autosave; switching back restores the already-loaded image without a refetch. v5.97 — Slope (S): if a colour brush is already selected when S is pressed it is adopted as brush 1, so the first boundary can be drawn straight away (picking another swatch first still switches it; the Eraser / no brush still requires a pick); the second boundary always needs a pick because the active brush is brush 1. v5.96 — Fix: the right-click popup palette no longer appears at the page's upper-left corner (left:0/top:0) when not invoked. Cause: its :style was a string binding, which Alpine applies with setAttribute('style') and so erased the display:none that x-show had set whenever paintPopup was re-assigned (entering Z-Painting / Slope, mode changes); the binding is now object-form and every hide goes through the single closePaintPopup(). v5.95 — New Z-Painting command S = Slope (Thomas's "Boundary Editor Commands" spreadsheet): press S, pick a brush from the palette and drag one boundary line, pick a second brush and drag the other boundary; both 3 px boundary lines are then removed and the area between them is filled with cross-lines whose cells ramp from brush 1 to brush 2 by the same visit-order rule as the 2-brush drag. Esc (or leaving Z-Painting) cancels; the whole fill is ONE undo step; Ctrl = Cmd as everywhere. v5.94 — Entering paint mode (Z-Painting button, Cmd/Ctrl-P, palette swatch, Mode 1 B key) now deselects any selected boundary control points via the single enterPaintMode() path. v5.92 — Mode 2 is now the ONLY UI: the Mode 1 / Mode 2 switch is removed from the page (hidden behind the single constant UI_MODE_SWITCH_ENABLED = false), uiMode is forced to Mode 2 on load and any stored "Mode 1" is ignored; the Boundary Editing / Z-Painting sub-mode switch stays. Mode 1 code is kept dormant on purpose (set UI_MODE_SWITCH_ENABLED = true to revive). v5.91 — Ctrl now behaves exactly like Cmd everywhere. Palette swatches (side palette, popup palette, Eraser) select on mousedown because macOS never fires `click` for Ctrl+left-click (it becomes a context-menu click); the follow-up click is ignored so a press cannot fire twice, and the context menu is suppressed on swatches. A contextmenu event with Ctrl held (macOS Ctrl+click) is ignored by the canvas, so in Mode 1 a Ctrl-click/drag multi-select no longer clears the grid cell under the pointer; genuine right-click is unchanged. One isCmdLike(e) helper replaces the scattered metaKey||ctrlKey tests (keyboard chords Ctrl-B/P/Z/Shift-Z/Y/Delete included). v5.90 — The "Edit" group (Paint and Undo buttons) is removed from the Grid row; Paint (B in Mode 1, Cmd/Ctrl-P in Mode 2), Esc and Cmd/Ctrl-Z / Cmd/Ctrl-Shift-Z undo/redo remain on the keyboard. v5.89 — Boundary Editing (UI Mode 2): a plain left-click on empty space (no drag past the threshold) and a right-click that is not on a boundary line now unselect any selected control points (Shift + click on empty space keeps the selection; drags still rubber-band; not an undo step). Mode 1 unchanged. v5.88 — The GREEN boundary polygon (line, fill, control points, selected point) is now drawn fuchsia/purple (COLOR_POLY_GREEN #C026D3) instead of green so it stands out on the green heat map; drawn colour is derived from the polygon type, so existing EGMs with a stored green colour also show purple (stored data untouched). Trap/water/boulder colours unchanged. v5.87 — UI Mode 2 implemented (Thomas's "Boundary Editor Commands" spreadsheet). Two sub-modes shown/switchable beside the UI Mode switch: Boundary Editing (Cmd/Ctrl-B, arrow cursor: left-click/drag a point moves it; right-click on a line adds a point that follows the mouse; right-click on a point deletes it; drag on empty space = rubber band; Cmd-drag on empty space = freehand lasso; Shift adds to the selection; selected points = same size/colour with a black border; Esc clears the selection) and Z-Painting (Cmd/Ctrl-P: palette swatch = single brush, Cmd-click a swatch = second brush -> rainbow cursor; Eraser = brush with value null; right-click = popup palette; 1 brush: click/drag paints, Cmd-drag rubber-band fills cells entirely inside; 2 brushes: drag selects cells in visit order and release ramps brush 1 -> brush 2 quantised to palette steps). Every gesture is ONE undo step. Mode 1 is untouched (its B toggle, grid copy/paste and Shift line-lock stay Mode-1 only; Mode 2 leaves the grid value box and contour drawing unreachable). Switching back to Mode 1 leaves paint state and restores the cursor. v5.86 — New "UI Mode" switch (Mode 1 / Mode 2) in its own labelled group on the Grid row: an editor-wide, per-browser preference (localStorage, never saved to the EGM; default Mode 1). Mode 1 = all existing key/mouse bindings, unchanged. Mode 2 is a placeholder that currently behaves exactly like Mode 1; the input seam (isUiMode2() + comments in handleKey / onMouseDown / onMouseMove / onMouseUp) is where the new paradigm will branch. v5.85 — Shift held during a Cmd/Ctrl cell drag locks the selection to a straight line: once the pointer is 2 cells from the start cell the direction is locked (any angle; snaps to exact 0/45/90 within 12 degrees), sideways drift is ignored and cells are added along a 1-cell-wide DDA ray walk, in order, so the far end is the most recent cell (paste anchor); releasing Shift returns to free selection. v5.84 — Bunker body is now a ruled surface: rim 2 mm below the fringe, straight chords between boundary heights across the strongest-gradient direction; grid cells inside a bunker no longer reshape it (server-side change; no editor UI change). v5.83 — Grid cells copy/paste: Cmd/Ctrl+C copies the selected cells with their values (explicit 0 kept) as offsets from the most recently selected cell, to the system clipboard (JSON, type-tagged) and an in-memory fallback; Cmd/Ctrl+V pastes that pattern anchored at the most recently selected cell as one undoable step (cells outside the grid skipped). Native copy/paste in text fields is untouched. v5.82 — Bunkers are now carved from the finished fringe: set cells FULLY inside a bunker belong to that bunker only (the fringe is built without them; partly-inside cells still shape the fringe); the bunker floor is the fringe surface minus 1 mm, and its fully-inside cells shape it smoothly (delta = offsets, absolute = floor height in mm) with the rim always 1 mm below the fringe; a bunker with no set cells stays flat. The red controlling-cell ring overlay and its server route are removed. v5.81 — Fix: the canvas could be sized from a container width measured before the paint palette laid out (palette shows/hides with Grid mode), leaving it wider than its frame so the right edge of the image/polygons was clipped; the canvas now re-measures via a ResizeObserver whenever its container width changes. v5.80 — Removed the -15/+15 colour legend gradient next to "Color cells by height" (the left palette shows the scale) and the "N cells set" badge from the Grid row. A 0 painted with the paint-mode BRUSH is now a REAL value: stored in gridCellHeights (key present = set; explicit 0), drawn with its normal scale colour (delta: the pale-yellow midpoint) and labelled 0.0, kept on reload, and used by the generator like any set cell (TPS constraint, trap controlling cell). The Eraser empties a cell; typing 0 in the value box, right-click and Delete still empty it; undo restores empty vs explicit 0 exactly. Old EGMs (never stored zeros) are unaffected. v5.79 — Below-canvas controls reorganised into labelled groups (Project / Shapes / Image / Output on one row with Generate at the right end; Grid row: mode, resolution, Paint, Undo, colour-by-height) with consistent 32px controls and segmented switches; Remove T Hole gets a subtle danger style; Undo moved from the top bar into the Grid group; the tee-hole Side Left/Right picker (and its dead setTeeHoleSide / teeHoleSide / TEE_SIDE_* code) removed — drag the marker instead. Layout and styling only. v5.78 — Cell value labels scale with the actual cell pixel width on the 40x40 grid (clamped min/max; 20x20 unchanged) so labels like -12.5 fit one cell; with "Color cells by height" on, empty cells (0 / unset) are left uncoloured — only set, non-zero cells get a fill. v5.77 — Paint mode: left-margin colour palette (31 swatches on the fixed v5.76 scale + Eraser; delta +15..-15, absolute 30..0), Paint button / B key / swatch click to enter, Esc / B / button / Grid Off to exit; mouse-down + drag paints cells (interpolated along the drag, 20x20 and 40x40) with a brush-tinted paintbrush cursor (eraser has its own); one stroke = one undo step; undo is now ONE chronological history (max 50 grid steps) shared by grid edits and polygon/contour edits, so polygon edits no longer wipe grid undo. v5.76 — Cell colours use a FIXED scale (colormap matplotlib RdYlBu_r, blue low -> red high): delta -15..+15 mm, absolute 0..30 mm on the same colours; values outside clamp to the end colours; legend shows the fixed ends; auto-scaling (and the 400-cell rule) removed. v5.75 — Generate stops with a clear message when a required Python package (e.g. triangle) is missing instead of producing a degraded model. v5.70 — Named-constants refactor (CLAUDE.md Coding Standard), no behavior change: every tunable, color, size, threshold, API URL, storage key, mode name and repeated UI string now lives in one EDITOR CONSTANTS block at the top of the script (CSS custom properties for markup-only values); tests read the constants via tests/editor_constants.py. v5.69 — Create New Project: the heat-map PNG's baked-in background grid is erased for display (server-side heatmap_degrid.py; cleaned copy saved next to the original, original untouched) with an Original/Degridded view toggle; boundary detection still runs on the original; Open Project is unaffected. v5.68 — Grid resolution switch (20x20 default / 40x40) next to the Grid mode switch; confirm dialog then erases all cell values; saved as EGM `gridResolution` (absent = 20); drawing, hit-testing, overlays and the server TPS/controlling-cell code honour it. v5.21 — Default tee-hole position moved to (40, 40) mm (was 30, 30); saved positions untouched. v5.20 — Grid cell value labels are plain black (delta) with no white outline; absolute keeps orange. v5.19 — Ctrl+Option(Alt)+drag selects cells along the drag path (visit order); popup has first/last boxes, Tab/Enter from the last box spreads first->last linearly (0.1 mm precision). v5.18 — Grid cell value labels/tooltip no longer show a leading '+' on positives (negatives keep '-'). v5.17 — Geo-ref setup dialog removed (orphaned after the GPS panel ⚙ opener was removed); courseGeoRef data still loads/saves untouched. v5.16 — GPS controls removed from the UI (JS state/load/save kept so any EGM gpsBackend block still round-trips). v5.15 — Mouse wheel steps the open grid value box (0.1 mm, Shift = 1.0; no clamp; commit still Enter/Tab). v5.14 — Grid cells colored by value (matplotlib 'terrain', auto-scaled; view-only toggle in localStorage). v5.13 — Only cells FULLY inside a bunker can control it (partial cells ignored). v5.12 — Ring now in delta AND absolute (not off); delta = default + highest cell (was mean). v5.11 — Absolute mode: red ring around the grid cell(s) that control each trap's height (server-computed, mirrors generator). v5.10 — Grid value 0 = empty cell (deleted on commit, dropped on load). Grid lines recolored to indigo; Cmd+drag multi-cell selection with shared-value edit (task 726) #}
 {% block title %}Boundary Editor — AI Team Workspace{% endblock %}
 {% block content_width %}max-w-6xl{% endblock %}
 {% block content %}
@@ -46,6 +46,8 @@
     --notice-font-size: 13px;
     --notice-ok-height: 22px;
     --notice-ok-min-width: 64px;
+    --notice-error-accent: #DC2626;   /* v6.22: error dialog accent (title text + top edge) */
+    --notice-error-accent-width: 3px;
   }
   .eb-notice-backdrop { position:fixed; inset:0; z-index:calc(var(--editor-z-modal) + 1); background:var(--notice-backdrop);
     display:flex; align-items:center; justify-content:center; }
@@ -53,6 +55,8 @@
     background:var(--notice-bg); color:var(--notice-text); border:0.5px solid var(--notice-border); border-radius:var(--notice-radius);
     box-shadow:var(--notice-shadow); font:var(--notice-font-size)/1.35 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; }
   .eb-notice-title { font-weight:700; margin-bottom:6px; }
+  .eb-notice-box--error { border-top:var(--notice-error-accent-width) solid var(--notice-error-accent); }
+  .eb-notice-title--error { color:var(--notice-error-accent); }
   .eb-notice-message { margin-bottom:var(--notice-pad); white-space:pre-wrap; word-break:break-word; }
   .eb-notice-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; }
   .eb-notice-checkrow { display:inline-flex; align-items:center; gap:6px; cursor:default; user-select:none; }
@@ -1067,6 +1071,30 @@ const GRID_SHIFT_LOCK_CELLS = 2;            // pointer distance from the start c
 const GRID_SHIFT_SNAP_DEG = 12;             // within this many degrees of a snap step the direction is made exact
 const GRID_SHIFT_SNAP_STEP_DEG = 45;        // snap steps: 0 / 45 / 90 / ... degrees
 const GRID_DEG_TO_RAD = Math.PI / 180;
+// v6.24 — Shift held during a Mode-2 Z-Painting stroke (brush, Eraser, 2-brush ramp drag) locks it to one row or column.
+const PAINT_SHIFT_LOCK_CELLS = 1;           // pointer distance from the lock anchor (in cells) that picks the axis
+const PAINT_AXIS_H = 'h';                   // locked to the anchor's row (horizontal line)
+const PAINT_AXIS_V = 'v';                   // locked to the anchor's column (vertical line)
+// Pure helper shared by single-brush / Eraser strokes and the 2-brush ramp drag.  `st` carries {lastU,lastV} (the previous sample,
+// in fractional cell coords) and gets {lockAnchor, lockAxis}.  Returns the (u,v) the stroke should extend to.
+//   Shift down  -> anchor = the previous sample (stroke start, or where Shift was pressed mid-stroke); the axis is chosen once the
+//                  pointer is PAINT_SHIFT_LOCK_CELLS away (H if |du| >= |dv|, else V); then the perpendicular movement is ignored.
+//   Shift up    -> free again: the stroke resumes at the pointer (nothing is painted back along the locked line).
+function paintAxisLock(st, u, v, shiftDown) {
+  if (!shiftDown) {
+    if (st.lockAxis) { st.lastU = u; st.lastV = v; }
+    st.lockAnchor = null; st.lockAxis = null;
+    return { u, v };
+  }
+  if (!st.lockAnchor) st.lockAnchor = { u: st.lastU, v: st.lastV };
+  const a = st.lockAnchor;
+  if (!st.lockAxis) {
+    const du = u - a.u, dv = v - a.v;
+    if (Math.hypot(du, dv) < PAINT_SHIFT_LOCK_CELLS) return { u, v };   // not far enough yet: free
+    st.lockAxis = Math.abs(du) >= Math.abs(dv) ? PAINT_AXIS_H : PAINT_AXIS_V;
+  }
+  return st.lockAxis === PAINT_AXIS_H ? { u, v: a.v } : { u: a.u, v };
+}
 const GRID_CELL_CENTER = 0.5;               // cell centre offset in cell units
 const GRID_EDGE_EPS = 1e-6;                 // keeps the projected end point strictly inside the grid
 const MSG_GRID_PASTE_NOTHING = 'Select a cell to paste at';
@@ -1376,12 +1404,12 @@ function rainbowCursorSvg() {
   const defs = '<defs><linearGradient id="' + RAINBOW_GRADIENT_ID + '" x1="0" y1="1" x2="1" y2="0">' + stops + '</linearGradient></defs>';
   return paintCursorSvg('url(#' + RAINBOW_GRADIENT_ID + ')').replace('>', '>' + defs);   // defs right after the opening <svg ...> tag
 }
-// v5.87 — palette step for the k-th of n visited cells ramping from step a to step b (linear, quantised to PALETTE_VALUE_STEP = one palette index per half mm).
+// v5.87 — palette step for the k-th of n visited cells ramping from step a to step b (linear, quantised to RAMP_VALUE_STEP_MM = 0.25 mm since v6.27; the palette swatch step stays PALETTE_VALUE_STEP).
 function rampStepAt(k, n, a, b) {
   const t = n <= 1 ? 0 : k / (n - 1);
   if (n > 1 && k === 0) return a;          // v6.17: a custom (fractional) end brush keeps its exact value; interior cells stay on palette steps
   if (n > 1 && k === n - 1) return b;
-  return Math.round(a + t * (b - a));
+  return roundToStep(a + t * (b - a), RAMP_VALUE_STEP_PALETTE_STEPS, RAMP_STEP_DECIMALS);   // v6.27: quarter-mm resolution in the stored value; palette swatches/labels unchanged
 }
 // v5.87 — ray-casting point-in-polygon (poly = [{x,y}, ...]).
 function pointInPolygon(x, y, poly) {
@@ -1436,6 +1464,9 @@ const M2_UNDO_SLOPE = 'slope';
 const SLOPE_LINE_WIDTH_PX = 3;              // the spec's three-pixel boundary line
 const SLOPE_MIN_SAMPLE_PX = 2;              // image px between recorded stroke samples
 const SLOPE_MIN_STROKE_CELLS = 1;           // a stroke shorter than this (in cells) is discarded and redrawn
+const RAMP_VALUE_STEP_MM = 0.25;            // v6.27: 2-brush ramp interior cells are stored in quarter-mm steps (was whole palette steps = 0.5 mm)
+const RAMP_VALUE_STEP_PALETTE_STEPS = RAMP_VALUE_STEP_MM / PALETTE_VALUE_STEP;   // the same step expressed in palette-step units (0.5)
+const RAMP_STEP_DECIMALS = 2;               // rounds away float noise of RAMP_VALUE_STEP_PALETTE_STEPS multiples
 const SLOPE_VALUE_STEP = 0.1;               // v6.10: Slope grades in tenths of a mm (1.0, 1.1, 1.2 ...)
 const SLOPE_VALUE_DECIMALS = 1;             // v6.10: decimals of SLOPE_VALUE_STEP (rounds away float noise)
 const SLOPE_SAMPLES_PER_CELL = 3;           // cross-lines per cell of the longer boundary (dense enough to leave no gaps)
@@ -1453,6 +1484,9 @@ const MSG_CLOSE_UNSAVED_CONFIRM = 'This project has changes that have not been s
 const MSG_CLOSED_PROJECT = 'Project closed';
 const AUTOSAVE_SAVED = 'saved';          // v6.10: autoSave() outcomes
 const AUTOSAVE_SKIPPED = 'skipped';      // prerequisites missing: change kept in memory only
+const MSG_AUTOSAVE_FAILED_FMT = 'Could not save the project ({detail}). Your latest changes are not on disk - is the server running?';
+const MSG_COURSE_LIST_FAILED = 'Failed to load the course list';
+const MSG_DEGRID_FAILED_FMT = 'Could not prepare the degridded heat-map: {detail}. Showing the original image.';
 const AUTOSAVE_FAILED = 'failed';        // network error or HTTP error status
 const QUERY_PARAM_EGM = 'egm';           // /editor?egm=<abs path> (stripped on Close Project; mirrors app.py QUERY_EGM)
 const QUERY_PARAM_IMAGE = 'image';       // /editor?image=<file>   (stripped too, so a reload stays closed; mirrors app.py QUERY_IMAGE)
@@ -1555,6 +1589,24 @@ const NOTICE_ROLE = 'alertdialog';
 const NOTICE_KEY_OK = ['Enter', 'Escape'];
 const NOTICE_KEY_TAB = 'Tab';
 const NOTICE_KEY_SPACE = ' ';
+// v6.22 — the ONE shared modal ERROR dialog.  Every error / failure message (fetch failures, server error replies, validation
+//   failures, Generate / degrid failures, caught JS exceptions, uncaught errors) goes through showErrorDialog(); only non-error
+//   status / progress text stays on the status line.  Built on showNoticeDialog (same look, focus-on-OK, Enter / Esc / click OK to
+//   dismiss, dimmed backdrop).  Errors that arrive while one is showing are QUEUED and shown one after another; an identical
+//   message already waiting (or on screen) is not repeated.
+const ERROR_DIALOG_TITLE = 'Error';
+const ERROR_DIALOG_RETRY_MS = 100;                   // wait step while a notice (e.g. Slope prompt) is still on screen
+const NOTICE_CLASS_BOX_ERROR = 'eb-notice-box--error';
+const NOTICE_CLASS_TITLE_ERROR = 'eb-notice-title--error';
+const MSG_UNEXPECTED_ERROR_FMT = 'Unexpected error: {detail}';
+const MSG_UNHANDLED_REJECTION_FMT = 'Unexpected error (unhandled promise): {detail}';
+const MSG_UNKNOWN_ERROR_DETAIL = 'unknown';
+const WINDOW_EVENT_ERROR = 'error';
+const WINDOW_EVENT_REJECTION = 'unhandledrejection';
+const FLASH_KIND_HINT = 'hint';                      // flash(msg, FLASH_KIND_HINT): a non-error hint that stays on the status line
+const errorDialogQueue = [];                         // [{message, title, done}] waiting to be shown
+let errorDialogCurrent = null;                       // the one on screen
+let errorDialogPump = null;                          // Promise of the running pump, or null
 let noticeDialogOpen = false;                       // true while the modal is up (the editor's key / mouse handlers check it)
 function isNoticeDialogOpen() { return noticeDialogOpen; }
 function isNoticeSuppressed(storageKey) {
@@ -1563,7 +1615,8 @@ function isNoticeSuppressed(storageKey) {
 function setNoticeSuppressed(storageKey, on) {
   try { if (on) localStorage.setItem(storageKey, STORAGE_VALUE_ON); else localStorage.removeItem(storageKey); } catch (e) {}
 }
-function showNoticeDialog(message, suppressKey) {
+function showNoticeDialog(message, suppressKey, opts) {
+  opts = opts || {};
   if (suppressKey && isNoticeSuppressed(suppressKey)) return Promise.resolve(true);   // suppressed: behaves as if OK was pressed
   return new Promise((resolve) => {
     const el = (tag, id, cls) => { const n = document.createElement(tag); if (id) n.id = id; if (cls) n.className = cls; return n; };
@@ -1572,7 +1625,8 @@ function showNoticeDialog(message, suppressKey) {
     box.setAttribute('role', NOTICE_ROLE);
     box.setAttribute('aria-modal', 'true');
     const title = el('div', NOTICE_TITLE_ID, NOTICE_CLASS_TITLE);
-    title.textContent = ((typeof window !== 'undefined' && window.location && window.location.host) || NOTICE_TITLE_FALLBACK) + NOTICE_TITLE_SUFFIX;
+    if (opts.error) { box.className += ' ' + NOTICE_CLASS_BOX_ERROR; title.className += ' ' + NOTICE_CLASS_TITLE_ERROR; }
+    title.textContent = opts.title || ((typeof window !== 'undefined' && window.location && window.location.host) || NOTICE_TITLE_FALLBACK) + NOTICE_TITLE_SUFFIX;
     const msg = el('div', NOTICE_MESSAGE_ID, NOTICE_CLASS_MESSAGE);
     msg.textContent = message;
     const footer = el('div', null, NOTICE_CLASS_FOOTER);
@@ -1625,6 +1679,45 @@ function showNoticeDialog(message, suppressKey) {
     document.addEventListener('keydown', onKey, true);
     document.body.appendChild(backdrop);
     ok.focus();
+  });
+}
+function fillDetail(fmt, detail) { return fmt.replace('{detail}', () => detail); }   // function replacer: '$&' in a message stays literal
+function errorDetail(err) {
+  return (err && err.message) ? err.message : String(err == null ? MSG_UNKNOWN_ERROR_DETAIL : err);
+}
+async function pumpErrorDialogs() {
+  while (errorDialogQueue.length) {
+    errorDialogCurrent = errorDialogQueue.shift();
+    while (noticeDialogOpen) await new Promise(r => setTimeout(r, ERROR_DIALOG_RETRY_MS));
+    const item = errorDialogCurrent;
+    await showNoticeDialog(item.message, null, { title: item.title, error: true });
+    errorDialogCurrent = null;
+    item.done();
+  }
+  errorDialogPump = null;
+}
+// Returns a Promise that resolves once THIS message has been dismissed (or immediately if it was a repeat / empty).
+function showErrorDialog(message, title) {
+  const text = String(message == null ? '' : message);
+  if (!text) return Promise.resolve();
+  const t = title || ERROR_DIALOG_TITLE;
+  const same = (e) => e && e.message === text && e.title === t;
+  if (same(errorDialogCurrent) || errorDialogQueue.some(same)) return Promise.resolve();
+  return new Promise((resolve) => {
+    errorDialogQueue.push({ message: text, title: t, done: resolve });
+    if (!errorDialogPump) errorDialogPump = pumpErrorDialogs();
+  });
+}
+const BENIGN_ERROR_RE = /ResizeObserver loop/;      // browser noise, not a failure
+function installGlobalErrorHandlers() {
+  if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
+  window.addEventListener(WINDOW_EVENT_ERROR, (ev) => {
+    const detail = errorDetail(ev && (ev.error || ev.message));
+    if (BENIGN_ERROR_RE.test(detail)) return;
+    showErrorDialog(fillDetail(MSG_UNEXPECTED_ERROR_FMT, detail));
+  });
+  window.addEventListener(WINDOW_EVENT_REJECTION, (ev) => {
+    showErrorDialog(fillDetail(MSG_UNHANDLED_REJECTION_FMT, errorDetail(ev && ev.reason)));
   });
 }
 function showConfirmDialog(message) { return window.confirm(message); }
@@ -1873,6 +1966,7 @@ function polygonEditor() {
     },
 
     init() {
+      installGlobalErrorHandlers();   // v6.22: uncaught JS errors / rejections -> the shared error dialog
       if (!this._degridTabId) {   // v6.15: per-tab id (multi-tab safety) + release on page close; init() runs twice under Alpine
         this._degridTabId = Math.random().toString(DEGRID_TAB_ID_RADIX).slice(2) + Date.now().toString(DEGRID_TAB_ID_RADIX);
         window.addEventListener(DEGRID_PAGE_HIDE_EVENT, () => this.releaseDegrid(true));
@@ -1922,13 +2016,14 @@ function polygonEditor() {
       if (held && (held.image !== this.selectedImage || held.imageCourse !== this.selectedImageCourse)) this.releaseDegrid(false);
       this._requestDegrid()
       .then(r => {
+        if (r.status === 'error') showErrorDialog(fillDetail(MSG_DEGRID_FAILED_FMT, r.msg || MSG_UNKNOWN_ERROR_DETAIL));
         const found = r.status === 'ok' && r.found;
         this.degridUrls = found ? { original: r.originalUrl, degridded: r.degriddedUrl } : null;
         if (this.imageView === DEGRID_VIEW_HIDE) return;
         if (!found) this.imageView = DEGRID_VIEW_ORIGINAL;
         else if (preferClean) this.imageView = DEGRID_VIEW_CLEAN;
       })
-      .catch(() => { this.degridUrls = null; if (this.imageView === DEGRID_VIEW_CLEAN) this.imageView = DEGRID_VIEW_ORIGINAL; })
+      .catch((err) => { showErrorDialog(fillDetail(MSG_DEGRID_FAILED_FMT, errorDetail(err))); this.degridUrls = null; if (this.imageView === DEGRID_VIEW_CLEAN) this.imageView = DEGRID_VIEW_ORIGINAL; })
       .finally(() => this._loadImageNow());
     },
 
@@ -2045,7 +2140,7 @@ function polygonEditor() {
       fetch(API_DETECT_BOUNDARIES, {
         method: HTTP_METHOD_POST,
         headers: HTTP_HEADERS_JSON,
-        body: JSON.stringify({ image: this.selectedImage, course: this.courseName }),
+        body: JSON.stringify({ image: this.selectedImage, course: this.courseName, imageCourse: this.selectedImageCourse || this.courseName }),
       })
       .then(resp => resp.json())
       .then(result => {
@@ -2086,7 +2181,7 @@ function polygonEditor() {
           // status === 'ok' but polygons.length === 0
           this.initPolygons();
           this.draw();
-          this.flash('Detection found no green or traps in this image — 101 using defaults', false);
+          this.flash('Detection found no green or traps in this image — 101 using defaults', FLASH_KIND_HINT);
         }
       })
       .catch((err) => {
@@ -3002,7 +3097,7 @@ function polygonEditor() {
         const anchor = this._gridMultiSelectAnchor;
         if (anchor && this._gridRampMode) {
           // v5.19: ramp popup — two boxes, focus the first.
-          if (this.gridMode === GRID_MODE_OFF) { this.cancelGridRamp(); this.flash(MSG_GRID_MODE_OFF, false); return; }
+          if (this.gridMode === GRID_MODE_OFF) { this.cancelGridRamp(); this.flash(MSG_GRID_MODE_OFF, FLASH_KIND_HINT); return; }
           this.openGridCell(anchor.col, anchor.row, anchor.idx);
           this.$nextTick(() => { const f = this.$refs.gridRampFirst; if (f) { f.focus(); f.select(); } });
         } else if (anchor) {
@@ -3312,7 +3407,7 @@ function polygonEditor() {
     // v5.77 — undo the most recent edit of either kind.  Returns true when an entry was consumed.
     undo() {
       const e = this.undoHistory.pop();
-      if (!e) { this.flash(MSG_NOTHING_TO_UNDO, false); return false; }
+      if (!e) { this.flash(MSG_NOTHING_TO_UNDO, FLASH_KIND_HINT); return false; }
       if (e.kind === UNDO_KIND_GRID) { this._undoGridEntry(e); return true; }
       this.redoStack.push(this.snapshotPolygons());
       this.restoreSnapshot(e.snap);
@@ -3322,7 +3417,7 @@ function polygonEditor() {
     },
 
     _undoGridEntry(u) {
-      if (u.mode !== this.gridMode || u.gridN !== this.gridN) { this.flash(MSG_UNDO_MODE_CHANGED, false); return; }
+      if (u.mode !== this.gridMode || u.gridN !== this.gridN) { this.flash(MSG_UNDO_MODE_CHANGED, FLASH_KIND_HINT); return; }
       for (const [i, v] of Object.entries(u.cells)) {
         if (v === undefined) delete this.gridCellHeights[i]; else this.gridCellHeights[i] = v;
       }
@@ -3332,7 +3427,7 @@ function polygonEditor() {
     },
 
     redo() {
-      if (this.redoStack.length === 0) { this.flash('Nothing to redo', false); return; }
+      if (this.redoStack.length === 0) { this.flash('Nothing to redo', FLASH_KIND_HINT); return; }
       this.undoHistory.push({ kind: UNDO_KIND_POLY, snap: this.snapshotPolygons(), label: UNDO_LABEL_POLY_DEFAULT });
       this._trimUndo(UNDO_KIND_POLY, this.maxUndo);
       this.restoreSnapshot(this.redoStack.pop());
@@ -3614,7 +3709,7 @@ function polygonEditor() {
     // Task 774 (v5.34): in 'off' mode editing is disabled — show a hint toast and bail.
     openGridCell(col, row, idx) {
       if (this.gridMode === GRID_MODE_OFF) {
-        this.flash(MSG_GRID_MODE_OFF, false);
+        this.flash(MSG_GRID_MODE_OFF, FLASH_KIND_HINT);
         return;
       }
       const existing = this.gridCellHeights[idx];
@@ -3801,7 +3896,7 @@ function polygonEditor() {
     pasteGridCells() {
       const sel = this._gridSelectionList();
       if (!sel.length || (!this._gridClipPattern && !(navigator.clipboard && navigator.clipboard.readText))) {
-        this.flash(MSG_GRID_PASTE_NOTHING, false);
+        this.flash(MSG_GRID_PASTE_NOTHING, FLASH_KIND_HINT);
         return false;
       }
       const anchor = sel[sel.length - 1];
@@ -3816,7 +3911,7 @@ function polygonEditor() {
     // Write a pattern into the grid as ONE undo step through the normal cell-edit path
     // (gridUndoSnapshot -> write gridCellHeights -> cancelGridCell/draw -> autoSave).
     applyGridPattern(pattern, anchorIdx) {
-      if (!pattern) { this.flash(MSG_GRID_PASTE_NOTHING, false); return false; }
+      if (!pattern) { this.flash(MSG_GRID_PASTE_NOTHING, FLASH_KIND_HINT); return false; }
       if (pattern.gridN !== this.gridN) { this.flash(MSG_GRID_PASTE_RES_MISMATCH, false); return false; }
       const targets = gridClipTargets(pattern, anchorIdx, this.gridN);
       if (!targets.length) { this.flash(MSG_GRID_PASTE_OUTSIDE, false); return false; }
@@ -3872,7 +3967,7 @@ function polygonEditor() {
     // Enter paint mode (optionally choosing a brush first).  Returns false when the grid is Off / no image.
     enterPaintMode(brush) {
       if (brush !== undefined) this.paintBrush = brush;
-      if (this.gridMode === GRID_MODE_OFF) { this.flash(MSG_GRID_MODE_OFF, false); return false; }
+      if (this.gridMode === GRID_MODE_OFF) { this.flash(MSG_GRID_MODE_OFF, FLASH_KIND_HINT); return false; }
       if (!this.imgLoaded) return false;
       if (this._gridActiveCell || this._gridMultiSelect) this.cancelGridRamp();   // close any open value box / selection
       this._gridHoveredCell = null;
@@ -3958,7 +4053,8 @@ function polygonEditor() {
       const st = this._paintStroke;
       if (!st) return;
       if (!(e.buttons & 1)) { this.paintEnd(); return; }       // mouse-up was missed
-      const p = this.canvasToImg(e), uv = this._imgToCellUV(p.x, p.y);
+      const p = this.canvasToImg(e), raw = this._imgToCellUV(p.x, p.y);
+      const uv = paintAxisLock(st, raw.u, raw.v, e.shiftKey);       // v6.24: Shift = stay on the start row / column
       // Interpolate between the previous and this sample so fast drags cannot skip cells.
       if (this._paintCells(cellsAlongSegment(st.lastU, st.lastV, uv.u, uv.v))) this.draw();
       st.lastU = uv.u; st.lastV = uv.v;
@@ -4269,7 +4365,8 @@ function polygonEditor() {
         return;
       }
       if (m.kind === M2_KIND_RAMP) {
-        const uv = this._imgToCellUV(x, y);
+        const raw = this._imgToCellUV(x, y);
+        const uv = paintAxisLock(m, raw.u, raw.v, e.shiftKey);   // v6.24: Shift = row / column lock
         this._m2RampAdd(cellsAlongSegment(m.lastU, m.lastV, uv.u, uv.v));
         m.lastU = uv.u; m.lastV = uv.v;
         return;
@@ -4642,11 +4739,12 @@ function polygonEditor() {
           headers: HTTP_HEADERS_JSON,
           body: JSON.stringify(data),
         });
-        if (resp && resp.ok === false) return AUTOSAVE_FAILED;   // v6.10: HTTP error status = not saved
+        if (resp && resp.ok === false) { showErrorDialog(fillDetail(MSG_AUTOSAVE_FAILED_FMT, 'HTTP ' + resp.status)); return AUTOSAVE_FAILED; }   // v6.10: HTTP error status = not saved
         this._pendingAutoSave = false;  // v4.48 — clear any deferred-save badge
         return AUTOSAVE_SAVED;
       } catch (err) {
-        // Silent — don't interrupt the user (v6.10: callers that care, e.g. Close Project, read the outcome)
+        // v6.22: no longer silent - shown once in the error dialog (repeats of the same message are not stacked); v6.10: callers still read the outcome
+        showErrorDialog(fillDetail(MSG_AUTOSAVE_FAILED_FMT, errorDetail(err)));
         return AUTOSAVE_FAILED;
       }
     },
@@ -4685,6 +4783,7 @@ function polygonEditor() {
         this.existingCourses = data.courses || [];
       } catch (e) {
         console.error('Failed to refresh course list:', e);
+        showErrorDialog(MSG_COURSE_LIST_FAILED + ': ' + errorDetail(e));
       }
     },
 
@@ -5466,7 +5565,11 @@ function polygonEditor() {
     //   ok=true  (info/success): auto-dismisses after durationMs (default 4500ms)
     //   ok=false (error):        sticky — stays until the user clicks ×, unless an
     //                            explicit durationMs is passed (e.g. a 500ms transient)
+    //   ok=false (v6.22): an ERROR -> the shared modal error dialog (showErrorDialog), NOT the status line
+    //   ok=FLASH_KIND_HINT: a non-error hint ("Nothing to undo") that stays on the status line as before
     flash(msg, ok, filename = '', durationMs = null) {
+      if (ok === false) { showErrorDialog(filename ? msg + ' ' + filename : msg); return; }
+      if (ok === FLASH_KIND_HINT) ok = false;
       if (this._flashTimer) { clearTimeout(this._flashTimer); this._flashTimer = null; }
       this.statusMsg = msg;
       this.statusOk = ok;

@@ -733,3 +733,56 @@ class TestPlate2PlaterName:
             f"Plate 2 plater_name still says 'Fringe Grass Sample' (old value). "
             f"Must be updated to 'Fringe No Grass Sample'. Got: '{val}'"
         )
+
+
+# ---------------------------------------------------------------------------
+# T16 - Plate-2 object is centred on plate 2 (not left in the bed corner)
+# ---------------------------------------------------------------------------
+
+# The minimal test mesh is a unit cube spanning 0..1, so its own centre is here.
+_UNIT_CUBE_CENTER_XY = (0.5, 0.5)
+_CENTER_TOLERANCE_MM = 1.0
+
+
+def _world_bbox_center_xy(model_xml: str, partnumber: str, gsd_mod):
+    """World XY bbox centre of the unit-cube object whose build item has this partnumber."""
+    root = ET.fromstring(model_xml)
+    ns = {"m": "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"}
+    for item in root.find("m:build", ns).findall("m:item", ns):
+        if item.get("partnumber") == partnumber:
+            t = [float(v) for v in item.get("transform").split()]
+            return (_UNIT_CUBE_CENTER_XY[0] + t[9], _UNIT_CUBE_CENTER_XY[1] + t[10])
+    raise AssertionError(f"no build item with partnumber {partnumber}")
+
+
+class TestPlate2Centering:
+    def _inject(self, gsd, tmp_path):
+        names = ["green_surface", "fringe", gsd.SCENE_NAME_FRINGE_NO_GRASS_SAMPLE]
+        raw = _make_minimal_3mf(names)
+        # give build items partnumbers/transforms like trimesh does
+        import re
+        items = "".join(
+            f'<item objectid="{i}" transform="1 0 0 0 1 0 0 0 1 0 0 0" partnumber="{n}"/>'
+            for i, n in enumerate(names, start=1))
+        dest = tmp_path / "centering.3mf"
+        with zipfile.ZipFile(io.BytesIO(raw)) as zin, zipfile.ZipFile(str(dest), "w") as zout:
+            for e in zin.namelist():
+                data = zin.read(e)
+                if e == "3D/3dmodel.model":
+                    data = data.decode().replace("<build/>", f"<build>{items}</build>").encode()
+                zout.writestr(e, data)
+        gsd._inject_bambu_extruder_metadata(str(dest), names)
+        with zipfile.ZipFile(str(dest)) as z:
+            return z.read("3D/3dmodel.model").decode()
+
+    def test_plate2_object_centred_on_plate2_and_plate1_unchanged(self, gsd, tmp_path):
+        xml = self._inject(gsd, tmp_path)
+        bed_cx, bed_cy = gsd.BAMBU_BED_CENTER_MM
+        plate2_cx = bed_cx + gsd.BAMBU_BED_WIDTH_MM * (1.0 + gsd.BAMBU_PLATE_GAP_FACTOR)
+        c1 = _world_bbox_center_xy(xml, "green_surface", gsd)
+        c2 = _world_bbox_center_xy(xml, gsd.SCENE_NAME_FRINGE_NO_GRASS_SAMPLE, gsd)
+        # plate 1 unchanged: still the bed centre
+        assert abs(c1[0] - bed_cx) <= _CENTER_TOLERANCE_MM and abs(c1[1] - bed_cy) <= _CENTER_TOLERANCE_MM
+        # plate 2: centred on plate 2
+        assert abs(c2[0] - plate2_cx) <= _CENTER_TOLERANCE_MM, (c2, plate2_cx)
+        assert abs(c2[1] - bed_cy) <= _CENTER_TOLERANCE_MM, c2

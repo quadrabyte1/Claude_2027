@@ -467,8 +467,9 @@ def test_ramp_is_monotone_discrete_quantised_and_repeats_values_when_many_cells(
     r = _run("""const n = 40, s = Array.from({length: n}, (_, k) => rampStepAt(k, n, 3, 8));
       console.log(JSON.stringify({s, single: rampStepAt(0, 1, 6, 9), down: [0, 1, 2].map(k => rampStepAt(k, 3, 20, 10))}));""")
     s = r["s"]
-    assert s[0] == 3 and s[-1] == 8 and s == sorted(s) and len(set(s)) == 6 and len(s) > len(set(s))   # coarse + repeats
-    assert all(isinstance(v, int) for v in s)
+    q = C.value("RAMP_VALUE_STEP_PALETTE_STEPS")   # v6.27: quarter-mm resolution = half a palette step
+    assert s[0] == 3 and s[-1] == 8 and s == sorted(s) and len(set(s)) == round((8 - 3) / q) + 1 and len(s) > len(set(s))   # repeats
+    assert all(abs(v / q - round(v / q)) < 1e-9 for v in s)
     assert r["single"] == 6 and r["down"] == [20, 15, 10]
 
 

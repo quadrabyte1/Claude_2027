@@ -1,3 +1,9 @@
+# v0.37 — 2026-11-02 Topo — Smooth fringe default surface (APP_VERSION v6.25).
+#         The hidden default that grid deltas are added to used the Z of the NEAREST green-rim point, which
+#           made a cliff wherever the nearest rim point switches (a notch in the green; Delaveaga 11 trb-m west
+#           wall: 24.5 -> 30.3 mm in 4 mm).  It is now _fringe_default_z: an inverse-distance (Shepard, power 5: high enough to stay local to the nearby rim, low enough that no cliff forms)
+#           blend of the whole rim binned to 0.5 mm, so it stays within the rim min/max, equals the rim Z at the
+#           rim (seam exact) and has no pinning at the frame.  Single caller: _build_tps_grid_height_field.
 # v0.29 — 2026-10-28 Topo — Cell-following bunker body (APP_VERSION v5.98), BUNKER_BODY_MODE_CELLS (new default).
 #         Root cause of the "concave bowl" in RULED mode: the crest clamp (fringe - rake/2 - 0.3 mm) was evaluated
 #           against the VIRTUAL fringe continuation, which sags under the bunker (owned cells revert to low Poisson
@@ -319,6 +325,9 @@ from scipy.ndimage import gaussian_filter, uniform_filter, median_filter
 from scipy.interpolate import splprep, splev
 import trimesh
 from dependency_preflight import check_dependencies, MissingDependencyError
+import egm_embed
+from generation_id import make_generation_id, FILENAME_ID_BRACKET_FMT
+from fringe_label_engraver import engrave_fringe_label, label_from_filename
 from shapely.geometry import Polygon as ShapelyPolygon, box as shapely_box, MultiPolygon as ShapelyMultiPolygon
 from skimage import measure
 
@@ -476,6 +485,10 @@ FILAMENT_DEFAULT: int = FILAMENT_GREEN # unknown geometries land on slot 1
 MANIFOLD_TOLERATE_BOUNDARY_EDGES: int = 30
 MANIFOLD_TOLERATE_TRIPLE_SHARED: int = 5
 BAMBU_BED_CENTER_MM: tuple = (128.0, 128.0)   # fallback bed centre when project settings have none
+BAMBU_BED_WIDTH_MM: float = 256.0              # fallback bed X extent (Bambu A1) when project settings have none
+# Bambu Studio lays plates out in a row; plate N's origin is (N-1) * bed_width * (1 + gap).
+# 0.2 is Bambu Studio's LOGICAL_PART_PLATE_GAP (1/5 of a bed width between plates).
+BAMBU_PLATE_GAP_FACTOR: float = 0.2
 BAMBU_PART_ID_BASE: int = 1000
 THREE_MF_MODEL_PATH: str = "3D/3dmodel.model"
 THREE_MF_CONTENT_TYPES_PATH: str = "[Content_Types].xml"
@@ -489,6 +502,7 @@ LOG_TAG_TPS: str = "[TPS]"
 LOG_TAG_TPS_GRID: str = "[TPS-grid]"
 LOG_TAG_GREEN_CARVE: str = "[green_carve]"
 LOG_TAG_GENERATE: str = "[generate]"
+OUTPUT_3MF_FILENAME_FMT: str = "{course} (Hole {hole_label}) {id_tag}.3mf"   # e.g. "Delaveaga (Hole 11) [2026.11.01.14.05.09.jgreen].3mf"
 LOG_TAG_CONFIG: str = "[config]"
 
 # ---------------------------------------------------------------------------
@@ -1099,7 +1113,7 @@ def _prepare_egm_geometry(data: dict, green_poly: dict) -> np.ndarray:
         # (well under the printer's XY resolution). This keeps the curve
         # visually identical while dropping vertex count ~20-40×. Without
         # this, the trap slab produces thousands of near-degenerate wall
-        # triangles that break as non-manifold during serial engraving.
+        # triangles that break as non-manifold during label engraving.
         try:
             from shapely.geometry import LinearRing as _LR
             _ring = _LR(_dense)
@@ -1143,9 +1157,11 @@ def load_egm(egm_path: str) -> tuple[dict, str, np.ndarray]:
     # different course's folder when creating the project.
     image_course = data.get("imageCourse", "") or course
 
+    # v6.21: an EGM that carries its own PNG never needs the external file.
+    image_path = egm_embed.materialize(data)
+
     # Build search list: imageCourse first, then all other course folders,
     # then legacy locations.
-    image_path = None
     search_dirs = []
     if image_course:
         search_dirs.append(os.path.abspath(course_paths(image_course)[PATH_KEY_IMAGES]))
@@ -1162,7 +1178,7 @@ def load_egm(egm_path: str) -> tuple[dict, str, np.ndarray]:
                 search_dirs.append(candidate_dir)
     search_dirs.extend([TEAM_INBOX, OWNER_INBOX])
 
-    for folder in search_dirs:
+    for folder in ([] if image_path else search_dirs):
         candidate = os.path.join(folder, image_filename)
         if os.path.exists(candidate):
             image_path = os.path.abspath(candidate)
@@ -1887,8 +1903,29 @@ BASE_THICKNESS_MM: float = 1.5    # flat base below lowest point
 # from the fringe Z math (task 483) — the fringe now holds green-edge Z flat
 # all the way to the frame instead of ramping to a per-hole rectangle-edge
 # target. The EGM key is intentionally preserved on-disk for backward
-# compatibility with existing .egm / serial.json files.
+# compatibility with existing .egm files.
+# v6.20 (Thomas): the fringe follows the EGM slope all the way to the frame; it is NOT
+# floored at BASE_THICKNESS_MM any more (that made a flat band wherever the slope dipped
+# below the base).  The only clamp left is this printability minimum: the fringe top must
+# stay a few layers (5 x 0.2 mm) above the z=0 bottom so the part is a solid, sliceable slab.
+FRINGE_MIN_THICKNESS_MM: float = 1.0
+FRINGE_TOP_MASK_FRACTION: float = 0.5  # top-surface verts = z above this fraction of FRINGE_MIN_THICKNESS_MM (excludes z=0 floor/walls)
+FRINGE_TOP_MASK_Z_MM: float = FRINGE_MIN_THICKNESS_MM * FRINGE_TOP_MASK_FRACTION  # grass/divot act on fringe top verts above this Z (v6.23: was BASE_THICKNESS_MM, which left a grass-less floor)
+FRINGE_PLATEAU_TILT_MM: float = 0.10  # peak-to-peak XY ramp so a clamped region is never one exact z (task 717)
 N_CONTOUR_LEVELS: int = 27        # steps for quantized surface
+
+# v6.25 (Thomas): the fringe's hidden "default" height (what the grid deltas are added to) is a
+# smooth inverse-distance (Shepard) blend of the WHOLE green rim, not the height of the single
+# nearest rim point.  The nearest-point rule made a cliff along every line where the nearest rim
+# point switches (e.g. across a notch in the green, Delaveaga 11 trb-m west side: 24.5 -> 30.3 mm
+# in 4 mm).  A Shepard blend is a convex combination of rim heights, so it can never leave the
+# rim's [min, max] (maximum principle), is smooth between rim points, and equals the rim height at
+# the rim, which keeps the green/fringe seam exact.  There is no pinning at the frame: far from the
+# rim it relaxes toward the proximity-weighted mean of the rim (natural boundary).
+FRINGE_DEFAULT_IDW_POWER: float = 5.0         # weight = 1 / distance**power
+FRINGE_DEFAULT_RIM_SAMPLE_MM: float = 0.5     # rim is binned to one averaged sample per this spacing (speed + even weighting)
+FRINGE_DEFAULT_MIN_DIST_MM: float = 1e-6      # distance floor so a point exactly on a rim sample takes that sample's Z
+FRINGE_DEFAULT_CHUNK_POINTS: int = 4000       # query points per vectorised chunk (bounds memory)
 
 # Signed XY offset applied to the fringe outer bbox.
 # Positive = grow; negative = shrink.
@@ -2156,7 +2193,11 @@ FRINGE_GRASS_SEAM_EXCLUDE_MM:     float = 0.325  # was 1.2; matches *_FRINGE_GAP
 # W_mm = FRINGE_BLEND_CELLS × (2×half/20).  At half≈89.1 mm, 3 cells ≈ 26.7 mm.
 # Set to 3 so the blend reaches ~3 cell-widths into the fringe; increase to
 # widen the blend, decrease to tighten it toward the seam.
-FRINGE_BLEND_CELLS: int = 3
+# v6.23 (Thomas: 'still a floor'): was 3 cells (~26 mm), which pulled the fringe toward the
+# green-rim Z so any EGM cell asking for a lower fringe within 26 mm of the green was lifted
+# (up to +1.3 mm on Delaveaga 11.40).  The seam itself is already pinned by the seam-reseat
+# of the innermost ring, so the band only needs to cover the seam neighbourhood (~2 mm).
+FRINGE_BLEND_CELLS: float = 0.25
 
 # ── Grass v2 knobs (Topo 2026-09-09) ─────────────────────────────────────────
 # GRASS_ALGORITHM picks the fringe grass implementation:
@@ -3195,7 +3236,7 @@ def drill_tee_hole(
     _verts = mesh.vertices
     _dxy2_v = (_verts[:, 0] - cx) ** 2 + (_verts[:, 1] - cy) ** 2
     _top_mask = _dxy2_v <= (_sample_r ** 2)
-    _top_mask &= _verts[:, 2] > (BASE_THICKNESS_MM * 0.5)  # skip bottom slab / walls
+    _top_mask &= _verts[:, 2] > (FRINGE_MIN_THICKNESS_MM * FRINGE_TOP_MASK_FRACTION)  # skip bottom slab / walls
     if _top_mask.any():
         _local_zs = _verts[_top_mask, 2]
         z_local = float(np.max(_local_zs))
@@ -3580,7 +3621,7 @@ def _replace_fringe_with_watertight_extrusion(
         return new_mesh
 
     # Top-surface only: Z > BASE_THICKNESS_MM / 2 excludes floor / wall bottoms.
-    _top_mask_old = old_verts[:, 2] > (BASE_THICKNESS_MM * 0.5)
+    _top_mask_old = old_verts[:, 2] > (FRINGE_MIN_THICKNESS_MM * FRINGE_TOP_MASK_FRACTION)
     if not _top_mask_old.any():
         print(f"  [{label} watertight-rewrite] no top-surface verts in old mesh — "
               f"leaving new mesh at flat max Z.")
@@ -3623,8 +3664,9 @@ def _replace_fringe_with_watertight_extrusion(
             _sn = top_z_old[idxs_s[np.arange(len(idxs_s)), nearest_col]]
             sampled_z = np.where(_coincident, _sn, sampled_z)
 
-    # Clamp: never above top_z_target (safety), never below BASE_THICKNESS_MM.
-    sampled_z = np.clip(sampled_z, BASE_THICKNESS_MM, top_z_target)
+    # Clamp: never above top_z_target (safety), never below the printability floor
+    # (v6.20: was BASE_THICKNESS_MM, which flattened the fringe slope near the frame).
+    sampled_z = np.clip(sampled_z, FRINGE_MIN_THICKNESS_MM, top_z_target)
 
     new_verts[top_mask_new, 2] = sampled_z
     new_mesh.vertices = new_verts
@@ -3822,6 +3864,40 @@ def _build_tps_base(
 # 20 × 20 grid-cell TPS height field (task 704, Topo 2026-10-04)
 # ---------------------------------------------------------------------------
 
+def _fringe_default_z(
+    points_xy: np.ndarray,
+    green_bnd_mm: np.ndarray,
+    bnd_z: np.ndarray,
+    power: float = FRINGE_DEFAULT_IDW_POWER,
+    sample_mm: float = FRINGE_DEFAULT_RIM_SAMPLE_MM,
+) -> np.ndarray:
+    """Smooth default fringe height at ``points_xy`` (N, 2) in mm.
+
+    Inverse-distance (Shepard) blend of the whole green rim (see FRINGE_DEFAULT_*).  The
+    rim is first reduced to one averaged (x, y, z) sample per ``sample_mm`` square so a very
+    dense polyline does not dominate the weights and anchor overrides in ``bnd_z`` survive.
+    Returns an (N,) array within [min(bnd_z), max(bnd_z)] that equals the rim Z at the rim.
+    """
+    pts = np.atleast_2d(np.asarray(points_xy, dtype=np.float64))
+    rim = np.asarray(green_bnd_mm, dtype=np.float64)
+    rz = np.asarray(bnd_z, dtype=np.float64)
+    keys = np.floor(rim / float(sample_mm)).astype(np.int64)
+    _, inv = np.unique(keys, axis=0, return_inverse=True)
+    inv = np.asarray(inv).ravel()
+    counts = np.bincount(inv).astype(np.float64)
+    sx = np.bincount(inv, weights=rim[:, 0]) / counts
+    sy = np.bincount(inv, weights=rim[:, 1]) / counts
+    sz = np.bincount(inv, weights=rz) / counts
+    samples = np.column_stack([sx, sy])
+    out = np.empty(len(pts), dtype=np.float64)
+    for start in range(0, len(pts), FRINGE_DEFAULT_CHUNK_POINTS):
+        chunk = pts[start:start + FRINGE_DEFAULT_CHUNK_POINTS]
+        d = np.linalg.norm(chunk[:, None, :] - samples[None, :, :], axis=2)
+        w = 1.0 / np.maximum(d, FRINGE_DEFAULT_MIN_DIST_MM) ** power
+        out[start:start + len(chunk)] = (w @ sz) / w.sum(axis=1)
+    return out
+
+
 def _build_tps_grid_height_field(
     egm_data: dict,
     green_bnd_mm: np.ndarray,
@@ -3896,7 +3972,6 @@ def _build_tps_grid_height_field(
 
     # ── Step 1: Compute default Z for every cell centre via nearest bnd_z ──────
     # Build KDTree once over the green boundary for vectorised lookup.
-    gbnd_kd = cKDTree(green_bnd_mm)
     n_cells = GRID_SIZE * GRID_SIZE  # 400 (20x20) or 1600 (40x40)
 
     cell_cx = np.empty(n_cells, dtype=np.float64)  # world x-coord of cell centre
@@ -3910,10 +3985,9 @@ def _build_tps_grid_height_field(
 
     cell_centres = np.column_stack([cell_cx, cell_cy])  # (400, 2)
 
-    # Vectorised NN lookup: for each cell centre find nearest green boundary point.
-    _, nn_idx = gbnd_kd.query(cell_centres, k=1)  # (400,)
-    nn_idx = np.atleast_1d(nn_idx)
-    cell_defaults = bnd_z[nn_idx].copy()  # (400,) — mutable; user values go here
+    # v6.25: smooth whole-rim blend instead of the nearest rim point's Z (which made a cliff
+    # wherever the nearest rim point switches).  See _fringe_default_z / FRINGE_DEFAULT_*.
+    cell_defaults = _fringe_default_z(cell_centres, green_bnd_mm, bnd_z)  # (n_cells,) — mutable; user values go here
 
     # ── Step 2: Merge user-set values over defaults ───────────────────────────
     # gridMode (task 774, v5.34) determines how gridCellHeights values are interpreted:
@@ -3934,18 +4008,17 @@ def _build_tps_grid_height_field(
                 continue
             if grid_mode == GRID_MODE_ABSOLUTE:
                 # Value REPLACES the Poisson default.  Clamp to [0, 30] mm per UI spec,
-                # then floor the resolved Z at BASE_THICKNESS_MM so the cell cannot sit
-                # below the base plate (invalid geometry).
+                # then floor the resolved Z at FRINGE_MIN_THICKNESS_MM (printability only;
+                # NOT the base thickness, which would flatten the slope).
                 val = max(GRID_ABSOLUTE_MIN_MM, min(GRID_ABSOLUTE_MAX_MM, val))
-                cell_defaults[ci] = max(BASE_THICKNESS_MM, val)
+                cell_defaults[ci] = max(FRINGE_MIN_THICKNESS_MM, val)
             else:  # delta (default/legacy)
                 # User value is an ADDITIVE OFFSET in mm over the Poisson-nearest default.
                 # Zero / unset → no change.  Range ±20 mm, clamped defensively here even
                 # though the UI already enforces the same bounds.  Floor the resolved
-                # absolute Z at BASE_THICKNESS_MM so a large negative delta cannot push a
-                # cell below the base plate (invalid geometry).
+                # absolute Z at FRINGE_MIN_THICKNESS_MM (printability only, v6.20).
                 val = max(GRID_DELTA_MIN_MM, min(GRID_DELTA_MAX_MM, val))  # clamp delta to ±20 mm
-                cell_defaults[ci] = max(BASE_THICKNESS_MM, cell_defaults[ci] + val)
+                cell_defaults[ci] = max(FRINGE_MIN_THICKNESS_MM, cell_defaults[ci] + val)
             n_overrides += 1
 
     print(f"  {LOG_TAG_TPS_GRID} mode={grid_mode}; {n_cells} cells: {n_overrides} user-set, "
@@ -3988,7 +4061,7 @@ def _build_tps_grid_height_field(
         BASE_THICKNESS_MM + _elevation_range_mm + 2.0,
         _user_max_mm + 2.0,
     )
-    z_grid = np.clip(z_grid, 0.0, _z_ceiling)
+    z_grid = np.clip(z_grid, FRINGE_MIN_THICKNESS_MM, _z_ceiling)
 
     print(f"  {LOG_TAG_TPS_GRID} surface Z range [{float(z_grid.min()):.3f}, "
           f"{float(z_grid.max()):.3f}] mm")
@@ -4001,7 +4074,7 @@ def _normalize_green_fringe_interface(
     grid_y: np.ndarray,
     green_bnd_mm: np.ndarray,
     bnd_z: np.ndarray,
-    blend_cells: int = FRINGE_BLEND_CELLS,
+    blend_cells: float = FRINGE_BLEND_CELLS,
 ) -> np.ndarray:
     """Blend the TPS fringe surface toward green boundary Z near the green edge.
 
@@ -4608,10 +4681,8 @@ def build_fringe_mesh(
         # (correct, matches z=0.5 baseline), overlap with green = 0.00
         # (was 5036 mm² at [208]).  Cell counts, top-surface topology,
         # seam-match, and trap/water cutouts all unchanged.
-        FRINGE_PLATEAU_MARGIN_MM = 0.30  # 1.5 → 1.8 mm floor on default BASE
-        FRINGE_PLATEAU_TILT_MM = 0.10    # 0.10 mm peak-to-peak XY ramp
         _tilt = FRINGE_PLATEAU_TILT_MM * (r + c) / (2 * (fringe_grid_res - 1))
-        _floor = BASE_THICKNESS_MM + FRINGE_PLATEAU_MARGIN_MM + _tilt
+        _floor = FRINGE_MIN_THICKNESS_MM + _tilt   # v6.20: printability floor, not BASE
         z_fringe = max(_floor, min(green_edge_h, _effective_z_ceiling_mm))
         return z_fringe
 
@@ -9715,9 +9786,9 @@ def apply_grass_texture(
     verts = mesh.vertices  # (N, 3) — live reference, edits modify the mesh
 
     # Identify top-surface vertices: Z > BASE_THICKNESS_MM
-    top_mask = verts[:, 2] > BASE_THICKNESS_MM
+    top_mask = verts[:, 2] > FRINGE_TOP_MASK_Z_MM
     if not top_mask.any():
-        print(f"    apply_grass_texture: no top-surface vertices found (Z > {BASE_THICKNESS_MM}), skipping.")
+        print(f"    apply_grass_texture: no top-surface vertices found (Z > {FRINGE_TOP_MASK_Z_MM}), skipping.")
         return mesh
 
     top_xy = verts[top_mask, :2]  # (M, 2)
@@ -9901,9 +9972,9 @@ def apply_grass_texture_v2(
         raise ValueError(f"apply_grass_texture_v2: unknown profile {profile!r}")
 
     verts = mesh.vertices  # (N, 3) — live reference
-    top_mask = verts[:, 2] > BASE_THICKNESS_MM
+    top_mask = verts[:, 2] > FRINGE_TOP_MASK_Z_MM
     if not top_mask.any():
-        print(f"    apply_grass_texture_v2: no top-surface vertices found (Z > {BASE_THICKNESS_MM}), skipping.")
+        print(f"    apply_grass_texture_v2: no top-surface vertices found (Z > {FRINGE_TOP_MASK_Z_MM}), skipping.")
         return mesh
 
     top_xy = verts[top_mask, :2].copy()  # copy — we'll apply per-vertex shear
@@ -10024,7 +10095,7 @@ def apply_divot(mesh, center_xy, radius, depth):
     verts = mesh.vertices  # live reference
     # Use BASE_THICKNESS_MM to identify top-surface vertices (same as apply_grass_texture).
     # Using z_max - 0.6 is too narrow when grass bumps create tall spikes at varied heights.
-    top_mask = verts[:, 2] > BASE_THICKNESS_MM
+    top_mask = verts[:, 2] > FRINGE_TOP_MASK_Z_MM
     dx = verts[top_mask, 0] - center_xy[0]
     dy = verts[top_mask, 1] - center_xy[1]
     d = np.sqrt(dx*dx + dy*dy)
@@ -10507,25 +10578,36 @@ def _inject_bambu_extruder_metadata(path_3mf: str, scene_names: list) -> None:
         f'<metadata name="Application">BambuStudio-{_BBL_VERSION_STRING}</metadata>'
     )
 
-    def _bed_center_from_settings(settings_bytes) -> tuple:
-        """Centre of the bounding box of printable_area ("XxY" strings) in the
-        project_settings.config template; falls back to (128, 128) (Bambu A1)."""
+    def _bed_geometry_from_settings(settings_bytes) -> tuple:
+        """(centre_xy, width_x) of the printable_area bounding box in the
+        project_settings.config template; falls back to the Bambu A1 values."""
         try:
             import json as _json
             pts = _json.loads(settings_bytes.decode(XML_ENCODING))["printable_area"]
             xy = [tuple(float(v) for v in str(q).split("x")) for q in pts]
             xs = [q[0] for q in xy]
             ys = [q[1] for q in xy]
-            return ((min(xs) + max(xs)) / 2.0, (min(ys) + max(ys)) / 2.0)
+            return (((min(xs) + max(xs)) / 2.0, (min(ys) + max(ys)) / 2.0),
+                    max(xs) - min(xs))
         except Exception:
-            return BAMBU_BED_CENTER_MM
+            return BAMBU_BED_CENTER_MM, BAMBU_BED_WIDTH_MM
+
+    def _bed_center_from_settings(settings_bytes) -> tuple:
+        return _bed_geometry_from_settings(settings_bytes)[0]
+
+    def _plate_center(center, width, plate_index: int) -> tuple:
+        """World XY centre of plate `plate_index` (1-based) in Bambu's plate row."""
+        return (center[0] + (plate_index - 1) * width * (1.0 + BAMBU_PLATE_GAP_FACTOR),
+                center[1])
 
     def _patch_model_xml_version(xml_str: str, center=BAMBU_BED_CENTER_MM,
-                                 skip_oids=frozenset()) -> str:
+                                 plate2_oids=frozenset(), plate2_center=None) -> str:
         """Idempotently: (1) ensure Application + BambuStudio:3mfVersion metadata
         (Application first - without it Bambu Studio refuses project_settings.config);
         (2) move build items still at translation x=y=0 to the bed centre. Items
-        whose objectid is in skip_oids (plate 2) are left untouched."""
+        whose objectid is in plate2_oids go to plate2_center instead (Bambu does not
+        move an object onto plate N from plater_id alone; the build transform must
+        carry the plate offset)."""
         import re as _re2
         if 'name="Application"' not in xml_str:
             if "BambuStudio:3mfVersion" in xml_str:
@@ -10543,8 +10625,6 @@ def _inject_bambu_extruder_metadata(path_3mf: str, scene_names: list) -> None:
         def _shift(m):
             tag = m.group(0)
             om = _re2.search(r'\bobjectid="([^"]*)"', tag)
-            if om and om.group(1) in skip_oids:
-                return tag
             tm = _re2.search(r'\btransform="([^"]*)"', tag)
             if not tm:
                 return tag
@@ -10556,15 +10636,18 @@ def _inject_bambu_extruder_metadata(path_3mf: str, scene_names: list) -> None:
                     return tag  # already placed
             except ValueError:
                 return tag
-            v[9], v[10] = repr(float(center[0])), repr(float(center[1]))
+            tgt = plate2_center if (om and om.group(1) in plate2_oids
+                                    and plate2_center is not None) else center
+            v[9], v[10] = repr(float(tgt[0])), repr(float(tgt[1]))
             return tag[:tm.start(1)] + " ".join(v) + tag[tm.end(1):]
 
         return _re2.sub(r"<item\b[^>]*>", _shift, xml_str)
 
-    _bed_center = _bed_center_from_settings(project_settings_bytes) \
-        if project_settings_bytes is not None else BAMBU_BED_CENTER_MM
+    _bed_center, _bed_width = _bed_geometry_from_settings(project_settings_bytes) \
+        if project_settings_bytes is not None else (BAMBU_BED_CENTER_MM, BAMBU_BED_WIDTH_MM)
     patched_model_xml = _patch_model_xml_version(
-        model_xml, _bed_center, frozenset(oid for oid, _n in _plate2_items))
+        model_xml, _bed_center, frozenset(oid for oid, _n in _plate2_items),
+        _plate_center(_bed_center, _bed_width, 2))
 
     tmp_path = path_3mf + ".tmp"
     # All files we are replacing/adding — skip their originals in the copy loop.
@@ -10740,7 +10823,7 @@ def run_pipeline(
     include_boundary_region: bool | None = None,
     apply_fringe_frame_cap: bool | None = None,
     include_fringe_without_grass: bool | None = None,
-    serial: int | None = None,
+    generation_id: str | None = None,
 ) -> str:
     """Run the full gradient surface pipeline for a given EGM file path.
 
@@ -10770,10 +10853,11 @@ def run_pipeline(
         generated with the grassy fringe.  When None, fall back to the
         ``includeFringeWithoutGrass`` flag persisted inside the EGM file
         (missing → False).
-    serial : int | None, optional
-        Global serial number for this generate run.  Obtained by the caller
-        via ``commit_global_serial()`` BEFORE calling run_pipeline.  When
-        None, the serial is omitted from the filename.
+    generation_id : str | None, optional
+        ``year.month.date.hour24.minute.second.username`` identifier for this
+        Generate run (see ``generation_id.make_generation_id``).  The caller
+        builds it once per run; when None, a fresh one is made here.  It is
+        used in the output 3MF filename and the diagnostic image names.
 
     Returns the absolute path to the generated .3mf file.
     """
@@ -11038,7 +11122,9 @@ def run_pipeline(
 
     # ── 5. Save diagnostic images → owner_inbox/diagnostics/ (not course Images/) ──
     _diag_paths: list[str] = []
-    _diag_tag = f"[{serial}]" if serial is not None else __import__("time").strftime("%Y%m%d-%H%M%S")
+    if generation_id is None:
+        generation_id = make_generation_id()
+    _diag_tag = FILENAME_ID_BRACKET_FMT.format(generation_id=generation_id)
 
     def _save_diag(kind, fn, *a):
         if not SAVE_DIAGNOSTIC_IMAGES:
@@ -11318,7 +11404,7 @@ def run_pipeline(
             _ring_mask = (
                 (_r >= _ring_inner)
                 & (_r <= _ring_outer)
-                & (_flat_verts[:, 2] > BASE_THICKNESS_MM * 0.5)
+                & (_flat_verts[:, 2] > FRINGE_MIN_THICKNESS_MM * FRINGE_TOP_MASK_FRACTION)
             )
             if _ring_mask.any():
                 _ring_z = _flat_verts[_ring_mask, 2]
@@ -11517,16 +11603,12 @@ def run_pipeline(
     # ── 10. Assemble 3MF ────────────────────────────────────────────────────
     print("\n[10] Assembling 3MF…")
 
-    # ── 10b. Build filename with global serial ───────────────────────────────
-    # The serial was committed by the caller (Flask route or CLI) before entering
-    # the pipeline.  We simply use the value that was passed in.
-    from serial_engraver import engrave_scene_geometries as _engrave_scene
-    serial_number = serial   # may be None if caller didn't provide one
+    # ── 10b. Build filename with the per-run generation ID ───────────────────
+    # The ID was built once by the caller (Flask route or CLI) for this run.
     hole_label = str(hole).zfill(2) if str(hole).isdigit() else str(hole)
-    if serial_number is not None:
-        fname_3mf = f"{course} (Hole {hole_label}) [{serial_number}].3mf"
-    else:
-        fname_3mf = f"{course} (Hole {hole_label}).3mf"
+    fname_3mf = OUTPUT_3MF_FILENAME_FMT.format(
+        course=course, hole_label=hole_label,
+        id_tag=FILENAME_ID_BRACKET_FMT.format(generation_id=generation_id))
     path_3mf = os.path.abspath(os.path.join(_3mf_dir, fname_3mf))
     print(f"    {LOG_TAG_GENERATE} output 3MF file:     {path_3mf}")
 
@@ -11569,18 +11651,17 @@ def run_pipeline(
     # Plate-2 smooth fringe sample (task 724) — added AFTER all plate-1 objects so
     # its object ID (N+1) is highest, and the injection function maps it to plate 2.
     # The name "fringe_no_grass_sample" routes to extruder 2 via _filament_for_scene_name
-    # ("fringe" prefix).  Serial engraving is NOT applied to the sample (it's a
-    # smooth-surface reference piece, not a serialised plaque).
+    # ("fringe" prefix).  The label engraving is NOT applied to the sample (its node
+    # name differs from the fringe's).
     # Only present when include_fringe_without_grass=True.
     if isinstance(fringe_no_grass_sample, trimesh.Trimesh):
         scene.add_geometry(fringe_no_grass_sample, node_name=SCENE_NAME_FRINGE_NO_GRASS_SAMPLE)
         scene_names.append(SCENE_NAME_FRINGE_NO_GRASS_SAMPLE)
         print(f"  Plate-2 smooth fringe sample (no grass) added to scene.")
 
-    print(f"\n[10b] Engraving serial s/n: {serial_number} on {len(scene_names)} item(s)…")
-    # Fringe also gets the file name (minus serial/extension) as a 2nd line.
-    from serial_engraver import label_from_filename as _label_from_fname
-    _engrave_scene(scene, serial_number, fringe_label=_label_from_fname(fname_3mf))
+    # Course/hole-name label on the fringe only (no serial text is engraved).
+    print(f"\n[10b] Engraving fringe label…")
+    engrave_fringe_label(scene, label_from_filename(fname_3mf))
 
     # Repair pass: collapse float-ops slivers and dedupe before manifold check.
     for _node_name, _m in scene.geometry.items():
@@ -11652,11 +11733,7 @@ def run_pipeline(
     except Exception as exc:
         print(f"  WARNING: failed to inject extruder metadata: {exc}")
 
-    # ── 10c. Serial was already committed by the caller before run_pipeline. ──
-    # Nothing to do here — the global counter was incremented at the Generate
-    # click (Flask route or CLI entrypoint) before we were called.
-    if serial_number is not None:
-        print(f"  Serial used: s/n {serial_number} (committed by caller)")
+    print(f"  Generation ID: {generation_id}")
 
     print("\n" + LOG_RULE)
     print("Done.")
@@ -11672,11 +11749,10 @@ def run_pipeline(
 def main() -> None:
     search = sys.argv[1] if len(sys.argv) > 1 else "Moffett"
     egm_path = find_egm(search)
-    # Burn a global serial — running the CLI is another form of pressing Generate.
-    from serial_engraver import commit_global_serial as _commit_global
-    _cli_serial = _commit_global()
-    print(f"[gradient_surface_diagnostic] Global serial: {_cli_serial}")
-    run_pipeline(egm_path, serial=_cli_serial)
+    # Running the CLI is another form of pressing Generate: one ID per run.
+    _cli_generation_id = make_generation_id()
+    print(f"[gradient_surface_diagnostic] Generation ID: {_cli_generation_id}")
+    run_pipeline(egm_path, generation_id=_cli_generation_id)
 
 
 if __name__ == "__main__":

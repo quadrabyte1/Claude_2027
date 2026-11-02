@@ -43,3 +43,6 @@ app/.env
 *.swp
 .idea/
 .vscode/
+
+# v6.21 extracted embedded-PNG cache
+app/.embedded_png_cache/

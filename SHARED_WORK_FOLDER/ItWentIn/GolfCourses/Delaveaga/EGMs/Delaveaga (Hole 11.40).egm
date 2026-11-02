@@ -2,7 +2,7 @@
   "course": "Delaveaga",
   "hole": "11.40",
   "image": "Delaveaga (Hole 11, 55171).png",
-  "imageCourse": "Delaveaga",
+  "imageCourse": "_embedded_a69009428c902a6314e386d38a5029bd7aef17da19e106fe4a005cb547f4f87d",
   "imageSize": {
     "width": 809,
     "height": 1057
@@ -14,7 +14,7 @@
   "elevationRange": 14.5,
   "zScale": 1,
   "greenScale": 1.0065,
-  "fringeEdgeHeight": 4,
+  "fringeEdgeHeight": 10,
   "baseThicknessMm": 6,
   "includeBoundaryRegion": false,
   "applyFringeFrameCap": true,
