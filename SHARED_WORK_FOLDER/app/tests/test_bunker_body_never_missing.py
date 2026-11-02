@@ -26,7 +26,7 @@ import pytest
 APP_DIR = Path(__file__).parent.parent
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "delaveaga_thomas_test4"
 FIXTURE_EGM_NAME = "thomas_test4.egm"
-PIPELINE_GENERATION_ID = "2026.11.01.14.05.09.tester"
+PIPELINE_GENERATION_ID = "3f2b8c1e-9a47-4d6e-8b0c-5e7a1d2c4f90"
 MODEL_PART = "3D/3dmodel.model"
 OBJECT_TAG_RE = re.compile(r"<object [^>]*>")
 COURSE_KEYS = ("images", "egms", "stls", "3mfs")

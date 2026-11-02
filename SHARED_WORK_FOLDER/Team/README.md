@@ -24,6 +24,7 @@ This folder contains persona files for each AI team member. Each file defines a 
 | **Hollis** | Home-Improvement Concierge / Owner's Advocate (Hartford, CT metro) | sonnet | `hollis.md` |
 | **Marlo** | Brand & Trademark Clearance Specialist | sonnet | `marlo.md` |
 | **Cairn** | PKM Specialist (Personal Knowledge Migration & Linked-Notes) | sonnet | `cairn.md` |
+| **Ferris** | Rust Computational-Geometry Developer (Boundary Editor / 3MF port experiment) | opus | `ferris.md` |
 
 ## Model Tiers
 
@@ -33,3 +34,5 @@ This folder contains persona files for each AI team member. Each file defines a 
 - **haiku** (`claude-haiku-5-5`, Haiku 5.5) — Narrow mechanical roles only (bulk lookups, simple transforms).
 
 **As of 2026-10-22, Thomas has standardized all team members on Sonnet 5.5 (`claude-sonnet-5-5`).**
+
+**Approved opus exception (2026-11-02):** Ferris (Rust Computational-Geometry Developer) runs on `opus` (`claude-opus-5-5`) with Thomas's explicit approval, because numerical-robustness and architecture judgment are core to the role. All other members remain on Sonnet 5.5.

@@ -73,6 +73,12 @@ def _make_synthetic_setup(gsd, grid_res: int = 40):
     return GX, GY, green_bnd_mm, bnd_z_uniform, bnd_z_tilted, TARGET_Z, W_mm
 
 
+# N1 checks boundary-exactness of the algorithm itself on a coarse synthetic grid, so it
+# uses a band wide enough to contain grid points within 2 mm of the rim.  The production
+# default (FRINGE_BLEND_CELLS, v6.23: ~2 mm seam-only band) is deliberately much narrower.
+N1_BLEND_CELLS: float = 3
+
+
 class TestNormaliseBoundaryExact:
     """N1: cells ON the green boundary receive exact green Z."""
 
@@ -94,6 +100,7 @@ class TestNormaliseBoundaryExact:
             grid_y=GY,
             green_bnd_mm=green_bnd_mm,
             bnd_z=bnd_z_uniform,
+            blend_cells=N1_BLEND_CELLS,
         )
 
         # Find grid points whose XY is within 2 mm of the boundary (d ≈ 0).

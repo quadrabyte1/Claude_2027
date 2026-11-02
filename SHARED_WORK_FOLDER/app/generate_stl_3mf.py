@@ -979,7 +979,7 @@ def generate_from_egm(
     output_dir       : Directory for output files.  Defaults to owner_inbox/.
     print_size_mm    : Largest printed dimension in mm (default 178 = 7 inches).
     thickness_override: Map of polygon type → thickness in mm (overrides defaults).
-    generation_id    : Per-run ``year.month.date.hour24.minute.second.username``
+    generation_id    : Per-run UUID4
                        identifier (``generation_id.make_generation_id()``), built
                        once by the caller.  When provided it is embedded in the
                        filename as ``[<id>]``.

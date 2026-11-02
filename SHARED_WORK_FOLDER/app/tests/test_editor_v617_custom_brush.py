@@ -218,7 +218,7 @@ console.log(JSON.stringify({b2: o.paintBrush2, vals: [0, 1, 2, 3, 4, 5, 6, 7, 8,
     assert r["b2"] is not None
     v = r["vals"]
     assert v[0] == 0 and v[-1] == CUSTOM and v == sorted(v)
-    assert all(abs(x / C.value("PALETTE_VALUE_STEP") - round(x / C.value("PALETTE_VALUE_STEP"))) < 1e-9 for x in v[:-1])
+    assert all(abs(x / C.value("RAMP_VALUE_STEP_MM") - round(x / C.value("RAMP_VALUE_STEP_MM"))) < 1e-9 for x in v[:-1])   # v6.27: interior on the 0.25 mm ramp grid
 
 
 # ═════════════════════ 3. precision ═════════════════════

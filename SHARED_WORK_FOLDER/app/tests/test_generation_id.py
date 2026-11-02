@@ -7,7 +7,7 @@ import json
 import os
 import re
 import sys
-from datetime import datetime
+import uuid
 from unittest.mock import patch
 
 import pytest
@@ -18,11 +18,9 @@ if APP_DIR not in sys.path:
 
 import generation_id as gid
 
-FROZEN_NOW = datetime(2026, 11, 1, 14, 5, 9)
-MOCK_USER = "jgreen"
-EXPECTED_ID = gid.GENERATION_ID_SEPARATOR.join(["2026", "11", "01", "14", "05", "09", MOCK_USER])
-PADDED_NOW = datetime(2027, 1, 2, 3, 4, 5)
-PADDED_FIELDS = ["2027", "01", "02", "03", "04", "05"]
+EXPECTED_ID = "3f2b8c1e-9a47-4d6e-8b0c-5e7a1d2c4f90"
+LEGACY_TIMESTAMP_ID = "2026.11.01.14.05.09.jgreen"
+UNIQUENESS_SAMPLE_COUNT = 200
 LEGACY_SERIAL = 1552
 COURSE = "Test Course"
 HOLE = "01"
@@ -34,43 +32,34 @@ SOURCE_FILES = ("app.py", "generate_stl_3mf.py", "gradient_surface_diagnostic.py
 GLOBAL_SERIAL_FILENAME = "global_serial.json"
 
 
-def test_format_with_frozen_time_and_mocked_user():
-    with patch.object(gid.getpass, "getuser", return_value=MOCK_USER):
-        assert gid.make_generation_id(now=FROZEN_NOW) == EXPECTED_ID
-
-
-def test_fields_are_zero_padded():
-    result = gid.make_generation_id(now=PADDED_NOW, username=MOCK_USER)
-    fields = result.split(gid.GENERATION_ID_SEPARATOR)
-    assert fields[:-1] == PADDED_FIELDS
-    assert fields[-1] == MOCK_USER
-    assert len(fields) == gid.GENERATION_ID_TIME_FIELD_COUNT + 1
-
-
-def test_username_comes_from_getpass_by_default():
-    with patch.object(gid.getpass, "getuser", return_value=MOCK_USER) as m:
-        result = gid.make_generation_id(now=FROZEN_NOW)
-    m.assert_called_once()
-    assert result.endswith(gid.GENERATION_ID_SEPARATOR + MOCK_USER)
-
-
-def test_explicit_username_skips_getpass():
-    with patch.object(gid.getpass, "getuser", side_effect=AssertionError("should not be called")):
-        assert gid.make_generation_id(now=FROZEN_NOW, username="other").endswith(".other")
-
-
-def test_default_now_is_local_time():
-    result = gid.make_generation_id(username=MOCK_USER)
+def test_id_is_valid_uuid4_canonical_form():
+    result = gid.make_generation_id()
+    parsed = uuid.UUID(result)
+    assert parsed.version == gid.UUID_VERSION
+    assert str(parsed) == result                      # lowercase, hyphenated
+    assert len(result) == gid.GENERATION_ID_LENGTH
     assert re.fullmatch(gid.GENERATION_ID_PATTERN, result)
+
+
+def test_ids_are_unique_across_calls():
+    ids = {gid.make_generation_id() for _ in range(UNIQUENESS_SAMPLE_COUNT)}
+    assert len(ids) == UNIQUENESS_SAMPLE_COUNT
 
 
 @pytest.mark.parametrize("stem", [
     f"{COURSE} (Hole {HOLE}) [{EXPECTED_ID}]",
+    f"{COURSE} (Hole {HOLE}) [{LEGACY_TIMESTAMP_ID}]",
     f"{COURSE} (Hole {HOLE}) [{LEGACY_SERIAL}]",
     f"{COURSE} (Hole {HOLE})",
 ])
-def test_strip_generation_id_tag_handles_new_legacy_and_untagged(stem):
+def test_strip_generation_id_tag_handles_uuid_timestamp_legacy_and_untagged(stem):
     assert gid.strip_generation_id_tag(stem) == f"{COURSE} (Hole {HOLE})"
+
+
+def test_strip_generation_id_tag_generated_id_roundtrip():
+    new_id = gid.make_generation_id()
+    tagged = f"{COURSE} (Hole {HOLE}) {gid.FILENAME_ID_BRACKET_FMT.format(generation_id=new_id)}"
+    assert gid.strip_generation_id_tag(tagged) == f"{COURSE} (Hole {HOLE})"
 
 
 def test_generate_from_egm_file_names_file_with_id_and_writes_no_counter(tmp_path):

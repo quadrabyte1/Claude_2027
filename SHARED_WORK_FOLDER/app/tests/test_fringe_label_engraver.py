@@ -37,7 +37,8 @@ def _vols(scene):
     return {k: float(abs(m.volume)) for k, m in scene.geometry.items()}
 
 
-GEN_ID = "2026.11.01.14.05.09.jgreen"
+GEN_ID = gid.make_generation_id()
+LEGACY_TIMESTAMP_ID = "2026.11.01.14.05.09.jgreen"
 LEGACY_SERIAL = 1500
 LABEL = "Delaveaga H5f"
 
@@ -45,6 +46,7 @@ LABEL = "Delaveaga H5f"
 @pytest.mark.parametrize("name,expected", [
     (f"/x/Delaveaga (Hole 5f) [{LEGACY_SERIAL}].3mf", "Delaveaga H5f"),          # legacy numeric tag
     (f"/x/Delaveaga (Hole 5f) [{GEN_ID}].3mf", "Delaveaga H5f"),                  # new ID tag
+    (f"/x/Delaveaga (Hole 5f) [{LEGACY_TIMESTAMP_ID}].3mf", "Delaveaga H5f"),      # v6.18 tag
     ("Stanford (Hole 03).3mf", "Stanford H03"),
     ("Stanford (Hole 8, 5396) [1458].3mf", "Stanford H8"),   # ", 5396" discarded
     (f"Firefly (Hole 14) [{GEN_ID}].3mf", "Firefly H14"),

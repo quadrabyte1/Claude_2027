@@ -1,3 +1,9 @@
+# v0.37 — 2026-11-02 Topo — Smooth fringe default surface (APP_VERSION v6.25).
+#         The hidden default that grid deltas are added to used the Z of the NEAREST green-rim point, which
+#           made a cliff wherever the nearest rim point switches (a notch in the green; Delaveaga 11 trb-m west
+#           wall: 24.5 -> 30.3 mm in 4 mm).  It is now _fringe_default_z: an inverse-distance (Shepard, power 5: high enough to stay local to the nearby rim, low enough that no cliff forms)
+#           blend of the whole rim binned to 0.5 mm, so it stays within the rim min/max, equals the rim Z at the
+#           rim (seam exact) and has no pinning at the frame.  Single caller: _build_tps_grid_height_field.
 # v0.29 — 2026-10-28 Topo — Cell-following bunker body (APP_VERSION v5.98), BUNKER_BODY_MODE_CELLS (new default).
 #         Root cause of the "concave bowl" in RULED mode: the crest clamp (fringe - rake/2 - 0.3 mm) was evaluated
 #           against the VIRTUAL fringe continuation, which sags under the bunker (owned cells revert to low Poisson
@@ -1904,8 +1910,22 @@ BASE_THICKNESS_MM: float = 1.5    # flat base below lowest point
 # stay a few layers (5 x 0.2 mm) above the z=0 bottom so the part is a solid, sliceable slab.
 FRINGE_MIN_THICKNESS_MM: float = 1.0
 FRINGE_TOP_MASK_FRACTION: float = 0.5  # top-surface verts = z above this fraction of FRINGE_MIN_THICKNESS_MM (excludes z=0 floor/walls)
+FRINGE_TOP_MASK_Z_MM: float = FRINGE_MIN_THICKNESS_MM * FRINGE_TOP_MASK_FRACTION  # grass/divot act on fringe top verts above this Z (v6.23: was BASE_THICKNESS_MM, which left a grass-less floor)
 FRINGE_PLATEAU_TILT_MM: float = 0.10  # peak-to-peak XY ramp so a clamped region is never one exact z (task 717)
 N_CONTOUR_LEVELS: int = 27        # steps for quantized surface
+
+# v6.25 (Thomas): the fringe's hidden "default" height (what the grid deltas are added to) is a
+# smooth inverse-distance (Shepard) blend of the WHOLE green rim, not the height of the single
+# nearest rim point.  The nearest-point rule made a cliff along every line where the nearest rim
+# point switches (e.g. across a notch in the green, Delaveaga 11 trb-m west side: 24.5 -> 30.3 mm
+# in 4 mm).  A Shepard blend is a convex combination of rim heights, so it can never leave the
+# rim's [min, max] (maximum principle), is smooth between rim points, and equals the rim height at
+# the rim, which keeps the green/fringe seam exact.  There is no pinning at the frame: far from the
+# rim it relaxes toward the proximity-weighted mean of the rim (natural boundary).
+FRINGE_DEFAULT_IDW_POWER: float = 5.0         # weight = 1 / distance**power
+FRINGE_DEFAULT_RIM_SAMPLE_MM: float = 0.5     # rim is binned to one averaged sample per this spacing (speed + even weighting)
+FRINGE_DEFAULT_MIN_DIST_MM: float = 1e-6      # distance floor so a point exactly on a rim sample takes that sample's Z
+FRINGE_DEFAULT_CHUNK_POINTS: int = 4000       # query points per vectorised chunk (bounds memory)
 
 # Signed XY offset applied to the fringe outer bbox.
 # Positive = grow; negative = shrink.
@@ -2173,7 +2193,11 @@ FRINGE_GRASS_SEAM_EXCLUDE_MM:     float = 0.325  # was 1.2; matches *_FRINGE_GAP
 # W_mm = FRINGE_BLEND_CELLS × (2×half/20).  At half≈89.1 mm, 3 cells ≈ 26.7 mm.
 # Set to 3 so the blend reaches ~3 cell-widths into the fringe; increase to
 # widen the blend, decrease to tighten it toward the seam.
-FRINGE_BLEND_CELLS: int = 3
+# v6.23 (Thomas: 'still a floor'): was 3 cells (~26 mm), which pulled the fringe toward the
+# green-rim Z so any EGM cell asking for a lower fringe within 26 mm of the green was lifted
+# (up to +1.3 mm on Delaveaga 11.40).  The seam itself is already pinned by the seam-reseat
+# of the innermost ring, so the band only needs to cover the seam neighbourhood (~2 mm).
+FRINGE_BLEND_CELLS: float = 0.25
 
 # ── Grass v2 knobs (Topo 2026-09-09) ─────────────────────────────────────────
 # GRASS_ALGORITHM picks the fringe grass implementation:
@@ -3840,6 +3864,40 @@ def _build_tps_base(
 # 20 × 20 grid-cell TPS height field (task 704, Topo 2026-10-04)
 # ---------------------------------------------------------------------------
 
+def _fringe_default_z(
+    points_xy: np.ndarray,
+    green_bnd_mm: np.ndarray,
+    bnd_z: np.ndarray,
+    power: float = FRINGE_DEFAULT_IDW_POWER,
+    sample_mm: float = FRINGE_DEFAULT_RIM_SAMPLE_MM,
+) -> np.ndarray:
+    """Smooth default fringe height at ``points_xy`` (N, 2) in mm.
+
+    Inverse-distance (Shepard) blend of the whole green rim (see FRINGE_DEFAULT_*).  The
+    rim is first reduced to one averaged (x, y, z) sample per ``sample_mm`` square so a very
+    dense polyline does not dominate the weights and anchor overrides in ``bnd_z`` survive.
+    Returns an (N,) array within [min(bnd_z), max(bnd_z)] that equals the rim Z at the rim.
+    """
+    pts = np.atleast_2d(np.asarray(points_xy, dtype=np.float64))
+    rim = np.asarray(green_bnd_mm, dtype=np.float64)
+    rz = np.asarray(bnd_z, dtype=np.float64)
+    keys = np.floor(rim / float(sample_mm)).astype(np.int64)
+    _, inv = np.unique(keys, axis=0, return_inverse=True)
+    inv = np.asarray(inv).ravel()
+    counts = np.bincount(inv).astype(np.float64)
+    sx = np.bincount(inv, weights=rim[:, 0]) / counts
+    sy = np.bincount(inv, weights=rim[:, 1]) / counts
+    sz = np.bincount(inv, weights=rz) / counts
+    samples = np.column_stack([sx, sy])
+    out = np.empty(len(pts), dtype=np.float64)
+    for start in range(0, len(pts), FRINGE_DEFAULT_CHUNK_POINTS):
+        chunk = pts[start:start + FRINGE_DEFAULT_CHUNK_POINTS]
+        d = np.linalg.norm(chunk[:, None, :] - samples[None, :, :], axis=2)
+        w = 1.0 / np.maximum(d, FRINGE_DEFAULT_MIN_DIST_MM) ** power
+        out[start:start + len(chunk)] = (w @ sz) / w.sum(axis=1)
+    return out
+
+
 def _build_tps_grid_height_field(
     egm_data: dict,
     green_bnd_mm: np.ndarray,
@@ -3914,7 +3972,6 @@ def _build_tps_grid_height_field(
 
     # ── Step 1: Compute default Z for every cell centre via nearest bnd_z ──────
     # Build KDTree once over the green boundary for vectorised lookup.
-    gbnd_kd = cKDTree(green_bnd_mm)
     n_cells = GRID_SIZE * GRID_SIZE  # 400 (20x20) or 1600 (40x40)
 
     cell_cx = np.empty(n_cells, dtype=np.float64)  # world x-coord of cell centre
@@ -3928,10 +3985,9 @@ def _build_tps_grid_height_field(
 
     cell_centres = np.column_stack([cell_cx, cell_cy])  # (400, 2)
 
-    # Vectorised NN lookup: for each cell centre find nearest green boundary point.
-    _, nn_idx = gbnd_kd.query(cell_centres, k=1)  # (400,)
-    nn_idx = np.atleast_1d(nn_idx)
-    cell_defaults = bnd_z[nn_idx].copy()  # (400,) — mutable; user values go here
+    # v6.25: smooth whole-rim blend instead of the nearest rim point's Z (which made a cliff
+    # wherever the nearest rim point switches).  See _fringe_default_z / FRINGE_DEFAULT_*.
+    cell_defaults = _fringe_default_z(cell_centres, green_bnd_mm, bnd_z)  # (n_cells,) — mutable; user values go here
 
     # ── Step 2: Merge user-set values over defaults ───────────────────────────
     # gridMode (task 774, v5.34) determines how gridCellHeights values are interpreted:
@@ -4018,7 +4074,7 @@ def _normalize_green_fringe_interface(
     grid_y: np.ndarray,
     green_bnd_mm: np.ndarray,
     bnd_z: np.ndarray,
-    blend_cells: int = FRINGE_BLEND_CELLS,
+    blend_cells: float = FRINGE_BLEND_CELLS,
 ) -> np.ndarray:
     """Blend the TPS fringe surface toward green boundary Z near the green edge.
 
@@ -9730,9 +9786,9 @@ def apply_grass_texture(
     verts = mesh.vertices  # (N, 3) — live reference, edits modify the mesh
 
     # Identify top-surface vertices: Z > BASE_THICKNESS_MM
-    top_mask = verts[:, 2] > BASE_THICKNESS_MM
+    top_mask = verts[:, 2] > FRINGE_TOP_MASK_Z_MM
     if not top_mask.any():
-        print(f"    apply_grass_texture: no top-surface vertices found (Z > {BASE_THICKNESS_MM}), skipping.")
+        print(f"    apply_grass_texture: no top-surface vertices found (Z > {FRINGE_TOP_MASK_Z_MM}), skipping.")
         return mesh
 
     top_xy = verts[top_mask, :2]  # (M, 2)
@@ -9916,9 +9972,9 @@ def apply_grass_texture_v2(
         raise ValueError(f"apply_grass_texture_v2: unknown profile {profile!r}")
 
     verts = mesh.vertices  # (N, 3) — live reference
-    top_mask = verts[:, 2] > BASE_THICKNESS_MM
+    top_mask = verts[:, 2] > FRINGE_TOP_MASK_Z_MM
     if not top_mask.any():
-        print(f"    apply_grass_texture_v2: no top-surface vertices found (Z > {BASE_THICKNESS_MM}), skipping.")
+        print(f"    apply_grass_texture_v2: no top-surface vertices found (Z > {FRINGE_TOP_MASK_Z_MM}), skipping.")
         return mesh
 
     top_xy = verts[top_mask, :2].copy()  # copy — we'll apply per-vertex shear
@@ -10039,7 +10095,7 @@ def apply_divot(mesh, center_xy, radius, depth):
     verts = mesh.vertices  # live reference
     # Use BASE_THICKNESS_MM to identify top-surface vertices (same as apply_grass_texture).
     # Using z_max - 0.6 is too narrow when grass bumps create tall spikes at varied heights.
-    top_mask = verts[:, 2] > BASE_THICKNESS_MM
+    top_mask = verts[:, 2] > FRINGE_TOP_MASK_Z_MM
     dx = verts[top_mask, 0] - center_xy[0]
     dy = verts[top_mask, 1] - center_xy[1]
     d = np.sqrt(dx*dx + dy*dy)
