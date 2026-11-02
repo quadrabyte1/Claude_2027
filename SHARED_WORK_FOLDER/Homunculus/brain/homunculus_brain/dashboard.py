@@ -15,16 +15,52 @@ rather than crash.
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
+
+from . import clarify_answer as ca
 
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-DASHBOARD_VERSION = "v0.7"
+DASHBOARD_VERSION = "v0.9"
+
+# --- Clear button (v0.8) ---
+CLEAR_ENDPOINT = "/dashboard/clear"
+CLEAR_BUTTON_LABEL = "Clear"
+CLEAR_CONFIRM_TEXT = "Clear the dashboard feed and dismiss all pending clarifying questions? Nothing is deleted."
+CLEAR_STATE_FILENAME = "_dashboard_state.json"
+CLEAR_STATE_KEY = "cleared_at"
+CLEARED_EMPTY_PREFIX = "Cleared at "
+STATUS_PENDING = "pending"
+STATUS_DISMISSED = ca.SIDECAR_STATUS_CANCELLED  # existing sidecar status already skipped by reminders.py
+CLARIFY_SIDECAR_GLOB = "clarify.*.json"
+CLARIFY_PENDING_FILENAME = ca.PENDING_FILENAME
+REMINDERS_DIRNAME = ca.REMINDERS_DIRNAME
+RESOLVED_KEY = "resolved_at"
+STATUS_KEY = "status"
+SCHEDULE_KEY = "schedule"
+
+# --- Answer buttons (v0.9): JS-side config, all names sourced from clarify_answer ---
+ANSWER_ERROR_TEXT = "Could not send the answer - try again."
+ANSWER_JS_CONFIG = {
+    "url": ca.CLARIFY_ANSWER_ENDPOINT,
+    "recordKey": ca.FIELD_RECORD_ID,
+    "answerKey": ca.FIELD_ANSWER,
+    "statusKey": ca.RESP_STATUS,
+    "statusNeedsMore": ca.STATUS_NEEDS_CLARIFICATION,
+    "questionKey": ca.RESP_QUESTION,
+    "optionsKey": ca.RESP_OPTIONS,
+    "summaryKey": ca.RESP_SUMMARY,
+    "submitLabel": ca.SUBMIT_BUTTON_LABEL,
+    "dismissLabel": ca.DISMISS_BUTTON_LABEL,
+    "dismissAnswer": ca.DISMISS_ANSWER,
+    "errorText": ANSWER_ERROR_TEXT,
+}
 
 _VERB_ICONS: dict[str, str] = {
     "schedule": "📅",
@@ -205,6 +241,73 @@ def _shape_row(row: dict[str, Any]) -> Optional[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
+def read_cleared_at(vault_path: Path) -> Optional[str]:
+    """Return the persisted Clear watermark (ISO string) or None."""
+    try:
+        data = json.loads((vault_path / CLEAR_STATE_FILENAME).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    value = data.get(CLEAR_STATE_KEY) if isinstance(data, dict) else None
+    return value if isinstance(value, str) else None
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def clear_dashboard(vault_path: Path) -> dict[str, Any]:
+    """Set the Clear watermark and dismiss pending clarify items (no deletes).
+
+    _activity.jsonl and non-clarify reminders/calendar/timers are untouched.
+    """
+    now = datetime.now(timezone.utc)
+    now_iso = now.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    vault_path.mkdir(parents=True, exist_ok=True)
+    _atomic_write_text(vault_path / CLEAR_STATE_FILENAME,
+                       json.dumps({CLEAR_STATE_KEY: now_iso}))
+
+    rem_dir = vault_path / REMINDERS_DIRNAME
+    dismissed_pending = 0
+    pending_path = rem_dir / CLARIFY_PENDING_FILENAME
+    if pending_path.exists():
+        out: list[str] = []
+        for line in pending_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                out.append(line)
+                continue
+            if row.get(RESOLVED_KEY) is None:
+                row[RESOLVED_KEY] = now_iso
+                dismissed_pending += 1
+            out.append(json.dumps(row, ensure_ascii=False))
+        if dismissed_pending:
+            _atomic_write_text(pending_path, "\n".join(out) + "\n")
+
+    dismissed_sidecars = 0
+    if rem_dir.is_dir():
+        for path in rem_dir.glob(CLARIFY_SIDECAR_GLOB):
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            changed = False
+            for sched in data.get(SCHEDULE_KEY, []):
+                if sched.get(STATUS_KEY, STATUS_PENDING) == STATUS_PENDING:
+                    sched[STATUS_KEY] = STATUS_DISMISSED
+                    changed = True
+            if changed:
+                _atomic_write_text(path, json.dumps(data, ensure_ascii=False))
+                dismissed_sidecars += 1
+
+    return {CLEAR_STATE_KEY: now_iso, "dismissed_pending": dismissed_pending,
+            "dismissed_sidecars": dismissed_sidecars}
+
+
 def read_recent(
     vault_path: Path,
     limit: int = _DEFAULT_ROWS,
@@ -223,6 +326,11 @@ def read_recent(
     """
     limit = min(limit, _MAX_ROWS)
     path = vault_path / "_activity.jsonl"
+
+    # Honour the persisted Clear watermark: only rows strictly newer show.
+    cleared_dt = _parse_at(read_cleared_at(vault_path))
+    if cleared_dt is not None and (since is None or cleared_dt > since):
+        since = cleared_dt
 
     shaped: list[dict[str, Any]] = []
 
@@ -244,6 +352,16 @@ def read_recent(
                     if row_dt is not None and row_dt <= since:
                         continue
                 shaped.append(row)
+
+    # v0.9: attach answer controls / resolved summary to clarify cards.
+    if any(r.get("is_clarifying") for r in shaped):
+        pending = ca.load_pending(vault_path)
+        for r in shaped:
+            if r.get("is_clarifying"):
+                rid = (r.get("details") or {}).get(ca.PENDING_RECORD_ID_KEY)
+                view = ca.answer_view(pending.get(rid))
+                if view is not None:
+                    r[ca.ROW_ANSWER_KEY] = view
 
     # Sort newest-first
     shaped.sort(key=lambda r: r["at"], reverse=True)
@@ -568,6 +686,18 @@ _DASHBOARD_HTML = """<!DOCTYPE html>
   .row:first-child { border-top: 1px solid #f3f4f6; }
   .row:hover { background: #f9fafb; }
 
+  /* v0.9 — answer controls on clarify cards */
+  .answer-box { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .answer-btn { font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 6px;
+    border: 1px solid #f59e0b; background: #fff; color: #92400e; cursor: pointer; }
+  .answer-btn:hover { background: #fde68a; }
+  .answer-btn.dismiss { border-color: #9ca3af; color: #4b5563; }
+  .answer-btn:disabled, .answer-input:disabled { opacity: 0.5; cursor: default; }
+  .answer-input { font: inherit; font-size: 12px; padding: 3px 6px; border-radius: 6px;
+    border: 1px solid #d1d5db; width: 130px; }
+  .answer-done { font-size: 12px; font-weight: 500; color: #065f46; }
+  .answer-msg { font-size: 12px; color: #b91c1c; }
+
   /* v0.5 — clarifying-question row: warning-amber accent */
   .row.clarify {
     background: #fffbeb;
@@ -675,6 +805,7 @@ _DASHBOARD_HTML = """<!DOCTYPE html>
   <h1>Homunculus</h1>
   <span class="header-meta" id="header-meta">Loading…</span>
   <button class="refresh-link" onclick="refreshNow()">Refresh</button>
+  <button class="refresh-link" id="clear-btn" onclick="clearFeed()">CLEAR_LABEL_PLACEHOLDER</button>
   <span class="disconnected-badge" id="disconn-badge">⚠ Disconnected</span>
 </header>
 
@@ -697,7 +828,7 @@ _DASHBOARD_HTML = """<!DOCTYPE html>
   <div id="feed-inner">
     <div class="empty-state" id="empty-state" style="display:none">
       <span class="empty-icon">📭</span>
-      <p>No activity yet.</p>
+      <p id="empty-main">No activity yet.</p>
       <p>Record a voice memo or POST to one of these endpoints:</p>
       <p><code>POST /capture/text</code> &nbsp;&nbsp; <code>POST /capture/parsed</code></p>
     </div>
@@ -804,6 +935,16 @@ function buildRow(r, isNew) {
     <div class="row-expand">${expandHtml}</div>
   `;
 
+  // v0.9: answer controls / resolved summary on clarify cards
+  if (r.is_clarifying && r.answer) {
+    const rid = r.details && r.details[ANSWER_CFG.recordKey];
+    const box = document.createElement("div");
+    box.className = "answer-box";
+    box.addEventListener("click", ev => ev.stopPropagation());
+    div.querySelector(".row-body").appendChild(box);
+    renderAnswerBox(box, r.answer, rid, div.querySelector(".row-summary"));
+  }
+
   // Click to expand
   div.addEventListener("click", () => {
     const panel = div.querySelector(".row-expand");
@@ -811,6 +952,62 @@ function buildRow(r, isNew) {
   });
 
   return div;
+}
+
+function renderAnswerBox(box, ans, rid, summaryEl) {
+  box.innerHTML = "";
+  if (ans.resolved_summary) {
+    const done = document.createElement("div");
+    done.className = "answer-done";
+    done.textContent = ans.resolved_summary;
+    box.appendChild(done);
+    return;
+  }
+  const msg = document.createElement("div");
+  msg.className = "answer-msg";
+  const send = async (value) => {
+    box.querySelectorAll("button,input").forEach(el => el.disabled = true);
+    try {
+      const body = {};
+      body[ANSWER_CFG.recordKey] = rid;
+      body[ANSWER_CFG.answerKey] = value;
+      const resp = await fetch(ANSWER_CFG.url, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(body)});
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      const out = await resp.json();
+      if (out[ANSWER_CFG.statusKey] === ANSWER_CFG.statusNeedsMore) {
+        summaryEl.textContent = out[ANSWER_CFG.questionKey];
+        renderAnswerBox(box, out[ANSWER_CFG.optionsKey], rid, summaryEl);
+      } else {
+        renderAnswerBox(box, {resolved_summary: out[ANSWER_CFG.summaryKey]}, rid, summaryEl);
+      }
+    } catch (e) {
+      box.querySelectorAll("button,input").forEach(el => el.disabled = false);
+      msg.textContent = ANSWER_CFG.errorText;
+    }
+  };
+  const mkBtn = (label, cls, value) => {
+    const b = document.createElement("button");
+    b.className = "answer-btn " + cls;
+    b.textContent = label;
+    b.addEventListener("click", () => send(value));
+    return b;
+  };
+  for (const opt of (ans.options || [])) box.appendChild(mkBtn(opt, "opt", opt));
+  if (ans.free_text) {
+    const inp = document.createElement("input");
+    inp.type = "text";
+    inp.className = "answer-input";
+    inp.placeholder = ans.placeholder || "";
+    const submit = mkBtn(ANSWER_CFG.submitLabel, "submit", null);
+    submit.onclick = () => { if (inp.value.trim()) send(inp.value.trim()); };
+    inp.addEventListener("keydown", ev => { if (ev.key === "Enter") submit.click(); });
+    box.appendChild(inp);
+    box.appendChild(submit);
+  }
+  box.appendChild(mkBtn(ANSWER_CFG.dismissLabel, "dismiss", ANSWER_CFG.dismissAnswer));
+  box.appendChild(msg);
 }
 
 function esc(s) {
@@ -862,6 +1059,7 @@ async function initialLoad() {
     const data = await fetchData(DATA_URL);
     setConnected();
     if (data.latest_at) latestAt = data.latest_at;
+    showClearedState(data.cleared_at);
     prependRows(data.rows || [], false);
   } catch (e) {
     setDisconnected();
@@ -904,11 +1102,36 @@ function setDisconnected() {
   }
 }
 
+const ANSWER_CFG = ANSWER_CFG_PLACEHOLDER;
+const CLEAR_URL = "CLEAR_URL_PLACEHOLDER";
+const CLEAR_CONFIRM = CLEAR_CONFIRM_PLACEHOLDER;
+const CLEARED_PREFIX = CLEARED_PREFIX_PLACEHOLDER;
+const NO_ACTIVITY_TEXT = "No activity yet.";
+
+function showClearedState(clearedAt) {
+  const el = document.getElementById("empty-main");
+  if (!el) return;
+  el.textContent = clearedAt
+    ? CLEARED_PREFIX + new Date(clearedAt).toLocaleString()
+    : NO_ACTIVITY_TEXT;
+}
+
+async function clearFeed() {
+  if (!confirm(CLEAR_CONFIRM)) return;
+  try {
+    const r = await fetch(CLEAR_URL, { method: "POST" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+  } catch (e) {
+    setDisconnected();
+    return;
+  }
+  refreshNow();
+}
+
 function refreshNow() {
   if (pollTimer) clearTimeout(pollTimer);
   // Full reload — rebuild feed-inner, preserving the wrapper div
-  document.getElementById("feed-inner").innerHTML =
-    '<div class="empty-state" id="empty-state" style="display:none">...</div>';
+  document.querySelectorAll("#feed-inner .row").forEach(el => el.remove());
   rowCount  = 0;
   latestAt  = null;
   initialLoad();
@@ -1054,4 +1277,12 @@ fetchTimers();
 """
 
 # Bake the version badge in at import time so we never serve a stale string
-DASHBOARD_HTML = _DASHBOARD_HTML.replace("DASHBOARD_VERSION_PLACEHOLDER", DASHBOARD_VERSION)
+DASHBOARD_HTML = (
+    _DASHBOARD_HTML
+    .replace("DASHBOARD_VERSION_PLACEHOLDER", DASHBOARD_VERSION)
+    .replace("ANSWER_CFG_PLACEHOLDER", json.dumps(ANSWER_JS_CONFIG))
+    .replace("CLEAR_LABEL_PLACEHOLDER", CLEAR_BUTTON_LABEL)
+    .replace("CLEAR_URL_PLACEHOLDER", CLEAR_ENDPOINT)
+    .replace("CLEAR_CONFIRM_PLACEHOLDER", json.dumps(CLEAR_CONFIRM_TEXT))
+    .replace("CLEARED_PREFIX_PLACEHOLDER", json.dumps(CLEARED_EMPTY_PREFIX))
+)

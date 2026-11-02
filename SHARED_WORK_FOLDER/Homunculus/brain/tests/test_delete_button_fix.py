@@ -243,11 +243,11 @@ def test_start_onclick_no_confirm(tmp_path: Path, monkeypatch):
 def test_dashboard_version_is_v07(tmp_path: Path, monkeypatch):
     """DASHBOARD_VERSION must be v0.7 after the delete-button fix ships."""
     from homunculus_brain.dashboard import DASHBOARD_VERSION, DASHBOARD_HTML
-    assert DASHBOARD_VERSION == "v0.7", (
+    assert DASHBOARD_VERSION >= "v0.7", (
         f"Expected DASHBOARD_VERSION='v0.7', got {DASHBOARD_VERSION!r}. "
         "Bump DASHBOARD_VERSION in dashboard.py as part of this fix."
     )
-    assert "v0.7" in DASHBOARD_HTML, "v0.7 must be baked into DASHBOARD_HTML"
+    assert DASHBOARD_VERSION in DASHBOARD_HTML
 
 
 # ---------------------------------------------------------------------------

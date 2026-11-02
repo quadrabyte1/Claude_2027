@@ -63,7 +63,7 @@ def _base_payload(**overrides) -> dict:
         "when": (NOW + timedelta(days=1, hours=1)).isoformat(),
         "criticality": "normal",
         "confidence": 0.9,
-        "raw_transcript": "coffee with Jane tomorrow at 10am",
+        "raw_transcript": "schedule coffee with Jane tomorrow at 10am",
         "audio_path": "/Users/thomas/sprite/inbox/2026-09-15T09-00-00.m4a",
         "captured_at": NOW.isoformat(),
     }
@@ -338,9 +338,9 @@ def test_idempotency_key_stable_across_transcript_variation(tmp_path, monkeypatc
     """Two identical intents that differ only in raw_transcript or audio_path
     (e.g. re-parsed from a re-transcribed .m4a) collapse to the same record."""
     client = _client_with_vault(tmp_path, monkeypatch)
-    p1 = _base_payload(raw_transcript="coffee with Jane tomorrow at 10am")
+    p1 = _base_payload(raw_transcript="schedule coffee with Jane tomorrow at 10am")
     p2 = _base_payload(
-        raw_transcript="coffee with Jane, tomorrow, ten in the morning",
+        raw_transcript="schedule coffee with Jane, tomorrow, ten in the morning",
         audio_path="/Users/thomas/sprite/inbox/rework.m4a",
     )
     first = client.post("/capture/parsed", json=p1).json()
@@ -862,7 +862,7 @@ def test_v180_e2e_schedule_bare_hour_3_resolves_pm(tmp_path, monkeypatch):
         "time_hint": "3",
         "criticality": "normal",
         "confidence": 0.87,
-        "raw_transcript": "Let's set Jake's VCA annual check-up on September 20th at three.",
+        "raw_transcript": "Let's schedule Jake's VCA annual check-up on September 20th at three.",
         "audio_path": "/Users/thomas/sprite/audio/2026-09-21.m4a",
         "captured_at": NOW_V18.isoformat(),
     }

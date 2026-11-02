@@ -367,6 +367,9 @@ def resolve(
 
     now_local = now.astimezone(tz)
 
+    # v2.6.0: fold day-part words (morning/tonight/...) out of the hints.
+    day_hint, time_hint = _normalize_day_part_hints(day_hint, time_hint)
+
     resolved_date, day_ambiguous, day_note = _resolve_day(day_hint, now_local)
     resolved_time, time_ambiguous, time_note = _resolve_time(
         time_hint, morning_anchor_hour, verb=verb,
@@ -597,6 +600,77 @@ _MILITARY_TIME_RE = re.compile(
 )
 
 _SCHEDULE_PM_HOURS = frozenset({1, 2, 3, 4, 5})
+
+# ---------------------------------------------------------------------------
+# v2.6.0 -- day-part words (single source of truth)
+#
+# Any of these words, anywhere in the day_hint or time_hint ("tomorrow
+# morning", "four o'clock tomorrow morning", "tonight at 9", "noon"), settles
+# the AM/PM question deterministically, regardless of whether the LLM flagged
+# the time as ambiguous.  Add new words here, one line each.
+# "noon" -> 12 pm (=12:00); "midnight" -> 12 am (=00:00).
+# ---------------------------------------------------------------------------
+DAY_PART_MERIDIEM: dict[str, str] = {
+    "morning":   "am",
+    "afternoon": "pm",
+    "evening":   "pm",
+    "tonight":   "pm",
+    "night":     "pm",
+    "noon":      "pm",
+    "midnight":  "am",
+}
+MERIDIEM_AM = "am"
+MERIDIEM_PM = "pm"
+DAY_PART_DAY_WORDS = frozenset({"today", "tomorrow"})
+DAY_HINT_TODAY = "today"
+DAY_PART_FILLER_WORDS = frozenset({"in", "the", "this", "at", "of", "on"})
+_DAY_PART_TOKEN_SPLIT_RE = re.compile(r"[^\w:']+")
+_HOUR_TOKEN_RE = re.compile(r"^\d{1,2}(?::\d{2})?$")
+_EXPLICIT_MERIDIEM_RE = re.compile(r"\b(?:am|pm|a\.m\.|p\.m\.)", re.IGNORECASE)
+
+
+def _split_day_part(hint: Optional[str]):
+    """Return (remaining_tokens, day_part_meridiem_or_None) for a hint string."""
+    meridiem: Optional[str] = None
+    rest: list[str] = []
+    for tok in _DAY_PART_TOKEN_SPLIT_RE.split(_OCLOCK_RE.sub("", (hint or "").lower())):
+        if not tok:
+            continue
+        if tok in DAY_PART_MERIDIEM:
+            meridiem = meridiem or DAY_PART_MERIDIEM[tok]
+        else:
+            rest.append(tok)
+    return rest, meridiem
+
+
+def _normalize_day_part_hints(day_hint: Optional[str], time_hint: Optional[str]):
+    """Fold day-part words found in either hint into a clean (day, time) pair.
+
+    "tomorrow morning" / "four o'clock"  -> ("tomorrow", "4 am")
+    None / "four o'clock tomorrow morning" -> ("tomorrow", "4 am")
+    "today" / "tonight at 9"              -> ("today", "9 pm")
+    Hints without a day-part word, and bare "noon"/"morning" anchors, pass
+    through untouched.
+    """
+    d_rest, d_part = _split_day_part(day_hint)
+    t_rest, t_part = _split_day_part(time_hint)
+    new_day, new_time = day_hint, time_hint
+
+    if d_part is not None:
+        d_days = [w for w in d_rest if w not in DAY_PART_FILLER_WORDS]
+        new_day = " ".join(d_days) or DAY_HINT_TODAY
+    if t_part is not None or any(w in DAY_PART_DAY_WORDS for w in t_rest):
+        t_days = [w for w in t_rest if w in DAY_PART_DAY_WORDS]
+        if t_days and not (day_hint or "").strip():
+            new_day = t_days[0]
+    hour_tokens = [w for w in t_rest if _HOUR_TOKEN_RE.match(_WORD_HOUR_MAP.get(w, w))]
+    if hour_tokens and not _EXPLICIT_MERIDIEM_RE.search(time_hint or ""):
+        part = t_part or d_part
+        if part is not None or t_part is not None:
+            hour = _WORD_HOUR_MAP.get(hour_tokens[0], hour_tokens[0])
+            new_time = f"{hour} {part}"
+    return new_day, new_time
+
 
 
 def _resolve_time(

@@ -50,9 +50,11 @@ from zoneinfo import ZoneInfo
 
 from . import activity_log
 from . import calendar as cal
+from . import clarify_answer
 from . import date_resolver
 from . import reminders as rem
 from . import vault
+from .verb_default import apply_default_reminder
 from .config import Config
 from . import timers as timer_module
 from .schemas import (
@@ -72,7 +74,7 @@ _NOTES_DIRNAME = "notes"
 _REMINDERS_DIRNAME = "reminders"  # vault/reminders/ — markdown files for handle/remind captures
 
 # v2.2.0: clarifying-question surfacing
-_CLARIFYING_PENDING_FILENAME = "_clarifying_pending.jsonl"  # inside vault/_reminders/
+_CLARIFYING_PENDING_FILENAME = clarify_answer.PENDING_FILENAME  # inside vault/_reminders/
 
 
 # ---------------------------------------------------------------------------
@@ -146,8 +148,13 @@ def _append_clarifying_pending(
     question: str,
     transcript: str,
     req: "ParsedCaptureRequest",
+    tz: Optional[ZoneInfo] = None,
+    ambiguous_fields: Optional[list[str]] = None,
 ) -> None:
     """Append a row to _clarifying_pending.jsonl.
+
+    v0.9: also stores ``answer_context`` (everything needed to finish the
+    capture) so the dashboard can offer answer buttons.
 
     Idempotent: if a row for this record_id already exists, do nothing.
     """
@@ -178,6 +185,10 @@ def _append_clarifying_pending(
         "subject": req.subject.strip().lower(),
         "captured_at": req.captured_at.isoformat(),
         "resolved_at": None,
+        clarify_answer.CONTEXT_KEY: clarify_answer.build_context(
+            req, record_id=record_id, tz_name=getattr(tz, "key", None),
+            ambiguous_fields=ambiguous_fields or [],
+        ),
     }
     with pending_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
@@ -200,11 +211,10 @@ def _resolve_clarifying_pending(
     so we cannot match on record_id directly.  We match on the stable memo
     identity: who + what + original_mtime.
 
-    This is annotated with a TODO so the precise match can be tightened when
-    the reply-verb (v2.3) ships a canonical follow-up event_id.
+    The dashboard answer path (``clarify_answer.answer``, POST /clarify/answer)
+    now resolves a clarify precisely by record_id; this loose match remains as
+    the fallback for the re-record-the-memo flow.
     """
-    # TODO(v2.3): replace with precise match once the reply verb carries the
-    # original clarifying record_id in its payload.
     pending_path = _clarifying_pending_path(vault_path)
     if not pending_path.exists():
         return
@@ -297,6 +307,13 @@ def dispatch(
     Assumes the caller has already enforced the min-confidence floor. See
     ``below_floor`` for the check FastAPI runs before this dispatch.
     """
+    # Default-to-reminder: the LLM may say schedule, but without an explicit
+    # calendar signal in the transcript the verb is remind.
+    flipped = apply_default_reminder(req.verb, req.raw_transcript)
+    if flipped is not req.verb:
+        log.info("capture/parsed verb %s -> %s (no calendar signal)", req.verb.value, flipped.value)
+        req = req.model_copy(update={"verb": flipped})
+
     record_id = compute_record_id(req)
 
     # Timer verbs handle their own idempotency internally (TimerManager is
@@ -364,6 +381,8 @@ def dispatch(
                 question=resp.clarifying_question,
                 transcript=req.raw_transcript,
                 req=req,
+                tz=tz,
+                ambiguous_fields=resp.ambiguous_fields,
             )
             # Log to activity so the dashboard can show the clarifying row.
             activity_log.log(

@@ -306,6 +306,7 @@ Steps:
 from __future__ import annotations
 
 import os
+import re
 import sys
 import json
 import math
@@ -425,6 +426,11 @@ LSQR_MAX_ITERS: int = 20000
 
 # --- Tee hole ---
 TEE_HOLE_GUARD_MM: float = 0.15     # keep-out added to the collar radius for the bore
+TRAP_OUTLINE_SIMPLIFY_TOL_MM: float = 0.05   # v6.29: Douglas-Peucker tolerance for the bunker slab outline. EGM-smoothed outlines can carry clusters of vertices <3 um apart (Delaunay then drops a rim edge and the rake texture fails -> plain slab; Delaunay hole at DeLaveaga H11 trap_2). 0.05 mm = a quarter of the sand grid step, invisible in print.
+TEE_COLLAR_GREEN_CLEARANCE_MM: float = 0.0   # v6.29: a tee collar whose disk comes within this distance of the green outline is skipped (it would sit inside the green object and trigger Bambu's gcode-path-conflict warning)
+LOG_TAG_TEE_GREEN: str = "[tee_hole]"
+TEE_GREEN_SKIP_WARNING_FMT: str = ("Tee hole at print-top-left ({x:.1f}, {y:.1f}) mm lies on the green; "
+                                   "the tee collar was not added (it would overlap the green object).")
 TEE_ISLAND_MARGIN_MM: float = 1.5   # fringe island radius beyond the bore
 
 # --- Thin-wall / TPS base ---
@@ -476,6 +482,12 @@ SCENE_PREFIX_TRAP: str = "trap"
 SCENE_PREFIX_SAND_TRAP: str = "sand_trap"
 SCENE_PREFIX_WATER: str = "water"
 SCENE_PREFIX_BOULDERS: str = "boulders"
+# v6.29: real object names shown by Bambu Studio (instead of trimesh's geometry_N).
+BAMBU_NAME_GREEN: str = "green"
+BAMBU_NAME_FRINGE: str = "fringe"
+BAMBU_NAME_BUNKER_PREFIX: str = "bunker"      # scene trap_N -> bunker_N
+BAMBU_NAME_SEPARATOR: str = "_"
+BAMBU_NAME_FALLBACK_FMT: str = "object_{oid}"
 FILAMENT_GREEN: int = 1                # Bambu extruder slots
 FILAMENT_FRINGE: int = 2
 FILAMENT_TRAP: int = 3
@@ -484,6 +496,11 @@ FILAMENT_BOULDERS: int = 5
 FILAMENT_DEFAULT: int = FILAMENT_GREEN # unknown geometries land on slot 1
 MANIFOLD_TOLERATE_BOUNDARY_EDGES: int = 30
 MANIFOLD_TOLERATE_TRIPLE_SHARED: int = 5
+MANIFOLD_SKIP_LABELS: frozenset = frozenset()   # v6.29: the engraved fringe is no longer skipped
+ENGRAVED_SCENE_NAMES: tuple = (SCENE_NAME_GREEN_SURFACE, SCENE_NAME_FRINGE)   # bodies that carry underside engraving
+STRICT_MANIFOLD_MISSING_FMT: str = "Engraved body '{name}' is missing from the scene."
+STRICT_MANIFOLD_PROBLEM_FMT: str = ("Engraved body '{name}' is not a clean closed manifold: open_edges={open} "
+                                    "multi_edges={multi} watertight={wt} winding_consistent={wind} volume={vol:.2f}")
 BAMBU_BED_CENTER_MM: tuple = (128.0, 128.0)   # fallback bed centre when project settings have none
 BAMBU_BED_WIDTH_MM: float = 256.0              # fallback bed X extent (Bambu A1) when project settings have none
 # Bambu Studio lays plates out in a row; plate N's origin is (N-1) * bed_width * (1 + gap).
@@ -587,6 +604,40 @@ def assert_manifold(
             f"watertight={mesh.is_watertight}, "
             f"winding_consistent={mesh.is_winding_consistent}"
         )
+
+
+def scene_meshes_by_node_name(scene) -> dict:
+    """{node_name: Trimesh} for a trimesh.Scene (geometry keys are trimesh's geometry_N, node names are ours)."""
+    out = {}
+    for node in scene.graph.nodes_geometry:
+        _transform, geom_key = scene.graph[node]
+        out[node] = scene.geometry[geom_key]
+    return out
+
+
+def strict_manifold_problems(scene, names) -> list:
+    """Return human-readable problems for the named scene meshes (empty list = all closed and manifold).
+
+    Checks: watertight, consistent winding, zero boundary edges, zero edges shared by 3+ faces,
+    positive volume.  Missing names are reported as problems too.
+    """
+    from collections import Counter
+    problems = []
+    by_node = scene_meshes_by_node_name(scene)
+    for name in names:
+        mesh = by_node.get(name)
+        if mesh is None:
+            problems.append(STRICT_MANIFOLD_MISSING_FMT.format(name=name))
+            continue
+        counts = Counter(map(tuple, mesh.edges_sorted.tolist()))
+        n_open = sum(1 for c in counts.values() if c == 1)
+        n_multi = sum(1 for c in counts.values() if c >= 3)
+        if (n_open or n_multi or not mesh.is_watertight or not mesh.is_winding_consistent
+                or mesh.volume <= 0):
+            problems.append(STRICT_MANIFOLD_PROBLEM_FMT.format(
+                name=name, open=n_open, multi=n_multi, wt=mesh.is_watertight,
+                wind=mesh.is_winding_consistent, vol=mesh.volume))
+    return problems
 
 
 # ---------------------------------------------------------------------------
@@ -2132,7 +2183,7 @@ GREEN_BOUNDARY_SPLINE_RESAMPLE_PX:  float = 1.5   # resample spacing after splin
 # the print. Target 0.5 mm gap — half of the ~1 mm slop the eye tolerates
 # on the plaque, big enough to survive one fringe-grid step (~0.88 mm) of
 # quantization.
-GREEN_FRINGE_GAP_MM: float = 0.125  # bumped 0.5 → 1.0 on 2026-09-04 per Thomas (task 732): 0.5 mm gap didn't stop the slicer's "conflict of gcode paths at layer 30" warning even when measured trap gap was 0.57 mm. Going 2.5× nozzle diameter to rule out path-proximity as the cause. Routes through the `if GREEN_FRINGE_GAP_MM > 0` branch at ~2672 so `green_shapely_exclusion` = `green_shapely.buffer(+GREEN_FRINGE_GAP_MM)`. Halved 2026-09-11 per Thomas — accepts slicer-warning risk to try tighter fit. Halved again 2026-09-12 per Thomas (task 508) — round-2 gap tightening from 0.5 → 0.25 mm. Halved again 2026-09-13 per Thomas (task 513) — round-3 sub-nozzle tightening 0.25 → 0.125 mm; Thomas explicitly accepts print-fit / slicer-warning risk.
+GREEN_FRINGE_GAP_MM: float = 0.02  # v6.29 (owner-approved 'exact cut'): fringe hole follows the green outline to within 20 um -- a hair above the ~5 um mesh-vs-polyline noise (measured Hausdorff 0.005 mm at gap 0, which left 0.047 mm2 of micro-overlap), far below slicer resolution, so overlap is exactly 0 and no gap is visible. History: 1.0 (task 732) -> 0.5 -> 0.25 -> 0.125 (task 513) -> 0.02 here. The 20.5 mm2 overlap seen from Nov 1 was the tee collar (see TEE_COLLAR_GREEN_CLEARANCE_MM), not the cutout.
 
 
 # ---------------------------------------------------------------------------
@@ -3045,6 +3096,21 @@ def _remove_faces_whose_footprint_overlaps_polygon(
 
     carved = mesh.submesh([np.where(keep_face_mask)[0]], append=True)
     return carved, n_removed
+
+
+def tee_collar_overlaps_green(cx: float, cy: float, green_poly_mm,
+                              clearance_mm: float = TEE_COLLAR_GREEN_CLEARANCE_MM) -> bool:
+    """True when the tee collar disk (collar OD / 2 + guard) at world (cx, cy) touches the green.
+
+    ``green_poly_mm`` is the green outline as a shapely polygon in fringe/world mm.
+    Pure geometry, no mesh needed, so it is directly unit-testable.
+    """
+    from shapely.geometry import Point as _TeePt
+    if green_poly_mm is None or green_poly_mm.is_empty:
+        return False
+    collar_r = TEE_HOLE_COLLAR_OD_MM / 2.0 + TEE_HOLE_GUARD_MM + float(clearance_mm)
+    disk = _TeePt(cx, cy).buffer(collar_r, resolution=CIRCLE_BUFFER_RESOLUTION)
+    return bool(disk.intersects(green_poly_mm))
 
 
 def drill_tee_hole(
@@ -7218,6 +7284,20 @@ def _compute_trap_surface_from_fringe(
 
 
 
+def simplify_trap_outline(poly, tol_mm: float = TRAP_OUTLINE_SIMPLIFY_TOL_MM):
+    """Drop near-duplicate / near-collinear outline vertices (<= tol_mm deviation) of a bunker footprint.
+
+    Returns the simplified polygon, or the input unchanged if simplification would empty or
+    invalidate it (or split it into several pieces).
+    """
+    if poly is None or poly.is_empty or tol_mm <= 0:
+        return poly
+    simp = poly.simplify(tol_mm, preserve_topology=True)
+    if simp.is_empty or not simp.is_valid or simp.geom_type != poly.geom_type:
+        return poly
+    return simp
+
+
 def _texture_trap_or_fallback(slab, trap_index, base_z_map, fallback_slab_fn=None):
     """v6.01: rake-texture a bunker slab; never lose the body.
 
@@ -7348,6 +7428,8 @@ def export_trap_stls(
             if shapely_inset.is_empty:
                 print(f"  Trap {i}: inset produced empty polygon — skipping.")
                 continue
+
+            shapely_inset = simplify_trap_outline(shapely_inset)
 
             # Task v0.11 (Topo, 2026-09-30): flat-min trap surface.
             # TRAP_SURFACE_CURVED=False (default): trap top is a flat scalar at
@@ -10262,6 +10344,43 @@ def build_ball_stand(
 # 3MF post-processing — per-object filament/extruder metadata (Bambu Studio)
 # ---------------------------------------------------------------------------
 
+def bambu_object_name(scene_name: str) -> str:
+    """Display name Bambu Studio shows for a scene geometry (green, fringe, bunker_N, water_N, ...).
+
+    green_surface -> green; fringe -> fringe; trap_N / sand_trap_N -> bunker_N; water_N and
+    boulders_N keep their names; anything unrecognised keeps its scene name.
+    """
+    n = scene_name or ""
+    low = n.lower()
+    suffix = ""
+    m = re.search(r"(?:_|-)?(\d+)$", n)
+    if m:
+        suffix = BAMBU_NAME_SEPARATOR + m.group(1)
+    if low.startswith(SCENE_PREFIX_SAND_TRAP) or low.startswith(SCENE_PREFIX_TRAP):
+        return BAMBU_NAME_BUNKER_PREFIX + suffix
+    if low == SCENE_NAME_FRINGE_NO_GRASS_SAMPLE or low.startswith(SCENE_PREFIX_FRINGE):
+        return n if low != SCENE_NAME_FRINGE else BAMBU_NAME_FRINGE
+    if low.startswith(SCENE_PREFIX_GREEN):
+        return BAMBU_NAME_GREEN
+    return n
+
+
+def rename_model_objects(model_xml: str, names_by_id: dict) -> str:
+    """Rewrite the name= attribute of each <object id="N"> in 3D/3dmodel.model (XML-escaped)."""
+    from xml.sax.saxutils import quoteattr
+
+    def _sub(m):
+        tag = m.group(0)
+        oid = re.search(r'\bid="([^"]*)"', tag)
+        if not oid or oid.group(1) not in names_by_id:
+            return tag
+        new = "name=" + quoteattr(names_by_id[oid.group(1)])
+        if re.search(r'\bname="[^"]*"', tag):
+            return re.sub(r'\bname="[^"]*"', lambda _m: new, tag, count=1)
+        return tag.replace("<object", "<object " + new, 1)
+    return re.sub(r"<object\b[^>]*>", _sub, model_xml)
+
+
 def _filament_for_scene_name(name: str) -> int:
     """
     Map a scene node name to a Bambu Studio extruder/filament index.
@@ -10407,9 +10526,11 @@ def _inject_bambu_extruder_metadata(path_3mf: str, scene_names: list) -> None:
         # (e.g. "fringe_no_grass_sample") — NOT oname which is trimesh's "geometry_N"
         # generic label.  The plate-split logic below must use scene_name, not oname.
         mapping = [
-            (oid, oname, _filament_for_scene_name(scene_names[i]), scene_names[i])
+            (oid, bambu_object_name(scene_names[i]) or oname,
+             _filament_for_scene_name(scene_names[i]), scene_names[i])
             for i, (oid, oname) in enumerate(object_entries)
         ]
+        model_xml = rename_model_objects(model_xml, {oid: nm for oid, nm, _e, _s in mapping})
 
     # --- 3. Build Metadata/model_settings.config ---
     # Bambu's <part id> values must be unique across the whole config. We
@@ -10432,7 +10553,7 @@ def _inject_bambu_extruder_metadata(path_3mf: str, scene_names: list) -> None:
             part_id = int(oid) + BAMBU_PART_ID_BASE
         except ValueError:
             part_id = BAMBU_PART_ID_BASE
-        display_name = oname or f"object_{oid}"
+        display_name = oname or BAMBU_NAME_FALLBACK_FMT.format(oid=oid)
         cfg_lines.append(f'  <object id="{oid}">')
         cfg_lines.append(f'    <metadata key="name" value="{display_name}"/>')
         cfg_lines.append(f'    <metadata key="extruder" value="{extruder}"/>')
@@ -11537,6 +11658,18 @@ def run_pipeline(
         except (TypeError, ValueError, AttributeError) as _exc_tee:
             print(f"\n[7d] Tee-hole: SKIPPED — invalid tee_hole spec {_tee_spec!r}: {_exc_tee}")
         else:
+            _tee_wx = -FRINGE_HALF_MM + _tee_x
+            _tee_wy = +FRINGE_HALF_MM - _tee_y
+            _tee_scale, _tee_centroid = _compute_px_to_mm(green_boundary_px, _egm_data)
+            _tee_green = ShapelyPolygon(_px_to_mm_2d(green_boundary_px.copy(), _tee_scale, _tee_centroid))
+            if not _tee_green.is_valid:
+                _tee_green = _tee_green.buffer(0)
+            if tee_collar_overlaps_green(_tee_wx, _tee_wy, _tee_green):
+                _tee_msg = TEE_GREEN_SKIP_WARNING_FMT.format(x=_tee_x, y=_tee_y)
+                print(f"\n[7d] {LOG_TAG_TEE_GREEN} SKIPPED — {_tee_msg}")
+                PIPELINE_WARNINGS.append(_tee_msg)
+                _tee_spec = None
+        if _tee_spec:
             print(f"\n[7d] Tee-hole: punching Ø{TEE_HOLE_DIAMETER_MM} mm through-hole "
                   f"at print-top-left ({_tee_x:.2f}, {_tee_y:.2f}) mm, "
                   f"collar Ø{TEE_HOLE_COLLAR_OD_MM} mm + {TEE_HOLE_COLLAR_PROTRUDE_MM} mm protrusion")
@@ -11715,11 +11848,16 @@ def run_pipeline(
     assert_manifold(
         scene,
         label=f"{course}-hole-{hole}",
-        # Fringe is intentionally an open-bottom thin shell; topology rework queued (task 311).
-        skip_labels={SCENE_NAME_FRINGE, SCENE_NAME_UNNAMED_FIRST},
+        # v6.29: nothing is skipped any more -- the engraved fringe is checked like every other body.
+        skip_labels=MANIFOLD_SKIP_LABELS,
         tolerate_boundary_edges=MANIFOLD_TOLERATE_BOUNDARY_EDGES,
         tolerate_triple_shared=MANIFOLD_TOLERATE_TRIPLE_SHARED,
     )
+    # Strict gate for the engraved bodies (short-ID text on the undersides): zero open or
+    # multiply-shared edges, consistent winding, positive volume.  Problems are warnings.
+    for _prob in strict_manifold_problems(scene, ENGRAVED_SCENE_NAMES):
+        print(f"  WARNING: {_prob}")
+        PIPELINE_WARNINGS.append(_prob)
 
     scene.export(path_3mf)
     print(f"  {LOG_TAG_GENERATE} output 3MF written:  {path_3mf}")
