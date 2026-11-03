@@ -16,20 +16,8 @@
        rendered but did nothing — silent breakage. Local-first project;
        critical UX shouldn't hinge on a remote script that may not load. -->
 
+  {% include '_wash_vars.html' %}
   <style>
-    /* Background wash: defined once here; every page references the vars. */
-    :root {
-      --wash-start: #3348B2;            /* upper-left corner */
-      --wash-end: #C8CCE3;              /* lower-right corner */
-      --wash-gradient: linear-gradient(to bottom right, var(--wash-start), var(--wash-end));
-      --wash-panel-bg: rgba(255, 255, 255, 0.92);   /* keeps text readable over the dark corner */
-      --wash-panel-radius: 0.75rem;
-      --text-on-blue: #ffffff;          /* text sitting directly on the blue wash (7.75:1 on --wash-start) */
-    }
-    html, body { min-height: 100vh; }
-    body { background: var(--wash-gradient) fixed; }
-    .wash-panel { background: var(--wash-panel-bg); border-radius: var(--wash-panel-radius); }
-    .text-on-blue { color: var(--text-on-blue); }
     /* ── V3.16 page decoration ─────────────────────────────────────────────
        Palette: blue, gray, black, white. Quiet, local-first polish — no
        loud gradients, no drop shadows anywhere except the sticky footer.
@@ -364,6 +352,26 @@
     <form action="/config" method="POST" class="card-surface p-5 space-y-4">
       <h2 class="text-sm font-semibold text-gray-700">Filter configuration</h2>
 
+      <!-- V3.34 — OMDb API key. Never pre-filled: only a masked hint is rendered. -->
+      <div class="block" id="omdb-key-block">
+        <span class="text-xs text-gray-500 uppercase tracking-wide">OMDb API key</span>
+        <div class="mt-1 flex items-center gap-2">
+          <input type="password" id="omdb-key-input" name="{{ omdb_ui.form_field }}" value=""
+                 autocomplete="off" spellcheck="false"
+                 placeholder="{{ omdb_key_hint if omdb_key_saved else 'Paste key' }}"
+                 class="flex-1 text-sm border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500">
+          <button type="button" id="omdb-key-toggle" class="text-xs px-2 py-2 rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50">Show</button>
+          <button type="button" id="omdb-key-test" class="text-xs px-2 py-2 rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50">Test key</button>
+          <button type="button" id="omdb-key-clear" class="text-xs px-2 py-2 rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50">Clear</button>
+        </div>
+        <input type="hidden" id="omdb-key-clear-flag" name="{{ omdb_ui.clear_field }}" value="" disabled>
+        <div class="mt-1 text-xs">
+          <span id="omdb-key-state" class="{{ 'text-green-600' if omdb_key_saved else 'text-gray-400' }}">{{ omdb_ui.saved_label ~ ' (' ~ omdb_key_hint ~ ')' if omdb_key_saved else omdb_ui.not_saved_label }}</span>
+          <span id="omdb-key-test-result" class="ml-2" aria-live="polite"></span>
+        </div>
+        <p class="text-xs text-gray-400 mt-1">{{ omdb_ui.helper }}</p>
+      </div>
+
       <div class="grid grid-cols-3 gap-4">
         <label class="block">
           <span class="text-xs text-gray-500 uppercase tracking-wide">Min rating</span>
@@ -542,9 +550,11 @@
            current radio state. /run saves the config, wipes seen titles +
            matches, and starts a fresh scan, so unsaved on-screen selections
            always take effect. -->
-      <button type="submit" formaction="/run"
-              class="w-full text-sm font-semibold px-4 py-3 rounded-md bg-blue-600 hover:bg-blue-700 text-white transition-colors mt-2"
-              title="Saves the current config, wipes the seen-titles + matches tables, and starts a fresh scan against today's IMDB dumps.">
+      <button type="submit" formaction="/run" id="{{ omdb_ui.run_button_id }}"
+              {% if not omdb_key_saved %}disabled{% endif %}
+              class="w-full text-sm font-semibold px-4 py-3 rounded-md bg-blue-600 hover:bg-blue-700 text-white transition-colors mt-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              data-title-enabled="Saves the current config and starts a fresh scan against today's IMDB dumps."
+              title="{{ omdb_ui.run_disabled_tooltip if not omdb_key_saved else "Saves the current config and starts a fresh scan against today's IMDB dumps." }}">
         ▶ Run scan now
       </button>
     </form>
@@ -552,7 +562,7 @@
     <!-- Run history -->
     <div>
       <div class="flex items-center justify-between mb-2">
-        <h2 class="text-sm font-semibold text-gray-700">Recent runs</h2>
+        <h2 class="text-sm font-semibold text-on-blue">Recent runs</h2>
         <form action="/clear" method="POST" class="inline">
           <button type="submit"
                   onclick="return confirm('Clear all recent runs and their match results?\n\nPreserved: filter configuration (genre selections, min rating, min votes, title types) and the seen-set of already-scanned titles.');"
@@ -563,7 +573,7 @@
         </form>
       </div>
       {% if not runs %}
-      <p class="text-sm text-gray-400 italic">No runs yet — hit "Run scan now" to start the first one.</p>
+      <p class="text-sm text-on-blue italic">No runs yet — hit "Run scan now" to start the first one.</p>
       {% else %}
       <div class="card-surface overflow-hidden">
         <table class="w-full text-xs">
@@ -656,7 +666,7 @@
     <!-- Matches (all runs, aggregated) -->
     <div>
       <div class="flex items-center justify-between mb-2 gap-3 flex-wrap">
-        <h2 class="text-sm font-semibold text-gray-700">
+        <h2 class="text-sm font-semibold text-on-blue">
           Matches
           {% if matches %}(<span id="matches-visible-count">{{ matches|length }}</span>{% if matches_count > 500 %} of {{ "{:,}".format(matches_count) }}{% endif %}){% endif %}
         </h2>
@@ -668,19 +678,25 @@
                    {% if show_dismissed %}checked{% endif %}
                    onchange="location.search = this.checked ? '?show_dismissed=1' : '?show_dismissed=0'"
                    class="rounded border-gray-300 text-gray-500 focus:ring-gray-400">
-            <span class="{% if show_dismissed %}text-gray-700 font-medium{% else %}text-gray-400{% endif %}">
+            <span class="text-on-blue{% if show_dismissed %} font-medium{% endif %}">
               Show dismissed{% if dismissed_count > 0 %} (<span id="show-dismissed-count">{{ dismissed_count }}</span>){% endif %}
             </span>
           </label>
         </div>
       </div>
+      {% if blurb_excluded %}
+      <p id="{{ blurb_note_id }}" class="text-xs text-on-blue mb-2" title="{{ blurb_note_title }}">
+        {{ blurb_excluded|sum(attribute=1) }} {{ blurb_note_label }}
+        ({% for label, n in blurb_excluded %}{{ n }} {{ label }}{% if not loop.last %}; {% endif %}{% endfor %})
+      </p>
+      {% endif %}
       {% if matches_count > 500 %}
-      <p class="text-xs text-gray-400 italic mb-2">
+      <p class="text-xs text-on-blue italic mb-2">
         Showing 500 of {{ "{:,}".format(matches_count) }} — sort dropdown reorders these 500 only.
       </p>
       {% endif %}
       {% if not matches %}
-      <p class="text-sm text-gray-400 italic">No matches yet — run a scan to populate this list.</p>
+      <p class="text-sm text-on-blue italic">No matches yet — run a scan to populate this list.</p>
       {% else %}
       <div class="card-surface overflow-hidden">
         <table id="matches-table" class="sortable-table w-full text-xs">
@@ -1189,6 +1205,61 @@
 
     // ── End tooltip ─────────────────────────────────────────────────────────
 
+    // ── OMDb key field (V3.34) ──
+    (function () {
+      const OMDB = {{ omdb_ui | tojson }};
+      const TITLE_ENABLED = document.getElementById(OMDB.run_button_id).dataset.titleEnabled;
+      const COLOR_OK = 'text-green-600', COLOR_BAD = 'text-red-600', COLOR_MUTED = 'text-gray-400';
+      const SHOW = 'Show', HIDE = 'Hide', TESTING = 'Testing\u2026', PENDING = 'pending';
+      const input  = document.getElementById('omdb-key-input');
+      const state  = document.getElementById('omdb-key-state');
+      const result = document.getElementById('omdb-key-test-result');
+      const runBtn = document.getElementById(OMDB.run_button_id);
+      const clearFlag = document.getElementById('omdb-key-clear-flag');
+      const toggle = document.getElementById('omdb-key-toggle');
+      let saved = {{ 'true' if omdb_key_saved else 'false' }};
+
+      function render(s, hint) {
+        saved = s;
+        state.textContent = s ? OMDB.saved_label + ' (' + hint + ')' : OMDB.not_saved_label;
+        state.className = s ? COLOR_OK : COLOR_MUTED;
+        input.placeholder = s ? hint : 'Paste key';
+        runBtn.disabled = !s;
+        runBtn.title = s ? TITLE_ENABLED : OMDB.run_disabled_tooltip;
+      }
+      function refresh() {
+        fetch(OMDB.status_route).then(r => r.json()).then(j => {
+          input.value = '';               // key is stored; don't keep it in the DOM
+          clearFlag.disabled = true; clearFlag.value = '';
+          render(j.saved, j.hint);
+        }).catch(() => {});
+      }
+      document.addEventListener('config-saved', refresh);
+
+      toggle.addEventListener('click', () => {
+        const show = input.type === 'password';
+        input.type = show ? 'text' : 'password';
+        toggle.textContent = show ? HIDE : SHOW;
+      });
+      document.getElementById('omdb-key-test').addEventListener('click', () => {
+        result.className = 'ml-2 ' + COLOR_MUTED; result.textContent = TESTING;
+        fetch(OMDB.test_route, { method: 'POST', headers: {'Content-Type': 'application/json'},
+                                 body: JSON.stringify({ key: input.value }) })
+          .then(r => r.json()).then(j => {
+            result.className = 'ml-2 ' + (j.status === 'ok' ? COLOR_OK : COLOR_BAD);
+            result.textContent = j.message;
+          }).catch(() => { result.className = 'ml-2 ' + COLOR_BAD; result.textContent = 'Test failed.'; });
+      });
+      document.getElementById('omdb-key-clear').addEventListener('click', () => {
+        if (!confirm('Remove the saved OMDb API key?')) return;
+        input.value = '';
+        clearFlag.disabled = false; clearFlag.value = '1';
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      // Typing a key enables Run immediately (the autosave persists it on change).
+      input.addEventListener('input', () => { if (input.value.trim()) { runBtn.disabled = false; runBtn.title = TITLE_ENABLED; } else if (!saved) { runBtn.disabled = true; runBtn.title = OMDB.run_disabled_tooltip; } });
+    })();
+
     // ── Config auto-save ───────────────────────────────────────────────────
     // Fires on any change to the config form. Text inputs are debounced
     // 300 ms so we don't hammer the endpoint on every keystroke. Radio
@@ -1211,7 +1282,7 @@
       function _doSave() {
         const fd = new FormData(configForm);
         fetch('/config', { method: 'POST', body: fd })
-          .then(() => _showSaved())
+          .then(() => { _showSaved(); document.dispatchEvent(new CustomEvent('config-saved')); })
           .catch(() => {}); // silent — a failed autosave doesn't need to alarm the user
       }
 

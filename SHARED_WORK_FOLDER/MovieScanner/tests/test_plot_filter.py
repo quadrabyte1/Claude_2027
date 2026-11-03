@@ -16,7 +16,7 @@ title from the matches list entirely — silently, as if it never matched.
 Additional cases:
   Case 6 — Cached failure (plot=NULL, error set) → excluded without a new API call.
   Case 7 — All matches fail → empty list returned, no exception raised.
-  Case 8 — No OMDb API key configured → fail open (include all titles).
+  Case 8 — No OMDb API key configured → fail closed (V3.30: exclude all).
   Case 9 — APP_VERSION is V3.24 (version bump regression guard).
 
 Testing strategy
@@ -415,8 +415,8 @@ class TestScannerPlotFilter:
         assert kept == []
         assert dropped == 3
 
-    def test_case8_no_api_key_fail_open(self, tmp_path):
-        """Case 8 — No OMDb key configured → all titles pass (fail open)."""
+    def test_case8_no_api_key_fail_closed(self, tmp_path):
+        """Case 8 — No OMDb key configured → no blurb possible → all excluded (V3.30 fail closed)."""
         db_path = self._setup_scanner(tmp_path)
 
         # Remove the OMDb key from config.
@@ -440,9 +440,9 @@ class TestScannerPlotFilter:
             # When there is no API key, we must NOT call OMDb at all.
             mock_fetch.assert_not_called()
 
-        # Fail open: all titles are kept.
-        assert len(kept) == 1
-        assert dropped == 0
+        # V3.30 fail closed: the blurb can't be fetched, so nothing matches.
+        assert kept == []
+        assert dropped == 1
 
 
 # ── Flask route integration test ─────────────────────────────────────────

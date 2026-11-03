@@ -468,6 +468,7 @@ class TestRegressionV327:
     def test_t9_app_version_is_v3_27(self, tmp_path):
         """T9 — APP_VERSION must be V3.27 after this feature ships."""
         ms_app, client, db_path = _make_app(tmp_path)
-        assert ms_app.APP_VERSION == "V3.27", (
-            f"Expected V3.27, got {ms_app.APP_VERSION!r}"
+        major, minor = ms_app.APP_VERSION.lstrip("V").split(".")
+        assert (int(major), int(minor)) >= (3, 27), (
+            f"Expected V3.27 or higher, got {ms_app.APP_VERSION!r}"
         )

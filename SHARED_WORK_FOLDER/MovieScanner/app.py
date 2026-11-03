@@ -33,7 +33,81 @@ app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.jinja_env.auto_reload = True
 app.secret_key = "moviescanner-dev"  # required for flash()
 
-APP_VERSION = "V3.29"
+APP_VERSION = "V3.34"
+# V3.34 — OMDb API key entry on the main page (Filter configuration card).
+#          Masked input + show/hide + "Test key" (one OMDb request for
+#          OMDB_TEST_TCONST). Blank submit keeps the stored key; removal
+#          needs the explicit clear field. The full key is never rendered
+#          into HTML or logged. "Run scan now" is disabled (and /run is
+#          guarded server-side) while no key is stored.
+OMDB_KEY_CONFIG_KEY = "omdb_api_key"
+OMDB_KEY_FORM_FIELD = "omdb_api_key"
+OMDB_KEY_CLEAR_FIELD = "clear_omdb_api_key"
+OMDB_KEY_HINT_CHARS = 4
+OMDB_KEY_HINT_MASK = "\u2022\u2022\u2022\u2022"
+OMDB_KEY_STATUS_ROUTE = "/config/omdb_key_status"
+OMDB_TEST_KEY_ROUTE = "/config/omdb_test_key"
+OMDB_TEST_TCONST = "tt0111161"          # The Shawshank Redemption
+OMDB_KEY_SAVED_LABEL = "Key saved \u2713"
+OMDB_KEY_NOT_SAVED_LABEL = "No key saved"
+OMDB_HELPER_TEXT = ("Free key: omdbapi.com/apikey.aspx (1,000 requests/day). "
+                    "Click the activation link in the email.")
+RUN_BUTTON_ID = "run-scan-btn"
+RUN_DISABLED_TOOLTIP = "Enter and save an OMDb API key first \u2014 without one the scan finds zero matches."
+RUN_NO_KEY_FLASH = "Scan not started: no OMDb API key is saved."
+KEY_STATUS_OK = "ok"
+KEY_STATUS_INVALID = "invalid_key"
+KEY_STATUS_RATE_LIMITED = "rate_limited"
+KEY_STATUS_NETWORK = "network_error"
+KEY_STATUS_MISSING = "missing"
+KEY_STATUS_ERROR = "error"
+KEY_MESSAGES = {
+    KEY_STATUS_OK: "Key works \u2713",
+    KEY_STATUS_INVALID: ("OMDb rejected this key (\"Invalid API key\"). If you just requested it, "
+                         "click the activation link in OMDb's email first; otherwise check for typos."),
+    KEY_STATUS_RATE_LIMITED: "Key is valid but the daily request limit was reached.",
+    KEY_STATUS_NETWORK: "Could not reach OMDb (network error). Try again.",
+    KEY_STATUS_MISSING: "No key to test \u2014 paste one first.",
+    KEY_STATUS_ERROR: "OMDb returned an unexpected response.",
+}
+# Substrings (lower-case) in OMDbClient's error string -> status.
+OMDB_INVALID_MARKERS = ("invalid api key", "no api key", "unauthorized")
+OMDB_RATE_LIMIT_MARKER = "limit reached"
+OMDB_NETWORK_MARKER_PREFIX = "network error"
+# V3.33 — Interrupt-safe scans + no auto-reloader.
+#          * The Flask debug reloader restarted the server on every .py edit,
+#            killing the scan's daemon thread mid-run. USE_RELOADER is now
+#            False (restart the server by hand after edits).
+#          * /run no longer wipes titles/matches/baseline up front. The
+#            scanner (scan(replace_existing=True)) builds results first and
+#            swaps titles + matches + eliminations + previous_match_tconsts in
+#            ONE transaction at the end; a failed / cancelled / orphaned scan
+#            leaves the previous data untouched. previous_match_tconsts is
+#            only replaced from a NON-EMPTY matches table.
+SERVER_HOST = "0.0.0.0"
+SERVER_PORT = 5053
+DEBUG_MODE = True       # debugger/tracebacks stay on; harmless without reloader
+USE_RELOADER = False    # reloader kills in-flight scans on .py edits
+# V3.30 — Blurb match rule. A title is a match only if its hover blurb (OMDb
+#          plot) was fetched. Plot filter now FAILS CLOSED when no OMDb key is
+#          set (previously every title passed and every hover errored).
+#          OMDbClient classifies failures: definite (not found / no plot) is
+#          cached; transient (network, timeout, quota, bad key) is NOT cached
+#          so a later scan can succeed (legacy cached transient rows retried).
+#          Elimination reasons plot:missing / plot:fetch_failed /
+#          plot:no_api_key; a subtle note above the Matches table counts them.
+BLURB_NOTE_ID = "blurb-excluded-note"
+BLURB_NOTE_LABEL = "excluded: no blurb"
+BLURB_NOTE_TITLE = (
+    "Titles that otherwise matched but whose plot blurb could not be fetched "
+    "from OMDb are not counted as matches."
+)
+BLURB_REASON_LABELS = {
+    "plot:missing": "no blurb available",
+    "plot:fetch_failed": "fetch failed, retried next scan",
+    "plot:no_api_key": "no OMDb API key",
+}
+BLURB_REASON_LIKE = "plot:%"
 # V3.27 — Dismissal Reason column. New scan_eliminations table records WHY
 #          each title was dropped by a scanner filter rule (year, rating, votes,
 #          genre, country, plot, only_in_theaters). New Scanner._record_elimination()
@@ -96,7 +170,16 @@ DB_PATH = os.environ.get("MOVIESCANNER_DB_PATH") or os.path.join(
 
 @app.context_processor
 def _inject_app_version():
-    return {"app_version": APP_VERSION}
+    return {
+        "app_version": APP_VERSION,
+        "omdb_ui": {
+            "form_field": OMDB_KEY_FORM_FIELD, "clear_field": OMDB_KEY_CLEAR_FIELD,
+            "status_route": OMDB_KEY_STATUS_ROUTE, "test_route": OMDB_TEST_KEY_ROUTE,
+            "saved_label": OMDB_KEY_SAVED_LABEL, "not_saved_label": OMDB_KEY_NOT_SAVED_LABEL,
+            "helper": OMDB_HELPER_TEXT, "run_button_id": RUN_BUTTON_ID,
+            "run_disabled_tooltip": RUN_DISABLED_TOOLTIP, "hint_mask": OMDB_KEY_HINT_MASK,
+        },
+    }
 
 
 # ── DB helpers ─────────────────────────────────────────────────────────────
@@ -271,6 +354,7 @@ def index():
     db = _conn()
     cfg_rows = db.execute("SELECT key, value FROM config").fetchall()
     cfg = {r["key"]: r["value"] for r in cfg_rows}
+    omdb_key_stored = cfg.pop(OMDB_KEY_CONFIG_KEY, "") or ""   # never reaches the template
     runs = db.execute("""
         SELECT * FROM (
             SELECT id, started_at, completed_at, status, phase,
@@ -372,6 +456,17 @@ def index():
             d["dismissal_reason"] = None
         matches.append(d)
 
+    # V3.30 — titles excluded because their blurb failed (this scan only;
+    # scan_eliminations is cleared each /run). [(label, count), ...]
+    blurb_excluded = [
+        (BLURB_REASON_LABELS.get(r["reason"], r["reason"]), r["n"])
+        for r in db.execute(
+            "SELECT reason, COUNT(*) AS n FROM scan_eliminations "
+            "WHERE reason LIKE ? GROUP BY reason ORDER BY reason",
+            (BLURB_REASON_LIKE,),
+        ).fetchall()
+    ]
+
     db.close()
 
     # Parse the JSON-encoded tag lists into lowercase sets so the template
@@ -408,9 +503,59 @@ def index():
         include_lc=include_lc,
         exclude_lc=exclude_lc,
         exclude_countries=exclude_countries_str,
+        blurb_excluded=blurb_excluded,
+        blurb_note_id=BLURB_NOTE_ID,
+        blurb_note_label=BLURB_NOTE_LABEL,
+        blurb_note_title=BLURB_NOTE_TITLE,
+        omdb_key_saved=bool(omdb_key_stored),
+        omdb_key_hint=_key_hint(omdb_key_stored),
         config_integrity_warning=not _config_integrity_ok,
         has_snapshot_for_restore=has_snapshot_for_restore,
     )
+
+
+def _key_hint(key: str) -> str:
+    """Masked hint (last OMDB_KEY_HINT_CHARS chars) — never the full key."""
+    return OMDB_KEY_HINT_MASK + key[-OMDB_KEY_HINT_CHARS:] if key else ""
+
+
+def _stored_omdb_key() -> str:
+    db = _conn()
+    row = db.execute("SELECT value FROM config WHERE key=?", (OMDB_KEY_CONFIG_KEY,)).fetchone()
+    db.close()
+    return (row["value"] if row else "") or ""
+
+
+@app.route(OMDB_KEY_STATUS_ROUTE)
+def omdb_key_status():
+    key = _stored_omdb_key()
+    return jsonify({"saved": bool(key), "hint": _key_hint(key)})
+
+
+@app.route(OMDB_TEST_KEY_ROUTE, methods=["POST"])
+def omdb_test_key():
+    """Make ONE OMDb request for OMDB_TEST_TCONST and classify the outcome.
+    Tests the submitted key, or the stored key when none is submitted. The
+    key is read from the JSON body (never the URL) and never echoed back."""
+    body = request.get_json(silent=True) or {}
+    key = (body.get("key") or "").strip() or _stored_omdb_key()
+    if not key:
+        return jsonify({"status": KEY_STATUS_MISSING, "message": KEY_MESSAGES[KEY_STATUS_MISSING]})
+    # _fetch_from_api bypasses the metadata cache and DB entirely.
+    result = OMDbClient(api_key=key, db_path=DB_PATH)._fetch_from_api(OMDB_TEST_TCONST)
+    err = (result.get("error") or "")
+    low = err.lower()
+    if not err:
+        status = KEY_STATUS_OK
+    elif any(m in low for m in OMDB_INVALID_MARKERS):
+        status = KEY_STATUS_INVALID
+    elif OMDB_RATE_LIMIT_MARKER in low:
+        status = KEY_STATUS_RATE_LIMITED
+    elif low.startswith(OMDB_NETWORK_MARKER_PREFIX):
+        status = KEY_STATUS_NETWORK
+    else:
+        status = KEY_STATUS_ERROR
+    return jsonify({"status": status, "message": KEY_MESSAGES[status]})
 
 
 @app.route("/config", methods=["POST"])
@@ -480,6 +625,17 @@ def _save_config_from_form():
     only_in_theaters = "1" if request.form.get("only_in_theaters") else "0"
 
     db = _conn()
+    # V3.34 — OMDb key: blank/absent = keep the stored key; only an explicit
+    # clear flag removes it.
+    submitted_key = (request.form.get(OMDB_KEY_FORM_FIELD) or "").strip()
+    if request.form.get(OMDB_KEY_CLEAR_FIELD):
+        db.execute("DELETE FROM config WHERE key=?", (OMDB_KEY_CONFIG_KEY,))
+    elif submitted_key:
+        db.execute(
+            "INSERT INTO config (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (OMDB_KEY_CONFIG_KEY, submitted_key),
+        )
     for k, v in [
         ("min_rating",        str(min_rating)),
         ("min_votes",         str(min_votes)),
@@ -531,7 +687,7 @@ def _spawn_scan_worker() -> None:
     def worker():
         global _active_scanner
         try:
-            scanner.scan(on_progress=lambda msg: None)
+            scanner.scan(on_progress=lambda msg: None, replace_existing=True)
         except Exception as e:
             print(f"[MovieScanner] scan error: {e}")
         finally:
@@ -594,6 +750,13 @@ def start_run():
     self-clean into ``status='error', phase='cancelled'`` shortly after.
     """
     global _active_scanner
+    # V3.34 — no OMDb key (stored or submitted with this form) => every
+    # title would fail the blurb rule. Save the form but don't scan.
+    if not ((request.form.get(OMDB_KEY_FORM_FIELD) or "").strip() or _stored_omdb_key()) \
+            or request.form.get(OMDB_KEY_CLEAR_FIELD):
+        _save_config_from_form()
+        flash(RUN_NO_KEY_FLASH)
+        return redirect(url_for("index"))
     if _scan_in_progress():
         # Cooperative cancel — signal the running scan to bail at its
         # next checkpoint. If _active_scanner is None here it means the
@@ -614,28 +777,9 @@ def start_run():
 
     _save_config_from_form()
 
-    db = _conn()
-    # V3.21 — snapshot the OUTGOING run's match tconsts before we DELETE
-    # them. This is the only chance to preserve "what the previous scan
-    # produced" across the wipe, and index() reads it to flag NEW rows in
-    # the fresh run's results. We fully replace the snapshot on every /run
-    # so it always represents the immediately-previous run, not an older
-    # one. If matches is already empty (no prior run) the snapshot stays
-    # empty and nothing gets flagged as new in the next scan — correct.
-    db.execute("DELETE FROM previous_match_tconsts")
-    db.execute(
-        "INSERT INTO previous_match_tconsts (tconst) SELECT tconst FROM matches"
-    )
-    # Matches first (they reference titles + runs); titles second.
-    # runs table is intentionally kept so history isn't lost.
-    db.execute("DELETE FROM matches")
-    db.execute("DELETE FROM titles")
-    # V3.27 — clear the scan eliminations log so the table always reflects
-    # the current scan's drops (not stale reasons from prior runs).
-    db.execute("DELETE FROM scan_eliminations")
-    db.commit()
-    db.close()
-
+    # V3.33 — NO up-front wipe. The scanner swaps titles/matches/eliminations
+    # and snapshots previous_match_tconsts (V3.21 NEW-flag baseline, from the
+    # outgoing matches, only if non-empty) atomically once the scan finishes.
     _spawn_scan_worker()
     return redirect(url_for("index"))
 
@@ -939,4 +1083,4 @@ def config_restore_latest():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5053, debug=True)
+    app.run(host=SERVER_HOST, port=SERVER_PORT, debug=DEBUG_MODE, use_reloader=USE_RELOADER)

@@ -39,6 +39,33 @@ from typing import Optional
 
 _OMDB_BASE = "http://www.omdbapi.com/"
 
+# V3.30 — failure classification. A fetch failure is either DEFINITE (OMDb
+# answered: title not found / no plot -> cached, never retried) or TRANSIENT
+# (network, timeout, HTTP/JSON problems, quota, bad key -> NOT cached, so a
+# later scan can succeed). ``fetch()`` results carry KEY_TRANSIENT (not a DB column).
+KEY_TRANSIENT = "transient"
+ERROR_NETWORK_PREFIX = "Network error: "
+ERROR_UNEXPECTED_PREFIX = "Unexpected fetch error: "
+ERROR_JSON_PREFIX = "JSON parse error: "
+ERROR_RESPONSE_FALSE_DEFAULT = "OMDb returned Response=False"
+# OMDb "Error" strings that mean the title definitively has no data.
+OMDB_DEFINITE_ERRORS = ("movie not found!", "series not found!", "incorrect imdb id.")
+# Error-string prefixes written by this module for transient failures; used to
+# recognise (and discard) such rows already sitting in older caches.
+_TRANSIENT_ERROR_PREFIXES = (ERROR_NETWORK_PREFIX, ERROR_UNEXPECTED_PREFIX, ERROR_JSON_PREFIX)
+OMDB_TRANSIENT_ERROR_MARKERS = ("limit reached", "invalid api key", "no api key")
+
+
+def is_transient_error(error: Optional[str]) -> bool:
+    """True if *error* describes a failure that may succeed if retried."""
+    if not error:
+        return False
+    low = error.lower()
+    if error.startswith(_TRANSIENT_ERROR_PREFIXES):
+        return True
+    return any(m in low for m in OMDB_TRANSIENT_ERROR_MARKERS)
+
+
 # Dict keys returned by fetch() — all values are str | None.
 _FIELDS = ("plot", "released", "runtime", "director",
            "rt_score", "imdb_rating", "metascore", "country", "language",
@@ -84,12 +111,20 @@ class OMDbClient:
                 conn.commit()
             else:
                 cached = self._load_cache(conn, tconst)
-                if cached is not None:
+                # V3.30 — a legacy cached *transient* failure is not an answer;
+                # fall through and retry it.
+                if cached is not None and not is_transient_error(cached.get("error")):
+                    cached[KEY_TRANSIENT] = False
                     return cached
 
             # Cache miss — go to the network.
             result = self._fetch_from_api(tconst)
-            self._save_cache(conn, tconst, result)
+            if result.get(KEY_TRANSIENT):
+                # Never cache transient failures (and drop any stale bad row).
+                conn.execute("DELETE FROM title_metadata WHERE tconst=?", (tconst,))
+                conn.commit()
+            else:
+                self._save_cache(conn, tconst, result)
             return result
         finally:
             conn.close()
@@ -139,17 +174,19 @@ class OMDbClient:
             with urllib.request.urlopen(req, timeout=self._timeout) as resp:
                 raw = resp.read().decode("utf-8")
         except urllib.error.URLError as exc:
-            return self._error_dict(f"Network error: {exc.reason}")
+            return self._error_dict(f"{ERROR_NETWORK_PREFIX}{exc.reason}")
         except Exception as exc:  # pragma: no cover — catch-all for unexpected IO errors
-            return self._error_dict(f"Unexpected fetch error: {exc}")
+            return self._error_dict(f"{ERROR_UNEXPECTED_PREFIX}{exc}")
 
         try:
             data = json.loads(raw)
         except json.JSONDecodeError as exc:
-            return self._error_dict(f"JSON parse error: {exc}")
+            return self._error_dict(f"{ERROR_JSON_PREFIX}{exc}")
 
         if data.get("Response") == "False":
-            return self._error_dict(data.get("Error", "OMDb returned Response=False"))
+            err = data.get("Error", ERROR_RESPONSE_FALSE_DEFAULT)
+            definite = err.strip().lower() in OMDB_DEFINITE_ERRORS
+            return self._error_dict(err, transient=not definite)
 
         # Parse Ratings array into individual fields.
         ratings = data.get("Ratings", [])
@@ -191,15 +228,19 @@ class OMDbClient:
             # series (which are never "in theaters") from movies.
             "type":        _clean(data.get("Type")),
             "error":       None,
+            KEY_TRANSIENT: False,
         }
 
     @staticmethod
-    def _error_dict(reason: str) -> dict:
+    def _error_dict(reason: str, transient: Optional[bool] = None) -> dict:
+        if transient is None:
+            transient = is_transient_error(reason)
         return {
             "plot": None, "released": None, "runtime": None,
             "director": None, "rt_score": None, "imdb_rating": None,
             "metascore": None, "country": None, "language": None,
             "dvd": None, "type": None, "error": reason,
+            KEY_TRANSIENT: transient,
         }
 
     @staticmethod

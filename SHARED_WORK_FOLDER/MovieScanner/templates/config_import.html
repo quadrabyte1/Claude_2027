@@ -5,20 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Import Config — MovieScanner</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  {% include '_wash_vars.html' %}
   <style>
-    /* Background wash: defined once here; every page references the vars. */
-    :root {
-      --wash-start: #3348B2;            /* upper-left corner */
-      --wash-end: #C8CCE3;              /* lower-right corner */
-      --wash-gradient: linear-gradient(to bottom right, var(--wash-start), var(--wash-end));
-      --wash-panel-bg: rgba(255, 255, 255, 0.92);   /* keeps text readable over the dark corner */
-      --wash-panel-radius: 0.75rem;
-      --text-on-blue: #ffffff;          /* text sitting directly on the blue wash (7.75:1 on --wash-start) */
-    }
-    html, body { min-height: 100vh; }
-    body { background: var(--wash-gradient) fixed; }
-    .wash-panel { background: var(--wash-panel-bg); border-radius: var(--wash-panel-radius); }
-    .text-on-blue { color: var(--text-on-blue); }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       background: var(--wash-gradient) fixed;

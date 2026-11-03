@@ -36,7 +36,17 @@ from typing import Callable, Iterable
 
 from .config import ScanConfig
 from .downloader import fetch_dumps
-from .omdb import OMDbClient
+from .omdb import OMDbClient, KEY_TRANSIENT
+
+# V3.30 — blurb (OMDb plot) match-rule elimination reasons + progress text.
+# Shared with the UI/tests; all start with REASON_PLOT_PREFIX.
+REASON_PLOT_PREFIX = "plot:"
+REASON_PLOT_MISSING = REASON_PLOT_PREFIX + "missing"              # definite: no blurb (cached)
+REASON_PLOT_FETCH_FAILED = REASON_PLOT_PREFIX + "fetch_failed"    # transient: retried next scan
+REASON_PLOT_NO_API_KEY = REASON_PLOT_PREFIX + "no_api_key"        # cannot fetch at all
+PLOT_NO_KEY_PROGRESS = (
+    "plot_filter: no OMDb API key configured — {n} title(s) excluded (blurb cannot be fetched)"
+)
 # COMPLIANCE EXCEPTION — parental_guide scrapes imdb.com. Isolated import;
 # only used in the explicit filter step below. See parental_guide.py header.
 from .parental_guide import (
@@ -342,6 +352,19 @@ def _load_ratings(path: str) -> dict[str, tuple[float, int]]:
 
 # ── Scanner class ──────────────────────────────────────────────────────────
 
+# V3.33 — interrupt-safe scans. A "replace" scan (Run scan now) builds its
+# eliminations into a staging table and swaps titles/matches/eliminations in
+# ONE transaction at the very end; nothing live is touched before that.
+ELIMINATIONS_TABLE = "scan_eliminations"
+ELIMINATIONS_STAGING_TABLE = "scan_eliminations_staging"
+ELIMINATIONS_STAGING_DDL = (
+    f"CREATE TABLE IF NOT EXISTS {ELIMINATIONS_STAGING_TABLE} ("
+    "id INTEGER PRIMARY KEY, tconst TEXT NOT NULL, primary_title TEXT, "
+    "reason TEXT NOT NULL, "
+    "eliminated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')))"
+)
+
+
 class Scanner:
     """IMDB delta scanner — downloads, diffs, filters, and persists results.
 
@@ -390,6 +413,10 @@ class Scanner:
         # observed at safe checkpoints and raises ScanCancelled.
         self._cancel_event = threading.Event()
 
+        # V3.33 — table _record_elimination writes to. Live table by default;
+        # scan(replace_existing=True) points it at the staging table.
+        self._elimination_table = ELIMINATIONS_TABLE
+
         # Ensure DB and schema exist
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         with sqlite3.connect(db_path) as conn:
@@ -431,7 +458,7 @@ class Scanner:
         """
         conn = sqlite3.connect(self._db_path)
         conn.execute(
-            "INSERT OR IGNORE INTO scan_eliminations "
+            f"INSERT OR IGNORE INTO {self._elimination_table} "
             "(tconst, primary_title, reason) VALUES (?, ?, ?)",
             (tconst, primary_title, reason),
         )
@@ -717,12 +744,10 @@ class Scanner:
         -------
         (kept_rows, dropped_count)
 
-        Fail-open behaviour
-        -------------------
-        If the OMDb API key is not configured, the filter is skipped and all
-        rows are returned unchanged.  This preserves the pre-V3.24 experience
-        for users who haven't set an API key, and matches the existing
-        country-filter precedent (also fails open on missing key).
+        Fail-closed behaviour (V3.30)
+        -----------------------------
+        If the OMDb API key is not configured the hover blurb can't be fetched
+        either, so every row is excluded (reason ``plot:no_api_key``).
         """
         # Read the API key from the DB directly (the Scanner may have been
         # constructed before the key was added, or with an explicit ScanConfig
@@ -736,8 +761,16 @@ class Scanner:
         conn.close()
 
         if not row or not row["value"]:
-            on_progress("plot_filter: no OMDb API key configured — skipping (all titles kept)")
-            return match_rows, 0
+            # V3.30 — fail CLOSED. Without a key the hover blurb can't be
+            # fetched either, so no title qualifies as a match.
+            on_progress(PLOT_NO_KEY_PROGRESS.format(n=len(match_rows)))
+            for match_row in match_rows:
+                self._record_elimination(
+                    tconst=match_row[0],
+                    primary_title=match_row[1] if len(match_row) > 1 else match_row[0],
+                    reason=REASON_PLOT_NO_API_KEY,
+                )
+            return [], len(match_rows)
 
         omdb_client = OMDbClient(api_key=row["value"], db_path=db_path)
         kept: list[tuple] = []
@@ -750,11 +783,13 @@ class Scanner:
                 kept.append(match_row)
             else:
                 dropped += 1
-                # V3.27 — record plot elimination reason.
+                # V3.27/V3.30 — record why: transient fetch failure (retried on
+                # a later scan, not cached) vs definite "no blurb" (cached).
                 self._record_elimination(
                     tconst=tconst,
                     primary_title=match_row[1] if len(match_row) > 1 else tconst,
-                    reason="plot:missing",
+                    reason=(REASON_PLOT_FETCH_FAILED if meta.get(KEY_TRANSIENT)
+                            else REASON_PLOT_MISSING),
                 )
                 if dropped % 10 == 0 or dropped == 1:
                     on_progress(
@@ -909,6 +944,7 @@ class Scanner:
     def scan(
         self,
         on_progress: Callable[[str], None] = lambda _: None,
+        replace_existing: bool = False,
     ) -> dict:
         """Execute one full scan cycle and return a summary dict.
 
@@ -926,6 +962,14 @@ class Scanner:
             Optional callback called with a human-readable status string as
             work progresses. Defaults to a no-op. Hook up ``print`` for CLI
             use, or a TTS/voice queue for Homunculus.
+
+        replace_existing : bool
+            V3.33 — full re-test ("Run scan now"). The seen-set starts empty
+            and, only when the scan has finished building its results, the
+            old titles/matches/eliminations are swapped for the new ones in a
+            single transaction (and the outgoing matches become the
+            previous_match_tconsts baseline, unless there are none). Any
+            failure/cancel before that leaves the previous data untouched.
 
         Returns
         -------
@@ -978,6 +1022,14 @@ class Scanner:
             "title_types":       cfg.title_types,
             "exclude_countries": cfg.exclude_countries,
         })
+
+        if replace_existing:
+            conn.execute(ELIMINATIONS_STAGING_DDL)
+            conn.execute(f"DELETE FROM {ELIMINATIONS_STAGING_TABLE}")
+            conn.commit()
+            self._elimination_table = ELIMINATIONS_STAGING_TABLE
+        else:
+            self._elimination_table = ELIMINATIONS_TABLE
 
         run_id = conn.execute(
             "INSERT INTO runs (status, phase, config_snapshot) "
@@ -1118,7 +1170,7 @@ class Scanner:
 
             # 3. Basics — stream + diff
             phase("diffing basics")
-            seen: set[str] = set(
+            seen: set[str] = set() if replace_existing else set(
                 r[0] for r in conn.execute("SELECT tconst FROM titles")
             )
             on_progress(f"{len(seen):,} titles already in DB")
@@ -1364,13 +1416,35 @@ class Scanner:
 
             # 4. Persist
             phase("saving new titles")
+            if replace_existing:
+                # V3.33 — everything below runs in ONE transaction (no phase()
+                # commits in between); any exception rolls it all back.
+                self._check_cancel("cancelled before saving")
+                if conn.execute("SELECT 1 FROM matches LIMIT 1").fetchone():
+                    conn.execute("DELETE FROM previous_match_tconsts")
+                    conn.execute(
+                        "INSERT INTO previous_match_tconsts (tconst) "
+                        "SELECT tconst FROM matches"
+                    )
+                conn.execute("DELETE FROM match_seasons")
+                conn.execute("DELETE FROM matches")
+                conn.execute("DELETE FROM titles")
+                conn.execute(f"DELETE FROM {ELIMINATIONS_TABLE}")
+                conn.execute(
+                    f"INSERT INTO {ELIMINATIONS_TABLE} "
+                    "(tconst, primary_title, reason, eliminated_at) "
+                    "SELECT tconst, primary_title, reason, eliminated_at "
+                    f"FROM {ELIMINATIONS_STAGING_TABLE}"
+                )
+                conn.execute(f"DELETE FROM {ELIMINATIONS_STAGING_TABLE}")
             conn.executemany(
                 "INSERT OR IGNORE INTO titles "
                 "(tconst, title_type, primary_title, start_year, runtime_min, genres) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
                 new_title_rows,
             )
-            phase("saving matches")
+            if not replace_existing:
+                phase("saving matches")
             conn.executemany(
                 "INSERT OR IGNORE INTO matches "
                 "(tconst, primary_title, start_year, title_type, rating, num_votes, "
@@ -1432,6 +1506,7 @@ class Scanner:
             log_error = str(exc) or "cancelled"
             error_msg = "cancelled — superseded by new scan request"
             try:
+                conn.rollback()  # V3.33: never commit a half-built swap
                 conn.execute(
                     "UPDATE runs SET status='error', phase='cancelled', "
                     "completed_at=strftime('%Y-%m-%dT%H:%M:%SZ','now'), "
@@ -1464,6 +1539,7 @@ class Scanner:
             log_status = "error"
             log_error = str(exc) or type(exc).__name__
             try:
+                conn.rollback()  # V3.33: never commit a half-built swap
                 conn.execute(
                     "UPDATE runs SET status='error', phase='error', "
                     "completed_at=strftime('%Y-%m-%dT%H:%M:%SZ','now'), "

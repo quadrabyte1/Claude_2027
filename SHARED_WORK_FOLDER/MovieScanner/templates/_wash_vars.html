@@ -1,0 +1,15 @@
+<style>
+    /* Background wash: defined ONCE in this partial; included by every page. */
+    :root {
+      --wash-start: #3348B2;            /* upper-left corner */
+      --wash-end: #5F6FC2;              /* lower-right corner; white >= 4.5:1 (4.60:1) so text-on-blue passes along the whole gradient */
+      --wash-gradient: linear-gradient(to bottom right, var(--wash-start), var(--wash-end));
+      --wash-panel-bg: rgba(255, 255, 255, 0.92);   /* keeps text readable over the dark corner */
+      --wash-panel-radius: 0.75rem;
+      --text-on-blue: #ffffff;          /* text sitting directly on the blue wash (7.75:1 on --wash-start) */
+    }
+    html, body { min-height: 100vh; }
+    body { background: var(--wash-gradient) fixed; }
+    .wash-panel { background: var(--wash-panel-bg); border-radius: var(--wash-panel-radius); }
+    .text-on-blue { color: var(--text-on-blue); }
+</style>
