@@ -651,6 +651,16 @@ console.log(JSON.stringify({inBoundary, picked: o._slope.picked, msg: o.flashes[
     assert out["inBoundary"] is None and MSG_NO_ERASER in out["msg"]
 
 
+SLOPE_KEY_UPPER = SLOPE_KEY.upper()   # v6.32: derived from the same constant, never retyped
+
+
+def test_slope_starts_on_uppercase_and_shifted_s():
+    for kw in ("{}", "{shiftKey: true}"):
+        out = _run(_go_paint() + "o.m2HandleKey(key(%s, %s));" % (json.dumps(SLOPE_KEY_UPPER), kw)
+                   + "console.log(JSON.stringify({started: o._slope !== null}));")
+        assert out["started"] is True
+
+
 def test_slope_leaving_z_painting_cancels_it():
     out = _run(_go_paint() + "o.m2HandleKey(key(SLOPE_KEY)); o.setUiSubMode(UI_SUB_BOUNDARY);"
                "console.log(JSON.stringify({slope: o._slope}));")

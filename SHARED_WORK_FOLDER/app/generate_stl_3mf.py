@@ -131,7 +131,7 @@ PRINT_TOLERANCE_MM: float = 0.25    # inset each piece by this much for easier f
 # un-shrunk green and trap meshes.  Value matches gradient_surface_diagnostic.py
 # (prior -0.2 mm inset + 0.5% shrink of PRINT_SIZE_MM = -1.057 mm).  v3.16.
 FRINGE_XY_EXPANSION_MM: float = -1.057  # signed total XY offset per axis (negative = shrink)
-FRINGE_HALF_MM: float = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0   # ~88.47 mm after shrink
+FRINGE_HALF_MM: float = PRINT_SIZE_MM / 2.0 + FRINGE_XY_EXPANSION_MM / 2.0   # derived (= 85.1965 mm at the current PRINT_SIZE_MM / FRINGE_XY_EXPANSION_MM); never retype the number
 
 DIR_OWNER_INBOX: str = "owner_inbox"
 DIR_TEAM_INBOX: str = "team_inbox"

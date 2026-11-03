@@ -24,10 +24,12 @@
       --wash-gradient: linear-gradient(to bottom right, var(--wash-start), var(--wash-end));
       --wash-panel-bg: rgba(255, 255, 255, 0.92);   /* keeps text readable over the dark corner */
       --wash-panel-radius: 0.75rem;
+      --text-on-blue: #ffffff;          /* text sitting directly on the blue wash (7.75:1 on --wash-start) */
     }
     html, body { min-height: 100vh; }
     body { background: var(--wash-gradient) fixed; }
     .wash-panel { background: var(--wash-panel-bg); border-radius: var(--wash-panel-radius); }
+    .text-on-blue { color: var(--text-on-blue); }
     /* ── V3.16 page decoration ─────────────────────────────────────────────
        Palette: blue, gray, black, white. Quiet, local-first polish — no
        loud gradients, no drop shadows anywhere except the sticky footer.
@@ -819,7 +821,7 @@
       {% endif %}
     </div>
 
-    <p class="text-xs text-gray-400 text-center">
+    <p class="text-xs text-on-blue text-center">
       Data source: <a href="https://datasets.imdbws.com" target="_blank" class="underline"><strong>datasets.imdbws.com</strong></a>
       — IMDb non-commercial dataset. Parental-guide severities are fetched from
       imdb.com for personal use only.

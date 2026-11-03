@@ -1947,7 +1947,31 @@ def save_arrow_vs_output_overlay(
 # FRINGE_XY_EXPANSION_MM / FRINGE_HALF_MM are defined ONCE in generate_stl_3mf.py and
 # imported at the top of this module.
 ELEVATION_RANGE_MM: float = 20.09  # total elevation variation on top surface (0.85in = 21.59mm total - 1.5mm base)
-BASE_THICKNESS_MM: float = 1.5    # flat base below lowest point
+DEFAULT_BASE_THICKNESS_MM: float = 1.5   # default flat base below lowest point (used when the EGM field is empty / zero / invalid)
+EGM_KEY_BASE_THICKNESS: str = "baseThicknessMm"
+# BASE_THICKNESS_MM is the CURRENT RUN's base thickness.  ~23 helpers read it as a module global, so
+# run_pipeline re-resolves it from the EGM at the start of EVERY run via _apply_run_base_thickness()
+# (never leaving the previous run's value behind).  Do not assign it anywhere else.
+BASE_THICKNESS_MM: float = DEFAULT_BASE_THICKNESS_MM
+
+
+def _resolve_base_thickness(egm_data) -> float:
+    """This run's base thickness: the EGM "Base thickness (mm)" field when it is a positive number,
+    otherwise DEFAULT_BASE_THICKNESS_MM (empty / zero / negative / invalid)."""
+    try:
+        value = float((egm_data or {}).get(EGM_KEY_BASE_THICKNESS) or 0)
+    except (TypeError, ValueError):
+        value = 0.0
+    return value if value > 0 else DEFAULT_BASE_THICKNESS_MM
+
+
+def _apply_run_base_thickness(egm_data) -> float:
+    """Resolve this run's base thickness and publish it to the module globals that depend on it
+    (BASE_THICKNESS_MM and BUNKER_FLOOR_MIN_MM).  Returns the resolved value."""
+    global BASE_THICKNESS_MM, BUNKER_FLOOR_MIN_MM
+    BASE_THICKNESS_MM = _resolve_base_thickness(egm_data)
+    BUNKER_FLOOR_MIN_MM = BASE_THICKNESS_MM
+    return BASE_THICKNESS_MM
 # NOTE: FRINGE_EDGE_HEIGHT_MM and the `fringeEdgeHeight` EGM key were removed
 # from the fringe Z math (task 483) — the fringe now holds green-edge Z flat
 # all the way to the frame instead of ramping to a per-hole rectangle-edge
@@ -6402,7 +6426,7 @@ TRAP_FRINGE_OFFSET_MM:        float = -2.0  # mm offset applied to fringe bounda
 # v5.82 -- sloped bunker floors carved from the finished fringe
 BUNKER_DROP_BELOW_FRINGE_MM:           float = 1.0  # base floor = fringe surface at that XY minus this (rim sits ~1 mm below the fringe)
 BUNKER_MIN_CLEARANCE_BELOW_FRINGE_MM:  float = 0.3  # rake crests may never rise closer than this to the fringe
-BUNKER_FLOOR_MIN_MM:                   float = BASE_THICKNESS_MM  # rake valleys may never sink below the plate base
+BUNKER_FLOOR_MIN_MM:                   float = DEFAULT_BASE_THICKNESS_MM  # rake valleys may never sink below the plate base (re-set per run to the run's base thickness by _apply_run_base_thickness)
 BUNKER_MIN_SOLID_MM:                   float = 0.6  # absolute last-resort solid under the valleys (very low fringe)
 SAND_RAKE_AMPLITUDE_MM:                float = 1.0  # rake peak-to-valley (apply_sand_texture default)
 BUNKER_EDGE_ANCHOR_SPACING_MM:         float = 2.0  # spacing of zero-offset TPS anchors along the bunker boundary
@@ -7650,7 +7674,7 @@ def export_trap_stls(
             # Delaunay grid with the cosine-wave displacement already baked in;
             # collapsing all top verts to min-Z afterwards destroyed the texture.
             # The flatten is removed; the trap slab height is set correctly by
-            # _build_slab_from_shapely and the rake amplitude is small (≤0.35 mm)
+            # _build_slab_from_shapely and the rake amplitude is small (SAND_RAKE_AMPLITUDE_MM)
             # relative to the slab height (~9 mm), so no height-guardrail is needed.
 
             # Task #604 (Topo, 2026-09-26): frame-edge cap is applied
@@ -9068,9 +9092,9 @@ def apply_sand_texture(
     Parameters
     ----------
     mesh         : trimesh.Trimesh — closed watertight trap slab in mm coords.
-    amplitude    : peak-to-trough height of rake ridges in mm (default 0.35 mm).
+    amplitude    : peak-to-trough height of rake ridges in mm (default SAND_RAKE_AMPLITUDE_MM, currently 1.0 mm).
     grain_spacing: centre-to-centre distance between rake-line peaks in mm
-                   (default 1.5 mm).
+                   (default 1.125 mm).
     trap_index   : integer — reserved; chunk RNG removed (task 708).
     base_z_map   : callable f(xy)->z (v5.82 sloped bunker floor), or tuple (base_xy, base_z) or None.  When provided, supplies
                    a curved base surface; grid points sample from it via
@@ -11092,19 +11116,11 @@ def run_pipeline(
     print(f"    {LOG_TAG_GENERATE} input image:         {image_path}")
     print(f"    Green boundary: {len(green_boundary_px)} spline points")
 
-    # Apply per-project base-thickness override from the EGM (Boundary Editor
-    # "Base thickness (mm)" field). BASE_THICKNESS_MM is referenced as a
-    # module-level constant by ~23 call sites in this file; rather than thread
-    # the value through every helper, we mutate the module global so the
-    # next reads in this pipeline run pick it up. Missing/zero/invalid → keep
-    # the module default (1.5 mm).
-    try:
-        _base_override = float(_egm_data.get("baseThicknessMm") or 0)
-    except (TypeError, ValueError):
-        _base_override = 0.0
-    if _base_override > 0:
-        globals()["BASE_THICKNESS_MM"] = _base_override
-        print(f"    Base thickness from EGM: {_base_override} mm")
+    # Per-run base thickness (Boundary Editor "Base thickness (mm)" field).  Resolved fresh for
+    # EVERY run (empty / zero / invalid -> DEFAULT_BASE_THICKNESS_MM) so one run never affects the next.
+    _base_resolved = _apply_run_base_thickness(_egm_data)
+    if _base_resolved != DEFAULT_BASE_THICKNESS_MM:
+        print(f"    Base thickness from EGM: {_base_resolved} mm")
     else:
         print(f"    Base thickness: {BASE_THICKNESS_MM} mm (default)")
 
