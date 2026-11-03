@@ -233,8 +233,8 @@
     }
   ],
   "tee_hole": {
-    "x_mm": 26.8,
-    "y_mm": 19.8
+    "x_mm": 71.4,
+    "y_mm": 25.5
   },
   "gridCellHeights": {
     "0": 3,

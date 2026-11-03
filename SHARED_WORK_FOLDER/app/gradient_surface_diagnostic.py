@@ -427,10 +427,8 @@ LSQR_MAX_ITERS: int = 20000
 # --- Tee hole ---
 TEE_HOLE_GUARD_MM: float = 0.15     # keep-out added to the collar radius for the bore
 TRAP_OUTLINE_SIMPLIFY_TOL_MM: float = 0.05   # v6.29: Douglas-Peucker tolerance for the bunker slab outline. EGM-smoothed outlines can carry clusters of vertices <3 um apart (Delaunay then drops a rim edge and the rake texture fails -> plain slab; Delaunay hole at DeLaveaga H11 trap_2). 0.05 mm = a quarter of the sand grid step, invisible in print.
-TEE_COLLAR_GREEN_CLEARANCE_MM: float = 0.0   # v6.29: a tee collar whose disk comes within this distance of the green outline is skipped (it would sit inside the green object and trigger Bambu's gcode-path-conflict warning)
-LOG_TAG_TEE_GREEN: str = "[tee_hole]"
-TEE_GREEN_SKIP_WARNING_FMT: str = ("Tee hole at print-top-left ({x:.1f}, {y:.1f}) mm lies on the green; "
-                                   "the tee collar was not added (it would overlap the green object).")
+TEE_COLLAR_GREEN_CLEARANCE_MM: float = 0.0   # v6.29: a tee collar whose disk comes within this distance of the green outline counts as 'on the green' (v6.31: Generate refuses with TEE_ON_GREEN_ERROR_MSG)
+TEE_ON_GREEN_ERROR_MSG: str = "Tee is on the green. Move the tee off the green in the editor, then Generate again."   # v6.31: hard Generate error (shown in the editor error pop-up)
 TEE_ISLAND_MARGIN_MM: float = 1.5   # fringe island radius beyond the bore
 
 # --- Thin-wall / TPS base ---
@@ -2649,11 +2647,10 @@ def _build_heightmap_mesh(
             _boundary_vert_ids.add(_a)
             _boundary_vert_ids.add(_b)
         _snap_shifts_mm: list[float] = []
+        _gbnd_mm_index = _PolylineIndex(_gbnd_mm_local)
         for _vi in _boundary_vert_ids:
             _x, _y, _z = top_verts[_vi]
-            _d, _nx, _ny = _min_dist_to_polyline(
-                float(_x), float(_y), _gbnd_mm_local
-            )
+            _d, _nx, _ny = _gbnd_mm_index.query(float(_x), float(_y))
             _snap_shifts_mm.append(_d)
             top_verts[_vi] = [float(_nx), float(_ny), float(_z)]
         if _snap_shifts_mm:
@@ -3113,6 +3110,17 @@ def tee_collar_overlaps_green(cx: float, cy: float, green_poly_mm,
     return bool(disk.intersects(green_poly_mm))
 
 
+class TeeOnGreenError(ValueError):
+    """v6.31: the tee hole lies on the green; Generate must stop before writing any 3MF."""
+
+
+def ensure_tee_off_green(cx: float, cy: float, green_poly_mm,
+                         clearance_mm: float = TEE_COLLAR_GREEN_CLEARANCE_MM) -> None:
+    """Raise TeeOnGreenError(TEE_ON_GREEN_ERROR_MSG) when the tee collar touches the green."""
+    if tee_collar_overlaps_green(cx, cy, green_poly_mm, clearance_mm):
+        raise TeeOnGreenError(TEE_ON_GREEN_ERROR_MSG)
+
+
 def drill_tee_hole(
     mesh: "trimesh.Trimesh",
     x_mm_from_topleft: float,
@@ -3530,6 +3538,58 @@ def _min_dist_to_polyline(px: float, py: float, pts: np.ndarray) -> tuple[float,
     dist2 = (diff * diff).sum(axis=1)      # (N,)
     i = int(np.argmin(dist2))
     return float(math.sqrt(dist2[i])), float(proj[i, 0]), float(proj[i, 1])
+
+
+POLYLINE_INDEX_RADIUS_PAD_MM: float = 1e-9   # v6.30: float-safety pad on the candidate ball radius
+POLYLINE_INDEX_MIN_SEGMENTS: int = 8   # v6.30: below this many segments the brute-force pass is cheaper than a KD-tree query
+
+
+class _PolylineIndex:
+    """v6.30: exact spatial index for repeated ``_min_dist_to_polyline`` queries.
+
+    Same result (bit-identical: same per-segment arithmetic, same first-index
+    tie-break) as the brute-force function, but each query only evaluates the
+    segments that can possibly be nearest.  The nearest *vertex* distance dv is
+    an upper bound on the true distance; any segment closer than dv has its
+    midpoint within dv + (longest half-segment) of the query point, so a ball
+    query on the segment midpoints yields a superset of the winner.
+    """
+
+    def __init__(self, pts: np.ndarray):
+        self.pts = np.asarray(pts, dtype=np.float64)
+        self.n = len(self.pts)
+        self.use_tree = self.n >= POLYLINE_INDEX_MIN_SEGMENTS
+        if self.n < 2:
+            return
+        self.a = self.pts
+        self.b = np.roll(self.pts, -1, axis=0)
+        self.d = self.b - self.a
+        self.denom = (self.d * self.d).sum(axis=1) + EPS_DIV
+        if self.use_tree:
+            mid = 0.5 * (self.a + self.b)
+            self.max_half = 0.5 * float(np.sqrt((self.d * self.d).sum(axis=1)).max())
+            self.vtree = cKDTree(self.pts)
+            self.mtree = cKDTree(mid)
+
+    def query(self, px: float, py: float) -> tuple[float, float, float]:
+        if self.n < 2:
+            return float("inf"), float(self.pts[0, 0]), float(self.pts[0, 1])
+        if self.use_tree:
+            dv, _ = self.vtree.query([px, py])
+            idx = np.sort(np.asarray(
+                self.mtree.query_ball_point([px, py], float(dv) + self.max_half + POLYLINE_INDEX_RADIUS_PAD_MM),
+                dtype=np.int64))
+            a, d, denom = self.a[idx], self.d[idx], self.denom[idx]
+        else:
+            a, d, denom = self.a, self.d, self.denom
+        p = np.array([px, py])
+        t = ((p - a) * d).sum(axis=1) / denom
+        np.clip(t, 0.0, 1.0, out=t)
+        proj = a + t[:, None] * d
+        diff = proj - p
+        dist2 = (diff * diff).sum(axis=1)
+        i = int(np.argmin(dist2))
+        return float(math.sqrt(dist2[i])), float(proj[i, 0]), float(proj[i, 1])
 
 
 def _nearest_grid_z(nx_mm: float, ny_mm: float,
@@ -4675,12 +4735,14 @@ def build_fringe_mesh(
     # constant across the entire grid.
     _fringe_half_step = float(xs_mm[1] - xs_mm[0]) / 2.0 if fringe_grid_res > 1 else 0.0
 
+    _gbnd_index = _PolylineIndex(gbnd)   # v6.30: exact spatial index (see _PolylineIndex)
+
     def _cell_fringe_z(r, c, x, y):
         """Fringe top Z for grid cell (r, c) at (x, y) -- pre-median, pre-seam."""
         # Nearest point on the green boundary — used to derive
         # d_to_green (horizontal distance from the green polygon), which
         # drives the plateau-taper (task #506).
-        d_to_green, nx, ny = _min_dist_to_polyline(x, y, gbnd)
+        d_to_green, nx, ny = _gbnd_index.query(x, y)
 
         # Task 704 (Topo 2026-10-04): TPS grid-cell height field.
         # Look up the pre-computed TPS grid (_z_tps_grid): for this fringe cell,
@@ -4947,6 +5009,7 @@ def build_fringe_mesh(
             )
         else:
             gbnd_snap = gbnd
+        _gbnd_snap_index = _PolylineIndex(gbnd_snap)
         for r in range(fringe_grid_res):
             for c in range(fringe_grid_res):
                 if not fringe_mask[r, c]:
@@ -4973,7 +5036,7 @@ def build_fringe_mesh(
                 # stair-step at the fringe/green interface). Task 707 upgrade:
                 # snap to `gbnd_snap` (= exterior of `green_shapely_exclusion`
                 # when GAP_MM>0) so the physical seam gap = GAP_MM, not zero.
-                _d_proj, _nx, _ny = _min_dist_to_polyline(x, y, gbnd_snap)
+                _d_proj, _nx, _ny = _gbnd_snap_index.query(x, y)
                 _seam_snap_shifts_mm.append(_d_proj)
                 seam_override[(r, c)] = (float(_nx), float(_ny), gz)
                 Z_fringe[r, c] = gz  # keep the height array consistent
@@ -5033,6 +5096,7 @@ def build_fringe_mesh(
         if pts_mm_arr is None or len(pts_mm_arr) < MIN_POLYGON_POINTS:
             return
         _kd = cKDTree(pts_mm_arr)
+        _pts_index = _PolylineIndex(pts_mm_arr)
         for r_ in range(fringe_grid_res):
             for c_ in range(fringe_grid_res):
                 if not fringe_mask[r_, c_]:
@@ -5046,7 +5110,7 @@ def build_fringe_mesh(
                 d_bnd, _ = _kd.query([x_, y_], k=1)
                 if d_bnd > _tw_seam_radius:
                     continue
-                _d_proj, _nx, _ny = _min_dist_to_polyline(x_, y_, pts_mm_arr)
+                _d_proj, _nx, _ny = _pts_index.query(x_, y_)
                 _tw_snap_shifts[kind].append(_d_proj)
                 _tw_snap_counts[kind] += 1
                 # Preserve natural Z; only the XY moves.
@@ -8656,11 +8720,30 @@ def _earcut_interior_pinholes(
 
     visited_edges: set[tuple[int, int]] = set()
     chains: list[list[int]] = []
+    # v6.30: label connected components once so each component's edge list is a lookup.
+    comp_of: dict[int, int] = {}
+    comp_id = 0
+    for _s in nbr:
+        if _s in comp_of:
+            continue
+        comp_id += 1
+        comp_of[_s] = comp_id
+        _st = [_s]
+        while _st:
+            _u = _st.pop()
+            for _v in nbr[_u]:
+                if _v not in comp_of:
+                    comp_of[_v] = comp_id
+                    _st.append(_v)
+    edges_by_comp: dict[int, list[tuple[int, int]]] = {}
+    for a, b in interior_bedges:
+        edges_by_comp.setdefault(comp_of[a], []).append((a, b))
     for start in list(nbr.keys()):
         # Walk connected edges from `start`.
         if all(((min(start, v), max(start, v)) in visited_edges) for v in nbr.get(start, [])):
             continue
         comp_verts: set[int] = {start}
+        comp_id = comp_of[start]
         stack = [start]
         while stack:
             u = stack.pop()
@@ -8673,10 +8756,7 @@ def _earcut_interior_pinholes(
                     comp_verts.add(v)
                     stack.append(v)
         # Try to walk a closed loop over this component.
-        comp_edges = [
-            (a, b) for a, b in interior_bedges
-            if a in comp_verts and b in comp_verts
-        ]
+        comp_edges = edges_by_comp.get(comp_id, [])   # v6.30: pre-grouped (was an O(E) scan per component)
         if len(comp_edges) < 3:
             continue
         # Order the vertices into a cycle (greedy walker).
@@ -8753,9 +8833,10 @@ def _earcut_interior_pinholes(
     # Dedup: skip earcut triangles whose edges are already count=2 in top_faces
     # (adding them would create non-manifold edges). Also skip if the exact
     # triangle (same 3 verts) already exists.
-    present_count: dict[tuple[int, int], int] = {}
-    for a, b in uniq:
-        present_count[(int(a), int(b))] = int(cnt[np.where((uniq == (a, b)).all(axis=1))[0][0]])
+    # v6.30: O(U) dict build (was an O(U^2) np.where scan per unique edge).
+    present_count: dict[tuple[int, int], int] = {
+        (int(a), int(b)): int(c) for (a, b), c in zip(uniq.tolist(), cnt.tolist())
+    }
     existing_tris = {tuple(sorted(int(x) for x in f)) for f in top_faces}
 
     kept: list[list[int]] = []
@@ -11664,11 +11745,7 @@ def run_pipeline(
             _tee_green = ShapelyPolygon(_px_to_mm_2d(green_boundary_px.copy(), _tee_scale, _tee_centroid))
             if not _tee_green.is_valid:
                 _tee_green = _tee_green.buffer(0)
-            if tee_collar_overlaps_green(_tee_wx, _tee_wy, _tee_green):
-                _tee_msg = TEE_GREEN_SKIP_WARNING_FMT.format(x=_tee_x, y=_tee_y)
-                print(f"\n[7d] {LOG_TAG_TEE_GREEN} SKIPPED — {_tee_msg}")
-                PIPELINE_WARNINGS.append(_tee_msg)
-                _tee_spec = None
+            ensure_tee_off_green(_tee_wx, _tee_wy, _tee_green)   # v6.31: raises -> Generate error pop-up
         if _tee_spec:
             print(f"\n[7d] Tee-hole: punching Ø{TEE_HOLE_DIAMETER_MM} mm through-hole "
                   f"at print-top-left ({_tee_x:.2f}, {_tee_y:.2f}) mm, "

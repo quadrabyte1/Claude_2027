@@ -233,8 +233,8 @@
     }
   ],
   "tee_hole": {
-    "x_mm": 57.2,
-    "y_mm": 23.4
+    "x_mm": 30.6,
+    "y_mm": 22.2
   },
   "gridResolution": 40,
   "embeddedImage": {
