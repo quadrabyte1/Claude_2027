@@ -18,7 +18,7 @@
   "baseThicknessMm": 1.5,
   "includeBoundaryRegion": false,
   "applyFringeFrameCap": true,
-  "includeFringeWithoutGrass": false,
+  "includeFringeWithoutGrass": true,
   "flagOffsetXMm": 0,
   "flagOffsetYMm": 0,
   "polygons": [
