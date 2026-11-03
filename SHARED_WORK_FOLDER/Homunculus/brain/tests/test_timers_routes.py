@@ -714,5 +714,5 @@ def test_dashboard_version_badge_v03(tmp_path: Path, monkeypatch):
     The test remains here as the canonical "version is baked into HTML" guard.
     """
     from homunculus_brain.dashboard import DASHBOARD_HTML, DASHBOARD_VERSION
-    assert DASHBOARD_VERSION == "v0.7", f"Expected v0.7, got {DASHBOARD_VERSION!r}"
+    assert DASHBOARD_VERSION == "v0.8", f"Expected v0.8, got {DASHBOARD_VERSION!r}"
     assert DASHBOARD_VERSION in DASHBOARD_HTML

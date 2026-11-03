@@ -24,6 +24,8 @@ from . import VERSION, DESIGN_VERSION
 from . import activity_log
 from . import calendar as cal
 from . import capture_parsed
+from . import clarify_answer
+from .clarify_answer import ClarifyAnswerRequest
 from . import dashboard as dash
 from . import intent_router
 from . import llm
@@ -448,7 +450,28 @@ def create_app() -> FastAPI:
             limit=limit,
             since=since_dt,
         )
-        return {"rows": rows, "latest_at": latest_at}
+        return {
+            "rows": rows,
+            "latest_at": latest_at,
+            dash.CLEAR_STATE_KEY: dash.read_cleared_at(config.vault_path),
+        }
+
+    @app.post(dash.CLEAR_ENDPOINT)
+    async def dashboard_clear() -> dict:
+        """Persist a Clear watermark and dismiss pending clarify items."""
+        return dash.clear_dashboard(config.vault_path)
+
+    @app.post(clarify_answer.CLARIFY_ANSWER_ENDPOINT)
+    async def clarify_answer_endpoint(req: ClarifyAnswerRequest):
+        """Answer (or dismiss) a clarifying question from the dashboard."""
+        try:
+            return clarify_answer.answer(
+                config.vault_path, config=config,
+                record_id=getattr(req, clarify_answer.FIELD_RECORD_ID),
+                answer_text=getattr(req, clarify_answer.FIELD_ANSWER),
+            )
+        except clarify_answer.ClarifyAnswerError as exc:
+            raise HTTPException(exc.status_code, exc.detail)
 
     # --- v1.2.1 test client ---------------------------------------------------
     # Single-page browser harness for hand-exercising the brain end-to-end

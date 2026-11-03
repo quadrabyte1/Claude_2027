@@ -163,7 +163,20 @@ _INTENT_JSON_SCHEMA = {
 # System prompt
 # ---------------------------------------------------------------------------
 
-_SYSTEM_PROMPT = """\
+# Explicit calendar signals. Herman (Homunculus/brain/homunculus_brain/
+# verb_default.py) is the authority and flips schedule -> remind when none is
+# present; this copy only feeds the prompt. A test asserts the two lists match.
+CALENDAR_SIGNAL_WORDS: tuple[str, ...] = (
+    "calendar",
+    "event",
+    "meeting",
+    "appointment",
+    "schedule",
+)
+SIGNAL_WORD_JOINER = ", "
+SIGNAL_WORDS_PLACEHOLDER = "{{CALENDAR_SIGNAL_WORDS}}"
+
+_SYSTEM_PROMPT_TEMPLATE = """\
 You are a voice-memo intent extractor for a personal assistant named Sprite.
 Given a voice-memo transcript, output a single JSON object.
 
@@ -188,7 +201,13 @@ Output these keys:
                    when the user gave a bare hour with no AM/PM (e.g. "5:35")
 
 Verb definitions:
-  schedule — put something on the calendar (requires a time reference)
+  schedule — put something on the calendar. ONLY when the utterance has an
+             explicit calendar signal: one of the words {{CALENDAR_SIGNAL_WORDS}}
+             (including "put it on my calendar"), or a duration / end time
+             ("from 2 to 3", "for an hour").
+             DEFAULT: a time or day with NO such signal is a reminder, not a
+             calendar event. "dentist tomorrow at 3" → remind.
+             "lunch with Bob Friday at noon" → remind.
   note     — remember a fact, insight, or reference (no deadline)
   handle   — do-this-soon to-do expressed as a bare imperative
              ("call the vet", "pick up milk", "fix the screen door")
@@ -219,7 +238,7 @@ Timer disambiguation rules:
   "Reset gym" → verb=reset_timer, project="gym"
   "Clear gym timer" → verb=reset_timer, project="gym"
   "Start deck construction" → verb=start_timer, project="deck construction"
-  "Start dinner at 6" → verb=schedule (has a time reference — NOT a timer)
+  "Start dinner at 6" → verb=remind (has a time reference, no calendar signal — NOT a timer)
   "Start reminding me about the coffee" → verb=remind (has 'reminding me' — NOT a timer)
   Timer verbs NEVER have day_hint or time_hint. If a time is present, use schedule.
 
@@ -250,7 +269,7 @@ Output:
 
 Transcript: "gym next Tuesday"
 Output:
-{"verb":"schedule","subject":"gym","day_hint":"next Tuesday","time_hint":null,"when":null,"criticality":"normal","confidence":0.88,"ambiguous_fields":[]}
+{"verb":"remind","subject":"gym","day_hint":"next Tuesday","time_hint":null,"when":null,"criticality":"normal","confidence":0.88,"ambiguous_fields":[]}
 
 Transcript: "call the contractor at 5:35"
 Output:
@@ -284,6 +303,14 @@ Transcript: "Schedule the team call on Tuesday at 6"
 Output:
 {"verb":"schedule","subject":"team call","day_hint":"Tuesday","time_hint":"6","when":null,"criticality":"normal","confidence":0.84,"ambiguous_fields":["time_hint"]}
 
+Transcript: "dentist tomorrow at 3"
+Output:
+{"verb":"remind","subject":"dentist","day_hint":"tomorrow","time_hint":"3","when":null,"criticality":"normal","confidence":0.88,"ambiguous_fields":["time_hint"]}
+
+Transcript: "Put the dentist on my calendar tomorrow at 3"
+Output:
+{"verb":"schedule","subject":"dentist","day_hint":"tomorrow","time_hint":"3","when":null,"criticality":"normal","confidence":0.9,"ambiguous_fields":[]}
+
 Transcript: "Start gym"
 Output:
 {"verb":"start_timer","subject":"gym","project":"gym","day_hint":null,"time_hint":null,"when":null,"criticality":"normal","confidence":0.96,"ambiguous_fields":[]}
@@ -298,7 +325,7 @@ Output:
 
 Transcript: "Start dinner at 6"
 Output:
-{"verb":"schedule","subject":"dinner","project":null,"day_hint":null,"time_hint":"6","when":null,"criticality":"normal","confidence":0.88,"ambiguous_fields":["time_hint"]}
+{"verb":"remind","subject":"dinner","project":null,"day_hint":null,"time_hint":"6","when":null,"criticality":"normal","confidence":0.88,"ambiguous_fields":["time_hint"]}
 
 Transcript: "Start reminding me about the coffee"
 Output:
@@ -344,6 +371,11 @@ Transcript: "Put up the barrier at 3 o'clock p.m."
 Output:
 {"verb":"handle","subject":"put up the barrier","day_hint":null,"time_hint":"3 o'clock p.m.","when":null,"criticality":"normal","confidence":0.88,"ambiguous_fields":[]}
 """
+
+_SYSTEM_PROMPT = _SYSTEM_PROMPT_TEMPLATE.replace(
+    SIGNAL_WORDS_PLACEHOLDER,
+    SIGNAL_WORD_JOINER.join(f'"{w}"' for w in CALENDAR_SIGNAL_WORDS),
+)
 
 # ---------------------------------------------------------------------------
 # Preprocessor regex patterns

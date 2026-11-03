@@ -47,6 +47,10 @@ FILENAME_ID_TAG_RE = re.compile(
 )
 FILENAME_ID_BRACKET_FMT: str = "[{generation_id}]"
 
+# Short ID for the printed underside text: the UUID up to the first dash (8 hex chars).
+SHORT_ID_SEPARATOR: str = GENERATION_ID_SEPARATOR
+SHORT_ID_SEGMENT_INDEX: int = 0
+
 
 def make_generation_id() -> str:
     """Return a fresh standard UUID4 as a canonical lowercase hyphenated string."""
@@ -56,3 +60,11 @@ def make_generation_id() -> str:
 def strip_generation_id_tag(stem: str) -> str:
     """Remove a trailing ``[<id>]`` tag (UUID, v6.18 timestamp.username, or legacy ``[NNNN]``) from a file stem."""
     return FILENAME_ID_TAG_RE.sub("", stem).strip()
+
+
+def short_generation_id(generation_id: str) -> str:
+    """First hyphen-separated segment of a UUID generation ID (8 hex chars).
+
+    Not guaranteed unique, but collisions are rare enough for a printed identifier.
+    """
+    return str(generation_id).split(SHORT_ID_SEPARATOR)[SHORT_ID_SEGMENT_INDEX]

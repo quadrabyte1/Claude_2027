@@ -12,3 +12,4 @@ __pycache__/
 SHARED_WORK_FOLDER/owner_inbox/diagnostics/
 SHARED_WORK_FOLDER/journal/_dashboard/
 *__degridded.png
+SHARED_WORK_FOLDER/Homunculus/vault/_reminders/*.json

@@ -34,6 +34,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
+from homunculus_brain.verb_default import CALENDAR_SIGNAL_WORDS, has_calendar_signal
 
 TZ = ZoneInfo("America/New_York")
 NOW = datetime(2026, 9, 29, 10, 0, tzinfo=TZ)
@@ -64,6 +65,10 @@ def _payload_for_memo(
     captured_at: datetime = NOW,
 ) -> dict:
     """Build a minimal ParsedCaptureRequest payload for /capture/parsed."""
+    # Default-to-reminder rule: a schedule verb only stays a calendar event when
+    # the transcript carries an explicit calendar signal word.
+    if verb == "schedule" and not has_calendar_signal(transcript):
+        transcript = f"{transcript} {CALENDAR_SIGNAL_WORDS[0]}"
     return {
         "verb": verb,
         "subject": transcript.strip(),          # subject = raw transcript for simplicity
