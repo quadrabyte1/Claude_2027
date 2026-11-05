@@ -49,6 +49,10 @@ class ScanConfig:
     """Titles whose OMDb Country matches (case-insensitive, substring OK —
     e.g. 'India' matches 'India, USA') any of these are skipped.
     Empty list means no country filter."""
+    exclude_languages: list[str]  = field(default_factory=list)
+    """Titles whose OMDb Language matches (case-insensitive, substring OK —
+    e.g. 'Hindi' matches 'Hindi, English') any of these are skipped.
+    Empty list means no language filter."""
 
     # ── Parental-guide severity ceilings (V3.12) ────────────────────────────
     # COMPLIANCE EXCEPTION — these fields drive the imdb.com parentalguide

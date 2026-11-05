@@ -396,7 +396,8 @@
         </label>
       </div>
 
-      <label class="block sm:col-span-3">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:col-span-3">
+      <label class="block">
         <span class="text-xs text-gray-500 uppercase tracking-wide">Exclude countries</span>
         <input type="text" name="exclude_countries"
                value="{{ exclude_countries or '' }}"
@@ -404,6 +405,15 @@
                title="OMDb Country field must not match any of these. Free-tier OMDb: 1000 lookups/day."
                class="w-full mt-1 text-sm border border-gray-200 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500">
       </label>
+      <label class="block">
+        <span class="text-xs text-gray-500 uppercase tracking-wide">{{ exclude_languages_label }}</span>
+        <input type="text" name="{{ exclude_languages_field }}"
+               value="{{ exclude_languages or '' }}"
+               placeholder="{{ exclude_languages_placeholder }}"
+               title="{{ exclude_languages_hint }}"
+               class="w-full mt-1 text-sm border border-gray-200 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500">
+      </label>
+      </div>
 
       <div>
         <div class="flex items-center justify-between mb-2">
@@ -817,6 +827,8 @@
                                bg-red-50 text-red-700 border border-red-200
                                {% elif m.dismissal_reason.startswith('country') %}
                                bg-orange-50 text-orange-700 border border-orange-200
+                               {% elif m.dismissal_reason.startswith('language') %}
+                               bg-teal-50 text-teal-700 border border-teal-200
                                {% elif m.dismissal_reason.startswith('plot') %}
                                bg-yellow-50 text-yellow-700 border border-yellow-200
                                {% else %}

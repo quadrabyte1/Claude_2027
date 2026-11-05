@@ -27,13 +27,28 @@ if _REPO_ROOT not in sys.path:
 
 from movie_scanner import Scanner, KNOWN_GENRES, OMDbClient
 from movie_scanner.schema import apply_schema
+from movie_scanner.scanner import CONFIG_KEY_EXCLUDE_LANGUAGES
 
 app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.jinja_env.auto_reload = True
 app.secret_key = "moviescanner-dev"  # required for flash()
 
-APP_VERSION = "V3.34"
+APP_VERSION = "V3.35"
+# V3.35 — "Exclude languages" filter, mirroring "Exclude countries". Comma-
+#          separated list; a title is dropped when any language in its OMDb
+#          Language field contains a listed term (case-insensitive substring,
+#          so "Hindi" drops "Hindi, English"). Elimination reason
+#          "language:<lang>". OMDb is queried once per candidate when either
+#          list is set. Config key exclude_languages (JSON list); included
+#          automatically in config export/import.
+EXCLUDE_LANGUAGES_CONFIG_KEY = CONFIG_KEY_EXCLUDE_LANGUAGES
+EXCLUDE_LANGUAGES_FORM_FIELD = "exclude_languages"
+EXCLUDE_LANGUAGES_LABEL = "Exclude languages"
+EXCLUDE_LANGUAGES_PLACEHOLDER = "Hindi, Tamil (comma-separated)"
+EXCLUDE_LANGUAGES_HINT = ("OMDb Language field must not match any of these. "
+                          "Free-tier OMDb: 1000 lookups/day.")
+EXCLUDE_LIST_SEPARATOR = ","
 # V3.34 — OMDb API key entry on the main page (Filter configuration card).
 #          Masked input + show/hide + "Test key" (one OMDb request for
 #          OMDB_TEST_TCONST). Blank submit keeps the stored key; removal
@@ -477,6 +492,8 @@ def index():
     except json.JSONDecodeError: exclude_lc = set()
     try: exclude_countries_str = ", ".join(json.loads(cfg.get("exclude_countries", "[]")))
     except json.JSONDecodeError: exclude_countries_str = ""
+    try: exclude_languages_str = ", ".join(json.loads(cfg.get(EXCLUDE_LANGUAGES_CONFIG_KEY, "[]")))
+    except json.JSONDecodeError: exclude_languages_str = ""
 
     # Layer 3: run integrity check fresh on every index load (single SQLite
     # read — fast enough for a local app). The module-level startup check is
@@ -503,6 +520,11 @@ def index():
         include_lc=include_lc,
         exclude_lc=exclude_lc,
         exclude_countries=exclude_countries_str,
+        exclude_languages=exclude_languages_str,
+        exclude_languages_field=EXCLUDE_LANGUAGES_FORM_FIELD,
+        exclude_languages_label=EXCLUDE_LANGUAGES_LABEL,
+        exclude_languages_placeholder=EXCLUDE_LANGUAGES_PLACEHOLDER,
+        exclude_languages_hint=EXCLUDE_LANGUAGES_HINT,
         blurb_excluded=blurb_excluded,
         blurb_note_id=BLURB_NOTE_ID,
         blurb_note_label=BLURB_NOTE_LABEL,
@@ -600,6 +622,11 @@ def _save_config_from_form():
     exclude_countries_raw = request.form.get("exclude_countries", "").strip()
     exclude_countries = [c.strip() for c in exclude_countries_raw.split(",") if c.strip()]
 
+    exclude_languages_raw = request.form.get(EXCLUDE_LANGUAGES_FORM_FIELD, "").strip()
+    exclude_languages = [
+        c.strip() for c in exclude_languages_raw.split(EXCLUDE_LIST_SEPARATOR) if c.strip()
+    ]
+
     # Parental-guide ceilings (V3.12). Coerce to one of the four allowed
     # levels; anything unexpected → 'severe' (filter inactive) so a
     # tampered form can't smuggle in unranked values.
@@ -644,6 +671,7 @@ def _save_config_from_form():
         ("exclude_tags",      json.dumps(exclude_tags)),
         ("title_types",       json.dumps(title_types)),
         ("exclude_countries", json.dumps(exclude_countries)),
+        (EXCLUDE_LANGUAGES_CONFIG_KEY, json.dumps(exclude_languages)),
         ("max_sex_nudity",    max_sex_nudity),
         ("max_violence_gore", max_violence_gore),
         ("max_profanity",     max_profanity),

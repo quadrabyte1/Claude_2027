@@ -40,6 +40,10 @@ from .omdb import OMDbClient, KEY_TRANSIENT
 
 # V3.30 — blurb (OMDb plot) match-rule elimination reasons + progress text.
 # Shared with the UI/tests; all start with REASON_PLOT_PREFIX.
+REASON_COUNTRY_PREFIX = "country:"
+REASON_LANGUAGE_PREFIX = "language:"   # V3.35
+CONFIG_KEY_EXCLUDE_LANGUAGES = "exclude_languages"   # V3.35
+OMDB_LIST_SEPARATOR = ","              # OMDb Country/Language are comma-joined
 REASON_PLOT_PREFIX = "plot:"
 REASON_PLOT_MISSING = REASON_PLOT_PREFIX + "missing"              # definite: no blurb (cached)
 REASON_PLOT_FETCH_FAILED = REASON_PLOT_PREFIX + "fetch_failed"    # transient: retried next scan
@@ -365,6 +369,24 @@ ELIMINATIONS_STAGING_DDL = (
 )
 
 
+def first_excluded_match(excluded: list[str], omdb_value: str | None) -> str | None:
+    """Return the first title value (lowercased) matching any excluded term.
+
+    *omdb_value* is an OMDb comma-joined field (Country / Language). Matching
+    is case-insensitive substring, so excluding "india" drops "India, USA" and
+    excluding "hindi" drops "Hindi, English". *excluded* must already be
+    lowercased. Returns None when nothing matches or the value is empty.
+    """
+    if not excluded or not omdb_value:
+        return None
+    values = [
+        v.strip().lower()
+        for v in omdb_value.split(OMDB_LIST_SEPARATOR)
+        if v.strip()
+    ]
+    return next((tv for ex in excluded for tv in values if ex in tv), None)
+
+
 class Scanner:
     """IMDB delta scanner — downloads, diffs, filters, and persists results.
 
@@ -452,6 +474,7 @@ class Scanner:
         votes:<actual><<min>                failed votes gate
         genre:excluded=<genre>              excluded-genre hit
         country:<country>                   excluded-country hit
+        language:<language>                 excluded-language hit (V3.35)
         plot:missing                        no OMDb plot
         only_in_theaters:filter_dropped     in-theaters filter dropped it
         dismissed_by_user                   user clicked X in the UI
@@ -505,7 +528,8 @@ class Scanner:
         raw: dict = {}
         for r in rows:
             k, v = r["key"], r["value"]
-            if k in ("tags", "exclude_tags", "title_types", "exclude_countries"):
+            if k in ("tags", "exclude_tags", "title_types", "exclude_countries",
+                     CONFIG_KEY_EXCLUDE_LANGUAGES):
                 try:
                     raw[k] = json.loads(v)
                 except json.JSONDecodeError:
@@ -542,6 +566,7 @@ class Scanner:
             exclude_genres    = raw.get("exclude_tags",      []),
             title_types       = raw.get("title_types",       ["movie", "tvMovie", "tvSeries"]),
             exclude_countries = raw.get("exclude_countries", []),
+            exclude_languages = raw.get(CONFIG_KEY_EXCLUDE_LANGUAGES, []),
             # COMPLIANCE EXCEPTION — parental-guide ceilings (V3.12).
             max_sex_nudity    = raw.get("max_sex_nudity",    "severe"),
             max_violence_gore = raw.get("max_violence_gore", "severe"),
@@ -1004,11 +1029,12 @@ class Scanner:
         tags              = [t.strip().lower() for t in cfg.include_genres if t.strip()]
         exclude           = set(t.strip().lower() for t in cfg.exclude_genres if t.strip())
         exclude_countries = [c.strip().lower() for c in cfg.exclude_countries if c.strip()]
+        exclude_languages = [c.strip().lower() for c in cfg.exclude_languages if c.strip()]
 
         # OMDb client for country filtering — only instantiated when needed.
         omdb_client: OMDbClient | None = (
             OMDbClient(api_key=omdb_api_key, db_path=self._db_path)
-            if exclude_countries and omdb_api_key
+            if (exclude_countries or exclude_languages) and omdb_api_key
             else None
         )
 
@@ -1021,6 +1047,7 @@ class Scanner:
             "exclude_tags":      cfg.exclude_genres,
             "title_types":       cfg.title_types,
             "exclude_countries": cfg.exclude_countries,
+            CONFIG_KEY_EXCLUDE_LANGUAGES: cfg.exclude_languages,
         })
 
         if replace_existing:
@@ -1279,28 +1306,28 @@ class Scanner:
                 else:
                     matched_tags = title_genres_lower   # all genres auto-pass
 
-                # Country filter — only when exclude_countries is configured.
+                # Country / language filters — only when configured.
                 # Fail OPEN: if OMDb is unavailable or returns an error, include the title.
-                if omdb_client and exclude_countries:
+                if omdb_client and (exclude_countries or exclude_languages):
                     meta = omdb_client.fetch(tconst)
                     if meta.get("error"):
                         on_progress(f"OMDb error for {tconst}: {meta['error']} — including title")
-                    elif meta.get("country"):
-                        title_countries = [
-                            c.strip().lower()
-                            for c in meta["country"].split(",")
-                            if c.strip()
-                        ]
-                        matched_country = next(
-                            (tc for ec in exclude_countries for tc in title_countries if ec in tc),
-                            None,
-                        )
-                        if matched_country is not None:
-                            # V3.27 — record country elimination reason.
+                    else:
+                        # V3.27 country / V3.35 language elimination reasons.
+                        excluded_reason = None
+                        for excl, field_value, prefix in (
+                            (exclude_countries, meta.get("country"),  REASON_COUNTRY_PREFIX),
+                            (exclude_languages, meta.get("language"), REASON_LANGUAGE_PREFIX),
+                        ):
+                            hit = first_excluded_match(excl, field_value)
+                            if hit is not None:
+                                excluded_reason = f"{prefix}{hit}"
+                                break
+                        if excluded_reason is not None:
                             self._record_elimination(
                                 tconst=tconst,
                                 primary_title=primary_title,
-                                reason=f"country:{matched_country}",
+                                reason=excluded_reason,
                             )
                             continue
 

@@ -83,6 +83,7 @@ INSERT OR IGNORE INTO config (key, value) VALUES
     ('exclude_tags',      '[]'),
     ('title_types',       '["movie","tvMovie","tvSeries"]'),
     ('exclude_countries', '[]'),
+    ('exclude_languages', '[]'),
     -- parental-guide severity ceilings (V3.12). Default 'severe' means the
     -- filter is inactive (all severities <= severe → nothing filtered).
     -- COMPLIANCE EXCEPTION — see movie_scanner/parental_guide.py.
