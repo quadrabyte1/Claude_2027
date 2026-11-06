@@ -56,11 +56,13 @@ def test_z2_clamp_and_default():
 
 def test_z3_pipeline_wiring():
     assert hasattr(gsd, "apply_z_scale")
-    i_lim = SRC.index("Z_mm_for_fringe, _fringe_slope_stats = limit_max_slope(")
-    i_z = SRC.index("apply_z_scale(Z_mm_for_fringe")
-    i_b = SRC.index("fringe_mesh = build_fringe_mesh(")
-    assert i_lim < i_z < i_b
-    assert "Z_mm, _z_scale = apply_z_scale(Z_mm, inside_mask, egm_data)" in SRC
+    # v6.34: rescale -> slope limit -> zScale live in finish_green_heights_mm, shared by the green, the fringe seam and the preview
+    i_lim = SRC.index("Z_mm, slope_stats = limit_max_slope(")
+    i_z = SRC.index("Z_mm, z_scale = apply_z_scale(Z_mm, inside_mask, egm_data)")
+    assert i_lim < i_z
+    assert "Z_mm_for_fringe, _fringe_tail = finish_green_heights_mm(Z, inside_mask, _egm_data)" in SRC
+    assert SRC.index("finish_green_heights_mm(Z, inside_mask, _egm_data)") < SRC.index("fringe_mesh = build_fringe_mesh(")
+    assert "Z_mm, _tail = finish_green_heights_mm(Z_grid, inside_mask, egm_data)" in SRC
 
 
 def _fringe(z_top):
@@ -95,6 +97,6 @@ def test_z5_trap_and_water_fed_scaled_fringe():
 
 
 def test_z6_ceiling_not_double_scaled():
-    seg = SRC[SRC.index("_effective_z_ceiling_mm = max("):][:200]
-    assert "_elevation_range_mm * _z_scale_fringe" in seg
-    assert "_z_scale_fringe ** 2" not in seg and "* _z_scale_fringe * _z_scale_fringe" not in seg
+    seg = SRC[SRC.index("return max(BASE_THICKNESS_MM + elevation_range_mm * z_scale"):][:200]   # _fringe_z_ceiling_mm (v6.34)
+    assert "elevation_range_mm * z_scale" in seg
+    assert "z_scale ** 2" not in seg and "* z_scale * z_scale" not in seg

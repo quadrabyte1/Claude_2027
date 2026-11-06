@@ -115,7 +115,7 @@ def test_route_makes_one_id_per_request_passes_it_and_returns_it(tmp_path, monke
     monkeypatch.setattr(flask_app, "make_generation_id", _fake_make)
     with patch("gradient_surface_diagnostic.run_pipeline", _fake_pipeline):
         resp = flask_app.app.test_client().post(
-            ROUTE_PATH, json={"course": ROUTE_COURSE, "hole": HOLE, "open_in_slicer": False})
+            ROUTE_PATH, json={"course": ROUTE_COURSE, "hole": HOLE})
     body = resp.get_json()
     assert len(make_calls) == 1
     assert seen["generation_id"] == EXPECTED_ID

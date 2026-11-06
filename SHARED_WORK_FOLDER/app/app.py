@@ -29,7 +29,7 @@ app = Flask(__name__)
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "db", "workspace.db")
 
-APP_VERSION = "v6.33"  # unified version for all main-app pages, shown in every sticky footer
+APP_VERSION = "v7.2"  # unified version for all main-app pages, shown in every sticky footer
 
 # Tier -> concrete model (single source of truth for Team page + Dashboard).
 # Keep in sync with the mapping in team/README.md.
@@ -83,6 +83,9 @@ HTTP_CONFLICT = 409
 HTTP_SERVER_ERROR = 500
 HEADER_CACHE_CONTROL = "Cache-Control"
 CACHE_NO_STORE = "no-store"
+CONTENT_TYPE_OCTET = "application/octet-stream"
+HEADER_PREVIEW_SEQ = "X-Preview-Seq"          # echo of the request seq (also in the binary header)
+CODE_KEY = "code"                              # JSON error body: machine-readable error code
 HEADER_CONTENT_TYPE = "Content-Type"
 CONTENT_TYPE_PNG = "image/png"
 GPS_PREVIEW_CACHE_HEADER = "X-GPS-Preview-Cache"
@@ -119,6 +122,7 @@ ROUTE_DIAGNOSTIC_ARROWS = "/diagnostic/arrows"
 ROUTE_PLAQUE = "/plaque"
 ROUTE_API_FONTS = "/api/fonts"
 ROUTE_API_GENERATE_PLATE = "/api/generate_plate"
+ROUTE_API_PREVIEW = "/api/preview"                           # live 3D preview: POST snapshot -> binary height grids (v6.34)
 METHOD_GET = "GET"
 METHOD_POST = "POST"
 
@@ -138,9 +142,7 @@ KEY_IMAGE_COURSE = "imageCourse"
 KEY_GREEN_POINTS = "green_points"      # find_contours payload
 KEY_HOLE = "hole"                      # generate_models payload (also the saved-EGM key)
 KEY_INCLUDE_BOUNDARY_REGION = "includeBoundaryRegion"          # generate_models payload
-KEY_APPLY_FRINGE_FRAME_CAP = "applyFringeFrameCap"
 KEY_INCLUDE_FRINGE_WITHOUT_GRASS = "includeFringeWithoutGrass"
-KEY_OPEN_IN_SLICER = "open_in_slicer"
 KEY_NAME = "name"                      # create_course payload / image + gps file rows
 KEY_FILENAME = "filename"
 KEY_URL = "url"
@@ -165,9 +167,7 @@ KEY_CONTOUR_STEP = "contourStep"
 KEY_CONTOURS = "contours"
 KEY_PRINT_SIZE_MM = "print_size_mm"
 KEY_FRINGE_XY_EXPANSION_MM = "fringe_xy_expansion_mm"
-KEY_SLICER_OPENED = "slicer_opened"
 KEY_GENERATION_ID = "generation_id"     # API: per-run ID that names the output 3MF
-KEY_SLICER_ERROR = "slicer_error"
 KEY_WARNINGS = "warnings"
 KEY_FOUND = "found"
 KEY_ORIGINAL_URL = "originalUrl"
@@ -248,14 +248,6 @@ MSG_GPS_NO_GEOREF = (
     "The GPS backend needs the SW and NE corner lat/lng of the course image "
     "in the EGM's courseGeoRef block (the editor no longer has a dialog for this)."
 )
-MSG_SLICER_TIMEOUT = (
-    "Timed out waiting for `open` to hand the file to the slicer. "
-    "Try opening it manually in Finder."
-)
-MSG_SLICER_EXIT_FMT = (
-    "`open` exited with code {code}. "
-    "Try opening the file manually in Finder."
-)
 
 # ── detect_boundaries: defaults, caps, classifier thresholds (HSV, OpenCV scale H 0-179) ──
 DETECT_DEFAULT_CONTOUR_STEP_MM = 0.5        # editor: DEFAULT_CONTOUR_STEP_MM
@@ -326,10 +318,6 @@ POLY_NAME_WATER_FMT = "Water {n}"
 POLY_NAME_CONTOUR_FMT = "Contour {n}"
 KEY_CLOSED = "closed"
 KEY_DIRECTION = "direction"
-
-# ── generate_models ──
-SLICER_OPEN_COMMAND = "open"                # macOS: hand the file to the .3mf association
-SLICER_OPEN_TIMEOUT_S = 10
 
 # ── GPS heightmap preview (defaults mirror the editor's gpsBackend panel) ──
 GPS_PREVIEW_DEFAULT_APPROACH_M = 8.0        # editor: DEFAULT_GPS_APPROACH_M
@@ -1713,6 +1701,55 @@ def load_boundaries():
     return _egm_load_response(fpath)
 
 
+@app.route(ROUTE_API_PREVIEW, methods=[METHOD_POST])
+def api_preview():
+    """Live 3D preview (v6.34): stateless snapshot -> binary height grids.
+
+    Body: {"snapshot": <editor state, same shape as the /api/boundaries save body>, "seq": int,
+           "fringeRes": int (optional), "greenMode": "auto" | "cachedOnly" (optional)}.
+    Reads the in-memory snapshot only: never writes a file, never touches an EGM or a database, and never
+    interferes with autosave.  Success: application/octet-stream (layout in preview_geometry.py and
+    owner_inbox/preview_api_contract.md).  Failure: JSON {status, code, msg} with 400/404/409/500/503.
+    """
+    import preview_geometry as pg
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return _preview_error(pg.CODE_BAD_REQUEST, MSG_NO_JSON)
+    snapshot = body.get(pg.REQ_SNAPSHOT)
+    seq = body.get(pg.REQ_SEQ, 0)
+    fringe_res = body.get(pg.REQ_FRINGE_RES, pg.FRINGE_RES_DEFAULT)
+    green_mode = body.get(pg.REQ_GREEN_MODE, pg.GREEN_MODE_AUTO)
+    if not isinstance(seq, int) or isinstance(seq, bool) or not (0 <= seq <= pg.SEQ_MAX):
+        return _preview_error(pg.CODE_BAD_REQUEST, "seq must be an integer in [0, 2^32-1]")
+    if degrid_cleanup.TRACKER.generating:
+        return _preview_error(pg.CODE_BUSY, "Generate is running; preview paused")
+    try:
+        pg._validate_snapshot(snapshot)
+        image = snapshot.get(pg.SNAPSHOT_KEY_IMAGE)
+        image_path = _find_image_path(image, preferred_course=snapshot.get(pg.SNAPSHOT_KEY_IMAGE_COURSE, "")) if isinstance(image, str) and image else None
+        if not image_path:
+            return _preview_error(pg.CODE_IMAGE_NOT_FOUND, "image not found")
+        result = pg.compute_preview(snapshot, image_path, seq=seq, fringe_res=fringe_res, green_mode=green_mode)
+        payload = pg.encode_preview(result)
+    except pg.PreviewError as exc:
+        return _preview_error(exc.code, exc.msg)
+    except Exception as exc:  # a failed preview must never raise into the editor
+        print(f"[preview] unexpected error: {exc!r}")
+        return _preview_error(pg.CODE_INTERNAL, f"preview failed: {exc}")
+    resp = app.response_class(payload, mimetype=CONTENT_TYPE_OCTET)
+    resp.headers[HEADER_CACHE_CONTROL] = CACHE_NO_STORE
+    resp.headers[HEADER_PREVIEW_SEQ] = str(seq)
+    return resp
+
+
+def _preview_error(code: str, msg: str):
+    import preview_geometry as pg
+    resp = jsonify({KEY_STATUS: STATUS_ERROR, CODE_KEY: code, KEY_MSG: msg})
+    resp.status_code = pg.HTTP_STATUS_BY_CODE.get(code, HTTP_SERVER_ERROR)
+    resp.headers[HEADER_CACHE_CONTROL] = CACHE_NO_STORE
+    return resp
+
+
 @app.route(ROUTE_API_PRINT_CONSTANTS)
 def print_constants():
     """Return the print-size and fringe-expansion constants needed by the boundary editor."""
@@ -2309,18 +2346,11 @@ def _generate_models_impl():
     # but we also forward the request-time value here so the route can override
     # the persisted value if the client ever wants to.
     include_boundary_region = bool(data.get(KEY_INCLUDE_BOUNDARY_REGION, False))
-    # Fringe-frame cap toggle (task 669): default True preserves legacy behavior.
-    # When False, the water-hole rule at gradient_surface_diagnostic line ~5854
-    # skips the per-vertex boundary cap for the fringe mesh, letting the fringe
-    # rise to its natural height even where it exceeds the plaque frame.
-    # Missing key → True (legacy .egm files never persisted this flag).
-    apply_fringe_frame_cap = bool(data.get(KEY_APPLY_FRINGE_FRAME_CAP, True))
     # Include fringe without grass (task 724): when True, a second plate is
     # generated holding a smooth (grass-less) fringe sample. Plate 1 always
     # gets grass unconditionally. Default False (single plate, no sample).
     # Old field from task 714 is intentionally ignored (semantics inverted).
     include_fringe_without_grass = bool(data.get(KEY_INCLUDE_FRINGE_WITHOUT_GRASS, False))
-    open_in_slicer = bool(data.get(KEY_OPEN_IN_SLICER, False))
 
     hole_label = hole.zfill(HOLE_LABEL_WIDTH) if hole.isdigit() else hole
     egm_fname = EGM_FILENAME_FMT.format(course=course, hole_label=hole_label)
@@ -2372,7 +2402,6 @@ def _generate_models_impl():
         three_mf_path = run_pipeline(
             egm_path,
             include_boundary_region=include_boundary_region,
-            apply_fringe_frame_cap=apply_fringe_frame_cap,
             include_fringe_without_grass=include_fringe_without_grass,
             generation_id=_generation_id,
         )
@@ -2402,40 +2431,9 @@ def _generate_models_impl():
         KEY_TYPE: FILE_TYPE_3MF,
     }
 
-    # ── Open in default slicer (macOS file-association) ──────────────────────
-    # Uses `open <file>` so the OS hands the .3mf to whatever app owns the
-    # extension — no hardcoded Bambu path. If `open` fails, surface stderr so
-    # the user knows what went wrong; hint to use Finder as fallback.
-    slicer_opened = None
-    slicer_error  = None
-    if open_in_slicer and three_mf_path and os.path.exists(three_mf_path):
-        import subprocess
-        try:
-            proc = subprocess.run(
-                [SLICER_OPEN_COMMAND, three_mf_path],
-                capture_output=True,
-                timeout=SLICER_OPEN_TIMEOUT_S,
-            )
-            if proc.returncode == 0:
-                slicer_opened = True
-            else:
-                slicer_opened = False
-                stderr_text = (proc.stderr or b"").decode(errors="replace").strip()
-                slicer_error = (
-                    stderr_text
-                    or MSG_SLICER_EXIT_FMT.format(code=proc.returncode)
-                )
-        except subprocess.TimeoutExpired:
-            slicer_opened = False
-            slicer_error  = MSG_SLICER_TIMEOUT
-        except Exception as exc:
-            slicer_opened = False
-            slicer_error  = str(exc)
-
     import gradient_surface_diagnostic as _gsd
     return jsonify({KEY_STATUS: STATUS_OK, KEY_FILE: result,
                     KEY_GENERATION_ID: _generation_id,
-                    KEY_SLICER_OPENED: slicer_opened, KEY_SLICER_ERROR: slicer_error,
                     KEY_WARNINGS: list(_gsd.PIPELINE_WARNINGS)})
 
 

@@ -5,9 +5,7 @@ Bug→TDD:  tests written first (RED); fixed by:
   1. Removing the post-texture flatten from export_trap_stls  (trap rake lines).
   2. Setting WATER_RIPPLE_ENABLED = False and removing the post-ripple flatten
      from export_water_meshes  (water smooth-flat slab at correct height).
-  3. Trap frame-cap parity: apply the same BOUNDARY_CAP_BAND_MM/TAPER cap that
-     fringe receives to trap meshes always (not just on water holes), gated by
-     the EGM-level applyFringeFrameCap flag.
+  3. (history; cap removed in v7.1) trap frame-cap parity.
   4. Trap top height = adjoining fringe max Z − TRAP_FRINGE_OFFSET_MM (2 mm below
      the highest fringe point on the trap boundary), not interior fringe max.
   5. (Task #606) Rake direction = trap major axis (PCA), jitter noise, cap
@@ -24,10 +22,7 @@ Covers
      and that the production file no longer contains the post-ripple flatten
      (which was collapsing the slab to the deepest ripple point, ~0.28 mm low).
 
-  C. Trap frame-cap parity (Part 1): trap mesh vertices within
-     BOUNDARY_CAP_BAND_MM of the frame edge must be clipped to
-     BOUNDARY_HEIGHT_CAP_MM, regardless of whether the hole has water.
-     When applyFringeFrameCap=False the cap is skipped for traps too.
+  C. (v7.1) The frame-edge cap is removed: _apply_lift_and_cap only lifts.
 
   D. Trap height from adjoining fringe (Part 2): trap top = fringe_boundary_max
      − TRAP_FRINGE_OFFSET_MM; fallback to TRAP_THICKNESS_MM when no fringe mesh;
@@ -42,9 +37,7 @@ Covers
      Two different traps → different noise patterns.
      Peak-to-peak jitter ≤ SAND_JITTER_AMPLITUDE_MM * 2 + epsilon.
 
-  G. (Task #606) BOUNDARY_HEIGHT_CAP_ENABLED toggle.
-     When False: frame-edge vertices keep natural height, no 9-mm clamp.
-     When True: existing cap behavior is restored.
+  G. (removed in v7.1) the BOUNDARY_HEIGHT_CAP_ENABLED toggle tests.
 
   H. (Task #606) TRAP_FRINGE_OFFSET_MM updated from -2.0 to -4.0.
 """
@@ -367,76 +360,26 @@ class TestWaterSurface:
 
 
 # ===========================================================================
-# C.  Trap frame-cap parity  (Part 1)
+# C.  Frame-edge cap removed (v7.1); water-hole lift kept
 # ===========================================================================
 
-class TestTrapFrameCapParity:
+LIFT_TEST_MM = 2.0            # lift used by the lift-only tests
+SLAB_HEIGHT_TEST_MM = 12.0    # slab height used (clearly taller than the former cap)
+REMOVED_CAP_NAMES = ("BOUNDARY_HEIGHT_CAP_MM", "BOUNDARY_HEIGHT_CAP_MODE", "BOUNDARY_HEIGHT_CAP_ENABLED",
+                     "BOUNDARY_CAP_BAND_MM", "BOUNDARY_CAP_TAPER_MM")
+REMOVED_CAP_ARG = "apply_fringe_frame_cap"
+LEGACY_CAP_EGM_KEY = "applyFringeFrameCap"
+
+
+class TestFrameCapRemoved:
     """
-    Part 1 — Trap edge-of-frame cap must mirror the fringe cap rule.
-
-    The fringe cap (BOUNDARY_CAP_BAND_MM=1 mm hard + BOUNDARY_CAP_TAPER_MM=5 mm
-    taper, ceiling BOUNDARY_HEIGHT_CAP_MM=9 mm) currently only fires for traps
-    on water holes.  These tests assert the cap fires unconditionally for any
-    trap whose vertices fall in the frame-edge band, gated by applyFringeFrameCap.
-
-    RED before fix: _apply_lift_and_cap is only called inside `if _hole_water:`.
-    GREEN after fix: cap is applied always (regardless of water), gated by
-                     apply_fringe_frame_cap passed into export_trap_stls.
+    The frame-edge height cap (disabled since #606) is gone in v7.1.  _apply_lift_and_cap only
+    lifts top-surface vertices (water-hole 2 mm base); nothing is ever clipped.
     """
 
-    # -----------------------------------------------------------------------
-    # Helpers
-    # -----------------------------------------------------------------------
-
     @staticmethod
-    def _make_fringe_vertices_flat(half_mm: float, height_mm: float) -> np.ndarray:
-        """
-        Return a minimal set of fringe top-surface vertices covering the
-        frame-edge band at uniform height.  Enough for the KD-tree lookups
-        in export_trap_stls to find neighbours.
-
-        Places a 5×5 grid across the square frame (side = 2*half_mm).
-        All z values = height_mm (> 0, so they are "top" vertices).
-        """
-        xs = np.linspace(-half_mm, half_mm, 5)
-        ys = np.linspace(-half_mm, half_mm, 5)
-        xx, yy = np.meshgrid(xs, ys)
-        pts = np.column_stack([xx.ravel(), yy.ravel(),
-                               np.full(xx.size, height_mm)])
-        return pts
-
-    @staticmethod
-    def _fringe_mesh_from_verts(verts: np.ndarray) -> "trimesh.Trimesh":
-        """
-        Build a trimesh Trimesh from a set of top-surface vertices.
-        We add a bottom plane at z=0 and stitch faces so the mesh is
-        non-empty (the cap code only needs mesh.vertices to be mutable).
-        """
-        import trimesh
-        from scipy.spatial import Delaunay
-
-        tri = Delaunay(verts[:, :2])
-        top_faces = tri.simplices.tolist()
-        bottom_verts = verts.copy()
-        bottom_verts[:, 2] = 0.0
-        all_verts = np.vstack([verts, bottom_verts])
-        n = len(verts)
-        bottom_faces = [[f[0] + n, f[2] + n, f[1] + n] for f in top_faces]
-        faces = np.array(top_faces + bottom_faces, dtype=np.int64)
-        m = trimesh.Trimesh(vertices=all_verts, faces=faces, process=False)
-        return m
-
-    @staticmethod
-    def _build_frame_edge_trap_mesh(
-        frame_half_mm: float,
-        trap_height_mm: float,
-    ):
-        """
-        Build a small slab whose left edge is flush with the left frame edge
-        (x = -frame_half_mm).  Top verts at x≈-frame_half_mm are within
-        BOUNDARY_CAP_BAND_MM of the frame edge → should be capped.
-        """
-        import trimesh
+    def _build_frame_edge_trap_mesh(frame_half_mm: float, trap_height_mm: float):
+        """A slab whose left edge is flush with the left frame edge."""
         from generate_stl_3mf import _build_slab_from_shapely
 
         poly = ShapelyPolygon([
@@ -447,154 +390,42 @@ class TestTrapFrameCapParity:
         ])
         return _build_slab_from_shapely(poly, trap_height_mm)
 
-    # -----------------------------------------------------------------------
-    # Tests
-    # -----------------------------------------------------------------------
-
-    def test_cap_fires_without_water_when_enabled(self):
-        """
-        A trap flush with the frame edge must have its boundary-band top verts
-        clipped to BOUNDARY_HEIGHT_CAP_MM even on a non-water hole, when the
-        cap toggle is on.
-
-        RED before fix (#604): cap only fires inside `if _hole_water:`, so a
-                        trap on a non-water hole keeps its full height (e.g. 12 mm)
-                        right at the frame edge.
-        GREEN after fix (#604): cap fires unconditionally (gated by applyFringeFrameCap,
-                         default True), so top verts ≤ 9 mm at the edge.
-
-        Note: Task #606 added BOUNDARY_HEIGHT_CAP_ENABLED (default False) which
-        suspends the cap globally.  This test patches it to True so it continues
-        to verify the cap MECHANISM works correctly when the toggle is on.
-        """
+    def test_lift_raises_top_vertices_only_and_never_clips(self):
         gsd = _load_gsd()
+        mesh = self._build_frame_edge_trap_mesh(gsd.FRINGE_HALF_MM, SLAB_HEIGHT_TEST_MM)
+        before = mesh.vertices.copy()
+        gsd._apply_lift_and_cap(mesh, lift_mm=LIFT_TEST_MM, label="test_lift")
+        top = before[:, 2] > gsd.EPS_LINEAR
+        assert top.any()
+        np.testing.assert_allclose(mesh.vertices[top, 2], before[top, 2] + LIFT_TEST_MM)
+        np.testing.assert_array_equal(mesh.vertices[~top], before[~top])           # bottom stays pinned
+        np.testing.assert_array_equal(mesh.vertices[:, :2], before[:, :2])         # XY untouched
 
-        frame_half = gsd.FRINGE_HALF_MM
-        trap_height = gsd.BOUNDARY_HEIGHT_CAP_MM + 3.0  # 12 mm — clearly over cap
-
-        mesh = self._build_frame_edge_trap_mesh(frame_half, trap_height)
-
-        # Task #606: cap is now off by default; enable it for this mechanism test.
-        gsd.BOUNDARY_HEIGHT_CAP_ENABLED = True
-        try:
-            # Apply cap (the logic that export_trap_stls should invoke unconditionally
-            # after the fix).
-            gsd._apply_lift_and_cap(
-                mesh,
-                lift_mm=0.0,
-                cap_mm=gsd.BOUNDARY_HEIGHT_CAP_MM,
-                label="test_trap_cap",
-            )
-        finally:
-            gsd.BOUNDARY_HEIGHT_CAP_ENABLED = False  # restore default
-
-        top_verts = mesh.vertices[mesh.vertices[:, 2] > 1e-6]
-        # Vertices right at the frame edge (within BOUNDARY_CAP_BAND_MM)
-        band = gsd.BOUNDARY_CAP_BAND_MM
-        edge_verts = top_verts[
-            np.abs(np.abs(top_verts[:, 0]) - frame_half) <= band
-        ]
-        assert len(edge_verts) > 0, (
-            "No top-surface vertices found within the frame-edge band.  "
-            "Adjust _build_frame_edge_trap_mesh so its left edge is flush."
-        )
-        max_edge_z = float(edge_verts[:, 2].max())
-        assert max_edge_z <= gsd.BOUNDARY_HEIGHT_CAP_MM + 1e-3, (
-            f"Frame-edge trap top Z = {max_edge_z:.3f} mm exceeds cap "
-            f"{gsd.BOUNDARY_HEIGHT_CAP_MM} mm.  The cap is not being applied "
-            "unconditionally (only fires on water holes in the buggy code)."
-        )
-
-    def test_cap_skipped_when_apply_fringe_frame_cap_false(self):
-        """
-        When applyFringeFrameCap=False, the trap cap must be skipped — matching
-        fringe behavior.  The trap keeps its full height at the frame edge.
-
-        GREEN always (no code path currently calls _apply_lift_and_cap with
-        cap_mm=None for trap; this test documents the expected behavior and
-        will stay green after the fix because the fix gates the cap call on
-        apply_fringe_frame_cap).
-        """
+    def test_zero_lift_leaves_a_tall_frame_edge_slab_unchanged(self):
         gsd = _load_gsd()
+        mesh = self._build_frame_edge_trap_mesh(gsd.FRINGE_HALF_MM, SLAB_HEIGHT_TEST_MM)
+        before = mesh.vertices.copy()
+        gsd._apply_lift_and_cap(mesh, lift_mm=0.0)
+        np.testing.assert_array_equal(mesh.vertices, before)
 
-        frame_half = gsd.FRINGE_HALF_MM
-        trap_height = gsd.BOUNDARY_HEIGHT_CAP_MM + 3.0  # 12 mm
+    def test_water_hole_lift_constant_is_two_mm(self):
+        assert _load_gsd().WATER_HOLE_LIFT_MM == LIFT_TEST_MM
 
-        mesh = self._build_frame_edge_trap_mesh(frame_half, trap_height)
+    @pytest.mark.parametrize("name", REMOVED_CAP_NAMES)
+    def test_cap_constants_removed(self, name):
+        assert not hasattr(_load_gsd(), name)
 
-        # applyFringeFrameCap=False → pass cap_mm=None (no clip)
-        gsd._apply_lift_and_cap(
-            mesh,
-            lift_mm=0.0,
-            cap_mm=None,
-            label="test_trap_no_cap",
-        )
-
-        top_verts = mesh.vertices[mesh.vertices[:, 2] > 1e-6]
-        max_z = float(top_verts[:, 2].max())
-        # Height should remain near the original trap_height (no clipping)
-        assert max_z >= gsd.BOUNDARY_HEIGHT_CAP_MM, (
-            f"Trap max Z = {max_z:.3f} mm fell below cap {gsd.BOUNDARY_HEIGHT_CAP_MM} mm "
-            "even though cap_mm=None was passed (cap should be skipped)."
-        )
-
-    def test_export_trap_stls_accepts_apply_fringe_frame_cap_kwarg(self):
-        """
-        export_trap_stls must accept an `apply_fringe_frame_cap` keyword argument
-        so callers can pass the EGM flag value.
-
-        RED before fix: the function signature does not include apply_fringe_frame_cap.
-        GREEN after fix: the parameter exists.
-        """
+    def test_cap_argument_removed_from_signatures(self):
         import inspect
         gsd = _load_gsd()
-        sig = inspect.signature(gsd.export_trap_stls)
-        assert "apply_fringe_frame_cap" in sig.parameters, (
-            "export_trap_stls does not accept `apply_fringe_frame_cap`.  "
-            "Add the parameter so the EGM flag can control the cap."
-        )
+        for fn in (gsd.export_trap_stls, gsd.run_pipeline, gsd._apply_lift_and_cap):
+            params = inspect.signature(fn).parameters
+            assert REMOVED_CAP_ARG not in params and "cap_mm" not in params and "cap_mode" not in params
 
-    def test_production_code_cap_not_gated_by_hole_water(self):
-        """
-        Static code check: the cap call in export_trap_stls must NOT be inside
-        `if _hole_water:` (or equivalent).  It must fire unconditionally.
-
-        RED before fix: `_apply_lift_and_cap` call for trap is inside the
-                        `if _hole_water:` block.
-        GREEN after fix: the cap call is outside the water-hole gate.
-        """
+    def test_cap_key_gone_from_generator_source(self):
         source = GSD_PATH.read_text(encoding="utf-8")
-
-        # Find the export_trap_stls function body.
-        fn_start = source.find("def export_trap_stls(")
-        fn_end   = source.find("\ndef ", fn_start + 1)
-        if fn_start == -1:
-            pytest.fail("Could not find export_trap_stls in source.")
-        fn_body = source[fn_start:fn_end if fn_end != -1 else len(source)]
-
-        # There must be an _apply_lift_and_cap call outside the `if _hole_water:`
-        # block.  A naive check: count _apply_lift_and_cap calls and ensure at
-        # least one occurs before/outside the `_hole_water` conditional.
-        #
-        # Strategy: look for an `_apply_lift_and_cap` call that is NOT preceded
-        # by `if _hole_water:` within the same indented block.  We check for the
-        # unconditional cap pattern introduced by the fix.
-        assert "_apply_lift_and_cap" in fn_body, (
-            "No _apply_lift_and_cap call found in export_trap_stls at all."
-        )
-
-        # After the fix, there should be a cap call that is NOT gated by _hole_water.
-        # We look for the new unconditional call pattern:
-        # `if apply_fringe_frame_cap` or similar outside the water gate.
-        has_unconditional_cap = (
-            "apply_fringe_frame_cap" in fn_body
-            or "applyFringeFrameCap" in fn_body
-        )
-        assert has_unconditional_cap, (
-            "export_trap_stls does not reference apply_fringe_frame_cap.  "
-            "The trap cap is still gated only by _hole_water; it must be "
-            "applied unconditionally (gated by apply_fringe_frame_cap instead)."
-        )
+        code = "\n".join(l for l in source.splitlines() if not l.lstrip().startswith("#"))
+        assert LEGACY_CAP_EGM_KEY not in code and REMOVED_CAP_ARG not in code
 
 
 # ===========================================================================
@@ -1187,145 +1018,6 @@ class TestRakeJitter:
         assert z_range <= max_allowed, (
             f"Z range = {z_range:.4f} mm > {max_allowed:.4f} mm upper bound.  "
             "Chunk heights appear out of range."
-        )
-
-
-# ===========================================================================
-# G.  BOUNDARY_HEIGHT_CAP_ENABLED toggle  (Task #606, Item 3)
-# ===========================================================================
-
-class TestCapEnabledToggle:
-    """
-    BOUNDARY_HEIGHT_CAP_ENABLED = False suspends the frame-edge height cap.
-    When False, vertices near the frame that exceed BOUNDARY_HEIGHT_CAP_MM are
-    left at their natural height.  When True, the existing cap is applied.
-
-    RED before fix: BOUNDARY_HEIGHT_CAP_ENABLED constant does not exist.
-    GREEN after fix: constant exists at False (default off per Thomas's request);
-                     _apply_lift_and_cap respects it.
-    """
-
-    @staticmethod
-    def _frame_edge_slab(height_mm: float):
-        """Slab whose left edge is flush with the frame (same helper as class C)."""
-        from generate_stl_3mf import _build_slab_from_shapely
-
-        gsd = _load_gsd()
-        frame_half = gsd.FRINGE_HALF_MM
-        poly = ShapelyPolygon([
-            (-frame_half,       -5.0),
-            (-frame_half + 8.0, -5.0),
-            (-frame_half + 8.0,  5.0),
-            (-frame_half,        5.0),
-        ])
-        return _build_slab_from_shapely(poly, height_mm), frame_half
-
-    def test_cap_enabled_constant_exists_and_is_false(self):
-        """
-        BOUNDARY_HEIGHT_CAP_ENABLED must exist and default to False
-        (cap is suspended per Thomas's request).
-
-        RED before fix: constant does not exist.
-        GREEN after fix: BOUNDARY_HEIGHT_CAP_ENABLED = False is defined.
-        """
-        gsd = _load_gsd()
-        assert hasattr(gsd, "BOUNDARY_HEIGHT_CAP_ENABLED"), (
-            "BOUNDARY_HEIGHT_CAP_ENABLED is not defined in gradient_surface_diagnostic.py.  "
-            "Add `BOUNDARY_HEIGHT_CAP_ENABLED: bool = False` to the constants section."
-        )
-        assert gsd.BOUNDARY_HEIGHT_CAP_ENABLED is False, (
-            f"BOUNDARY_HEIGHT_CAP_ENABLED = {gsd.BOUNDARY_HEIGHT_CAP_ENABLED}; "
-            "expected False (cap suspended per Thomas's request, task #606)."
-        )
-
-    def test_cap_disabled_leaves_vertex_above_cap_mm(self):
-        """
-        When BOUNDARY_HEIGHT_CAP_ENABLED is False, a tall trap slab whose
-        frame-edge vertices exceed BOUNDARY_HEIGHT_CAP_MM must keep its
-        natural height — no clipping.
-
-        We monkey-patch the constant to False and call _apply_lift_and_cap
-        with a cap_mm value, then verify the edge verts are NOT clipped.
-
-        RED before fix: constant does not exist → apply_lift_and_cap always
-                        clips regardless.
-        GREEN after fix: cap skipped when BOUNDARY_HEIGHT_CAP_ENABLED=False.
-        """
-        gsd = _load_gsd()
-        if not hasattr(gsd, "BOUNDARY_HEIGHT_CAP_ENABLED"):
-            pytest.skip("BOUNDARY_HEIGHT_CAP_ENABLED not defined yet.")
-
-        cap_mm = gsd.BOUNDARY_HEIGHT_CAP_MM
-        tall_height = cap_mm + 5.0  # clearly over the cap
-
-        mesh, frame_half = self._frame_edge_slab(tall_height)
-
-        # Monkey-patch: disable cap
-        gsd.BOUNDARY_HEIGHT_CAP_ENABLED = False
-        try:
-            gsd._apply_lift_and_cap(
-                mesh,
-                lift_mm=0.0,
-                cap_mm=cap_mm,
-                label="test_cap_disabled",
-            )
-        finally:
-            gsd.BOUNDARY_HEIGHT_CAP_ENABLED = False  # restore
-
-        top_v = mesh.vertices[mesh.vertices[:, 2] > 1e-6]
-        band = gsd.BOUNDARY_CAP_BAND_MM
-        edge_verts = top_v[np.abs(np.abs(top_v[:, 0]) - frame_half) <= band]
-
-        if len(edge_verts) == 0:
-            pytest.skip("No frame-edge vertices in test slab — geometry may have shifted.")
-
-        max_edge_z = float(edge_verts[:, 2].max())
-        assert max_edge_z > cap_mm, (
-            f"Frame-edge Z = {max_edge_z:.3f} mm was capped to {cap_mm} mm "
-            "even though BOUNDARY_HEIGHT_CAP_ENABLED=False.  "
-            "The toggle is not being respected by _apply_lift_and_cap."
-        )
-
-    def test_cap_enabled_true_still_clips(self):
-        """
-        Regression: when BOUNDARY_HEIGHT_CAP_ENABLED is True, the original
-        cap behaviour must be preserved (edge verts ≤ BOUNDARY_HEIGHT_CAP_MM).
-
-        RED: impossible to test when constant doesn't exist.
-        GREEN after fix: True → cap fires.
-        """
-        gsd = _load_gsd()
-        if not hasattr(gsd, "BOUNDARY_HEIGHT_CAP_ENABLED"):
-            pytest.skip("BOUNDARY_HEIGHT_CAP_ENABLED not defined yet.")
-
-        cap_mm = gsd.BOUNDARY_HEIGHT_CAP_MM
-        tall_height = cap_mm + 5.0
-
-        mesh, frame_half = self._frame_edge_slab(tall_height)
-
-        # Monkey-patch: enable cap
-        gsd.BOUNDARY_HEIGHT_CAP_ENABLED = True
-        try:
-            gsd._apply_lift_and_cap(
-                mesh,
-                lift_mm=0.0,
-                cap_mm=cap_mm,
-                label="test_cap_enabled",
-            )
-        finally:
-            gsd.BOUNDARY_HEIGHT_CAP_ENABLED = False  # restore to default
-
-        top_v = mesh.vertices[mesh.vertices[:, 2] > 1e-6]
-        band = gsd.BOUNDARY_CAP_BAND_MM
-        edge_verts = top_v[np.abs(np.abs(top_v[:, 0]) - frame_half) <= band]
-
-        if len(edge_verts) == 0:
-            pytest.skip("No frame-edge vertices — geometry may have shifted.")
-
-        max_edge_z = float(edge_verts[:, 2].max())
-        assert max_edge_z <= cap_mm + 1e-3, (
-            f"Frame-edge Z = {max_edge_z:.3f} mm exceeds cap {cap_mm} mm "
-            "when BOUNDARY_HEIGHT_CAP_ENABLED=True.  Regression in cap logic."
         )
 
 

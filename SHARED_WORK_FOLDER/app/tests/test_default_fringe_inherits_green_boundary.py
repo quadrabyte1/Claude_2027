@@ -251,7 +251,7 @@ class TestFringeMirrorsTilt:
     def test_fringe_left_and_right_carry_tilt(self):
         """T2: fringe on low side ≈5 mm, high side ≈8 mm.
 
-        Use z_right=8.0 mm (below BOUNDARY_HEIGHT_CAP_MM=9.0) so the
+        Use z_right=8.0 mm (below FRINGE_GREEN_EDGE_TAPER_FLOOR_MM=9.0) so the
         plateau-taper logic does not reduce the high-side fringe Z.
         """
         gsd = _load_gsd()
@@ -302,7 +302,7 @@ class TestFringeMirrorsTilt:
             f"T2 FAILED: left fringe Z expected ≈5.0 mm, got {z_left_mean:.3f} mm. "
             f"The fringe should inherit the green boundary Z on the low side."
         )
-        # Right side should be near 8.0 mm (within the BOUNDARY_HEIGHT_CAP_MM=9.0).
+        # Right side should be near 8.0 mm (within the FRINGE_GREEN_EDGE_TAPER_FLOOR_MM=9.0).
         assert abs(z_right_mean - 8.0) < 1.0, (
             f"T2 FAILED: right fringe Z expected ≈8.0 mm, got {z_right_mean:.3f} mm. "
             f"The fringe should inherit the green boundary Z on the high side."

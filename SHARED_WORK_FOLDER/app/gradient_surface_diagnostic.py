@@ -1,3 +1,7 @@
+# v0.38 — 2026-11-05 Topo — Removed the disabled frame-edge height cap (APP_VERSION v7.1): run_pipeline/export_trap_stls no
+#         longer take apply_fringe_frame_cap (legacy EGM key applyFringeFrameCap is ignored); BOUNDARY_HEIGHT_CAP_*/BOUNDARY_CAP_*
+#         gone; _apply_lift_and_cap only lifts.  The fringe plateau-taper target (9 mm) lives on as FRINGE_GREEN_EDGE_TAPER_FLOOR_MM.
+#         Geometry is byte-identical (verified by vertex hash).  Older entries below that mention the cap are history.
 # v0.37 — 2026-11-02 Topo — Smooth fringe default surface (APP_VERSION v6.25).
 #         The hidden default that grid deltas are added to used the Z of the NEAREST green-rim point, which
 #           made a cliff wherever the nearest rim point switches (a notch in the green; Delaveaga 11 trb-m west
@@ -310,6 +314,7 @@ import re
 import sys
 import json
 import math
+from typing import NamedTuple
 
 # Make app/ importable
 sys.path.insert(0, os.path.dirname(__file__))
@@ -2083,11 +2088,8 @@ class _MountBoreDisabled(Exception):
 # is preserved (just sitting 2 mm higher). Water polygons themselves are NOT
 # lifted (water sits at the bottom of the basin).
 #
-# In addition, any green / fringe / sand-trap element that touches the frame
-# at the boundary of the hole is CAPPED at BOUNDARY_HEIGHT_CAP_MM total
-# height (including the 2 mm base). Two cap modes:
-#   - "hard"     : clip Z values above cap flat to cap exactly (default).
-#   - "compress" : linearly squash terrain Z so max = cap (proportional).
+# (The former frame-edge height cap was removed in v7.1: the frame's outer wall
+# provides the vertical cutoff.)
 #
 # Boundary-touching = polygon has any vertex within BOUNDARY_TOUCH_TOL_MM of
 # the fringe rectangle perimeter (±_half = ±(PRINT_SIZE/2 + FRINGE_XY_EXP/2)).
@@ -2095,30 +2097,7 @@ class _MountBoreDisabled(Exception):
 # the fringe and never touches the frame.
 WATER_HOLE_LIFT_ENABLED: bool  = True
 WATER_HOLE_LIFT_MM:      float = 2.0     # base-slab thickness inserted under lifted pieces
-BOUNDARY_HEIGHT_CAP_MM:  float = 9.0     # absolute Z ceiling for boundary-touching pieces
-BOUNDARY_HEIGHT_CAP_MODE: str  = "hard"  # one of: "hard", "compress"
 BOUNDARY_TOUCH_TOL_MM:   float = 0.5     # XY tolerance for "vertex touches frame edge"
-# Task #606 (Topo, 2026-09-26): Thomas suspended the frame-edge height cap.
-# When False (default now), _apply_lift_and_cap still applies the water-hole
-# lift but skips the cap step regardless of the cap_mm argument.  The frame's
-# outer wall provides a vertical cutoff for any mesh that exceeds 9 mm near
-# the edge.  Flip to True to restore the previous tapered-cap behaviour.
-BOUNDARY_HEIGHT_CAP_ENABLED: bool = False
-# Edge-band cap (Topo, 2026-05-05): in "hard" mode, the 9 mm cap applies only
-# to top-surface vertices within BOUNDARY_CAP_BAND_MM (XY distance) of the
-# plaque frame perimeter. Interior vertices keep their natural relief, even if
-# it exceeds BOUNDARY_HEIGHT_CAP_MM. The cap exists only to keep the picture
-# frame edge clean — interior height was never the problem.
-BOUNDARY_CAP_BAND_MM:    float = 1.0     # XY width of edge band where cap is at FULL strength
-# Task #488 (fringe wall wrinkle): the hard band cap creates a visible cliff
-# where a water/trap polygon reaches the outer edge — cells inside the 1 mm
-# band get clipped to 9 mm while cells 1 mm further in keep natural Z up to
-# ~13 mm. To keep the picture-frame edge tidy without producing that cliff,
-# we linearly taper the clip amount over BOUNDARY_CAP_TAPER_MM: full clip at
-# the outer edge, zero clip at (BAND + TAPER) mm inward. Interior geometry
-# past the taper zone is untouched.
-BOUNDARY_CAP_TAPER_MM:   float = 5.0     # XY width of the taper zone past the full-strength band
-
 # Task #506 (fringe plateau cliff, FantasyGolfCourse H11 [152]): when the
 # green has significant relief the current design ("fringe holds green-edge Z
 # flat all the way to the frame", task 483) projects the green's edge Z
@@ -2129,13 +2108,12 @@ BOUNDARY_CAP_TAPER_MM:   float = 5.0     # XY width of the taper zone past the f
 #
 # Fix: once a fringe cell is more than FRINGE_GREEN_EDGE_TAPER_MM (horizontal
 # XY distance) from the green polygon, its Z is tapered from green_edge_h
-# toward min(green_edge_h, BOUNDARY_HEIGHT_CAP_MM). This preserves the
+# toward min(green_edge_h, FRINGE_GREEN_EDGE_TAPER_FLOOR_MM). This preserves the
 # seam-matching behaviour right at the green boundary (weight=0 there) and
 # for gentle greens (green_edge_h <= cap → target == source → no change),
 # but pulls tall plateaus down to the cap over a natural distance so
-# interior carve-out walls stay short and printable. The frame-edge boundary
-# cap (band + taper above) still runs on top of this for any residual
-# excess right at the picture-frame perimeter.
+# interior carve-out walls stay short and printable.
+FRINGE_GREEN_EDGE_TAPER_FLOOR_MM: float = 9.0   # Z the plateau taper decays toward (was BOUNDARY_HEIGHT_CAP_MM)
 FRINGE_GREEN_EDGE_TAPER_MM: float = 15.0  # XY distance over which fringe Z tapers from green_edge_h → cap
 
 # ---------------------------------------------------------------------------
@@ -3398,6 +3376,35 @@ def apply_z_scale(Z_mm: np.ndarray, inside_mask: np.ndarray, egm_data: dict) -> 
     return Z_mm, zs
 
 
+def finish_green_heights_mm(Z_soft: np.ndarray, inside_mask: np.ndarray, egm_data: dict) -> "tuple[np.ndarray, dict]":
+    """Raw (softened) solver heights -> final green mm heights, exactly as Generate does it.
+
+    Steps: _height_to_mm (rescale to the EGM Elevation range) -> limit_max_slope (absolute mm, so it is
+    NOT scale-proportional) -> apply_z_scale.  Shared by save_stl_meshes (green), run_pipeline (the
+    fringe seam heights) and the live 3D preview, so all three stay in lockstep.
+    Returns (Z_mm, info) with info keys: elevation_range_mm, z_range_pre, slope_stats (or None),
+    z_range_post_limit (or None), z_scale."""
+    elevation_range_mm = float(egm_data.get(EGM_KEY_ELEVATION_RANGE) or ELEVATION_RANGE_MM)
+    Z_mm = _height_to_mm(Z_soft, inside_mask, elevation_range_mm=elevation_range_mm)
+    valid_mm = Z_mm[inside_mask]
+    info: dict = {"elevation_range_mm": elevation_range_mm,
+                  "z_range_pre": (float(valid_mm.min()), float(valid_mm.max())),
+                  "slope_stats": None, "z_range_post_limit": None}
+    # Slope limiter (mm units): cap any cell whose Z rises more than _MAX_SLOPE_DELTA_MM above its
+    # highest 4-neighbor.  Passing elevation_range_mm equal to the current Z_mm range makes the raw->mm
+    # conversion inside limit_max_slope a no-op, so max_delta_mm is applied directly in mm.
+    z_range_mm = float(valid_mm.max() - valid_mm.min())
+    if z_range_mm > 0:
+        Z_mm, slope_stats = limit_max_slope(Z_mm, inside_mask, elevation_range_mm=z_range_mm)
+        valid_mm = Z_mm[inside_mask]
+        info["slope_stats"] = slope_stats
+        info["z_range_post_limit"] = (float(valid_mm.min()), float(valid_mm.max()))
+    # zScale after the limiter so artifact rejection stays strict (scales relief above BASE_THICKNESS_MM).
+    Z_mm, z_scale = apply_z_scale(Z_mm, inside_mask, egm_data)
+    info["z_scale"] = z_scale
+    return Z_mm, info
+
+
 def save_stl_meshes(
     Z_grid: np.ndarray,
     xs_grid: np.ndarray,
@@ -3417,44 +3424,22 @@ def save_stl_meshes(
     scale, centroid_px = _compute_px_to_mm(green_boundary_px, egm_data)
     print(f"  Scale: {scale:.6f} px→mm, centroid: {centroid_px}")
 
-    elevation_range_mm = float(egm_data.get(EGM_KEY_ELEVATION_RANGE) or ELEVATION_RANGE_MM)
+    Z_mm, _tail = finish_green_heights_mm(Z_grid, inside_mask, egm_data)
+    elevation_range_mm = _tail["elevation_range_mm"]
     print(f"  Elevation range from EGM: {elevation_range_mm} mm")
-    # `fringeEdgeHeight` intentionally NOT read here — the fringe Z math no
+    # `fringeEdgeHeight` intentionally NOT read here -- the fringe Z math no
     # longer ramps to a rectangle-edge target (task 483). The EGM key remains
     # on-disk for backward compatibility with existing .egm files.
-
-    Z_mm = _height_to_mm(Z_grid, inside_mask, elevation_range_mm=elevation_range_mm)
-    valid_mm = Z_mm[inside_mask]
-    print(f"  Z_mm range: {valid_mm.min():.3f} .. {valid_mm.max():.3f} mm")
-
-    # Slope limiter (mm units): cap any cell whose Z rises more than
-    # _MAX_SLOPE_DELTA_MM above its highest 4-neighbor. Passing
-    # elevation_range_mm equal to the current Z_mm range makes the
-    # raw→mm conversion inside limit_max_slope a no-op (raw_per_mm = 1),
-    # so max_delta_mm is applied directly in mm. Both the smooth and
-    # stepped green meshes below consume this filtered Z_mm, so the
-    # fringe seam (built later from the same underlying Z) inherits
-    # the reduced peak instead of chasing an artefact spike.
-    _z_range_mm = float(valid_mm.max() - valid_mm.min())
-    if _z_range_mm > 0:
-        Z_mm, _slope_stats = limit_max_slope(
-            Z_mm, inside_mask, elevation_range_mm=_z_range_mm,
-        )
-        valid_mm = Z_mm[inside_mask]
+    print(f"  Z_mm range: {_tail['z_range_pre'][0]:.3f} .. {_tail['z_range_pre'][1]:.3f} mm")
+    _slope_stats = _tail["slope_stats"]
+    if _slope_stats is not None:
         print(
             f"  limit_max_slope (Z_mm): max_delta={_slope_stats['max_delta_mm']:.2f} mm/cell, "
             f"iters={_slope_stats['iters']}, cells reduced={_slope_stats['cells_reduced']}, "
             f"first-pass max drop={_slope_stats['max_drop_mm']:.3f} mm"
         )
-        print(f"  Z_mm range post-limit: {valid_mm.min():.3f} .. {valid_mm.max():.3f} mm")
-
-    # zScale: user-dialed vertical amplitude multiplier (default 1.0 = unchanged).
-    # Applied after limit_max_slope so artifact rejection stays strict. Scales
-    # relief above BASE_THICKNESS_MM so the base plate itself is unaffected.
-    # Clamped to [0.5, 5.0]: below 0.5 the plaque is too shallow to read as 3D;
-    # above 5.0 the geometry pushes toward unprintable overhangs on the Bambu A1.
-    # 2026-10-09, replaces the rescale-after-limiter (reverted this same turn).
-    Z_mm, _z_scale = apply_z_scale(Z_mm, inside_mask, egm_data)
+        print(f"  Z_mm range post-limit: {_tail['z_range_post_limit'][0]:.3f} .. {_tail['z_range_post_limit'][1]:.3f} mm")
+    _z_scale = _tail["z_scale"]
     valid_mm = Z_mm[inside_mask]
     if abs(_z_scale - 1.0) > Z_SCALE_UNITY_TOL:
         print(
@@ -4054,8 +4039,13 @@ def _build_tps_grid_height_field(
     bnd_z: np.ndarray,
     grid_x: np.ndarray,
     grid_y: np.ndarray,
+    default_memo: "dict | None" = None,
 ) -> np.ndarray:
     """Build a C²-smooth global height field driven by a 20×20 grid of cell constraints.
+
+    ``default_memo`` (v6.34, optional): a dict the caller keeps between calls that share the same
+    green rim; the per-cell default heights (``_fringe_default_z``) are stored in it once and reused.
+    The result is identical with or without it.
 
     For each of the 400 grid cells:
       - **Default Z**: sampled from ``bnd_z`` via nearest-neighbour KDTree lookup on
@@ -4137,7 +4127,12 @@ def _build_tps_grid_height_field(
 
     # v6.25: smooth whole-rim blend instead of the nearest rim point's Z (which made a cliff
     # wherever the nearest rim point switches).  See _fringe_default_z / FRINGE_DEFAULT_*.
-    cell_defaults = _fringe_default_z(cell_centres, green_bnd_mm, bnd_z)  # (n_cells,) — mutable; user values go here
+    if default_memo is not None and GRID_SIZE in default_memo:
+        cell_defaults = default_memo[GRID_SIZE].copy()
+    else:
+        cell_defaults = _fringe_default_z(cell_centres, green_bnd_mm, bnd_z)  # (n_cells,) — mutable; user values go here
+        if default_memo is not None:
+            default_memo[GRID_SIZE] = cell_defaults.copy()
 
     # ── Step 2: Merge user-set values over defaults ───────────────────────────
     # gridMode (task 774, v5.34) determines how gridCellHeights values are interpreted:
@@ -4225,6 +4220,7 @@ def _normalize_green_fringe_interface(
     green_bnd_mm: np.ndarray,
     bnd_z: np.ndarray,
     blend_cells: float = FRINGE_BLEND_CELLS,
+    bnd_kd=None,
 ) -> np.ndarray:
     """Blend the TPS fringe surface toward green boundary Z near the green edge.
 
@@ -4247,6 +4243,8 @@ def _normalize_green_fringe_interface(
     bnd_z     : (N,) Z value at each boundary point in mm.
     blend_cells : blend band width in 20×20 TPS grid cells; converted to mm
                   using the actual half-extent so it scales with print size.
+    bnd_kd    : optional prebuilt cKDTree over ``green_bnd_mm`` (v6.34: the live preview caches it; the
+                result is identical to building it here).
     """
     from scipy.spatial import cKDTree as _KDT
 
@@ -4254,9 +4252,12 @@ def _normalize_green_fringe_interface(
     cell_side_mm = (2.0 * half) / GRID_N_DEFAULT
     W_mm = blend_cells * cell_side_mm
 
-    bnd_kd = _KDT(green_bnd_mm)
+    if bnd_kd is None:
+        bnd_kd = _KDT(green_bnd_mm)
     pts = np.column_stack([grid_x.ravel(), grid_y.ravel()])
-    dists, idxs = bnd_kd.query(pts, k=1)
+    # v6.34: only points inside the band matter, so the nearest-point search is capped at W_mm (points
+    # farther away come back as dist=inf, idx=len) -- identical in-band results, far faster on a dense rim.
+    dists, idxs = bnd_kd.query(pts, k=1, distance_upper_bound=W_mm)
     dists = dists.reshape(grid_x.shape)
     idxs = idxs.reshape(grid_x.shape)
 
@@ -4265,8 +4266,8 @@ def _normalize_green_fringe_interface(
         return z_tps
 
     # Cosine weight: 1 at boundary, 0 at W_mm.
-    w = np.where(in_band, 0.5 * (1.0 + np.cos(np.pi * dists / W_mm)), 0.0)
-    target_z = bnd_z[idxs]  # nearest boundary Z for every grid point
+    w = np.where(in_band, 0.5 * (1.0 + np.cos(np.pi * np.where(in_band, dists, 0.0) / W_mm)), 0.0)
+    target_z = bnd_z[np.minimum(idxs, len(bnd_z) - 1)]  # nearest boundary Z (only read where in_band)
 
     z_out = z_tps.copy()
     z_out = np.where(in_band, (1.0 - w) * z_tps + w * target_z, z_tps)
@@ -4276,53 +4277,192 @@ def _normalize_green_fringe_interface(
     return z_out
 
 
-def build_fringe_mesh(
+def _fringe_boundary_z(
     Z_mm: np.ndarray,
-    xs_grid: np.ndarray,
-    ys_grid: np.ndarray,
     inside_mask: np.ndarray,
-    green_boundary_px: np.ndarray,
+    xs_mm_green: np.ndarray,
+    ys_mm_green: np.ndarray,
+    gbnd: np.ndarray,
     egm_data: dict,
-    fringe_grid_res: int = FRINGE_GRID_RES,
-    holes: list | None = None,
-) -> trimesh.Trimesh:
-    """
-    Build a tapered fringe mesh that:
-    - Surrounds the green polygon
-    - Is bounded by the PRINT_SIZE_MM square centred at origin (mm coords)
-    - Excludes sand trap and water polygons (so their inset slabs sit in a
-      true recess in the fringe rather than overlapping a flush surface)
-    - Holds green-edge Z flat all the way to the frame — no ramp toward
-      the rectangle boundary (task 483). Prior implementation tapered from
-      green-edge height to a per-hole rectangle-edge target.
-
-    Parameters
-    ----------
-    holes : list of (cx, cy, radius) tuples in mm coords.
-        Each hole will be baked into the mesh as a clean cylindrical cutout
-        with vertical walls connecting the top surface to z=0.
-
-    Returns a closed trimesh.Trimesh in mm coords.
-    """
+    scale: float,
+    centroid_px: np.ndarray,
+    effective_z_ceiling_mm: float,
+) -> np.ndarray:
+    """Green-rim height at every ``gbnd`` point (the fringe's Poisson default), with the
+    fringeBoundaryHeights anchors injected.  Extracted verbatim from build_fringe_mesh (v6.34) so the live
+    3D preview calls the very same code.  ``effective_z_ceiling_mm`` is _fringe_z_ceiling_mm()."""
     from scipy.spatial import cKDTree
-    from collections import defaultdict
+    _effective_z_ceiling_mm = effective_z_ceiling_mm
+    # Pre-build KD-tree of valid green grid cells for fast Z lookups.
+    # Fringe always samples the raw smooth Z_mm — never the terraced
+    # quantization — so the fringe surface prints smooth regardless of the
+    # green's style. Seam-reseat below uses the same smooth source, so the
+    # inner-boundary snap stays continuous with the fringe interior.
+    _Z_lerp_src = Z_mm
 
-    _elevation_range_mm = float(egm_data.get(EGM_KEY_ELEVATION_RANGE) or ELEVATION_RANGE_MM)
+    # Apply perimeter median filter to the lerp source so it matches the
+    # filtered Z_for_seam below (built with the same recipe + filter). This
+    # keeps the lerp baseline at the green edge and the seam-reseat snap
+    # targets in lockstep — no step at the seam between the lerp source and
+    # the seam vertices.
+    _Z_lerp_src = _perimeter_median_filter(_Z_lerp_src, inside_mask, window=PERIMETER_MEDIAN_WINDOW_PX)
 
-    # zScale applied in the main pipeline — ceiling must account for vertical stretch.
-    _z_scale_raw_fringe = (egm_data or {}).get(EGM_KEY_Z_SCALE)
+    valid_rows_g, valid_cols_g = np.where(inside_mask)
+    green_cell_xy = np.column_stack([xs_mm_green[valid_cols_g], ys_mm_green[valid_rows_g]])
+    green_cell_z  = _Z_lerp_src[valid_rows_g, valid_cols_g]
+    green_kd = cKDTree(green_cell_xy)
+
+
+    # Task #509 (Michelbook H12 [102] concave-polygon flip cliffs, Topo):
+    #
+    # The original design sampled `green_edge_h` by projecting the fringe cell
+    # to the SINGLE nearest boundary point, then IDW-averaging Z from the
+    # K=4 green cells adjacent to that projection. On a concave green polygon
+    # this creates a **hard cliff** in the fringe Z field: as a fringe cell
+    # crosses the medial axis of the concave region, its nearest-boundary
+    # projection jumps from one edge segment to a DIFFERENT edge segment
+    # (potentially on the opposite side of the polygon, at a very different
+    # Z). IDW around that projection point can't smooth the flip because the
+    # 4 sampled cells all sit at the new projection — the *entire* sampled
+    # neighbourhood snaps at once.
+    #
+    # Fix: sample `green_edge_h` as a spatially-smooth field over the fringe
+    # cell's own XY. For each fringe cell, take the K_BND_IDW nearest
+    # **boundary polyline points** (from the cell itself, not the projection)
+    # and IDW-blend their Z. Each boundary polyline point contributes its
+    # closest-green-cell Z. The set of top-K boundary points varies
+    # continuously with (x, y), so the sampled field varies continuously too.
+    #
+    # At the boundary itself (d_to_green → 0) the nearest boundary point has
+    # weight → ∞ and its Z dominates, so the seam-match property (task #483:
+    # fringe Z equals green Z at the shared boundary) is preserved exactly.
+    #
+    # Far from the boundary (into the interior of a concave notch), the K
+    # boundary points span both competing edge segments, so the sampled Z
+    # is a smooth blend of both — no discontinuity.
+    #
+    # K=24 chosen empirically: at ~2 mm boundary-point spacing (typical on a
+    # 300 mm-perimeter green with 176 densified points), 24 pts cover ~50 mm
+    # of arc, wide enough to bridge the concave flip on H12 but narrow enough
+    # to preserve local Z structure on convex greens.
+    K_BND_IDW = min(BOUNDARY_IDW_NEIGHBOURS, len(gbnd))
+
+    # Pre-compute boundary-point Z by looking up the nearest green cell Z for
+    # each boundary point. This is O(N_bnd) and only runs once per hole.
+    _bnd_nearest_dists, _bnd_nearest_idxs = green_kd.query(gbnd, k=1)
+    bnd_z = green_cell_z[_bnd_nearest_idxs].copy()  # shape (N_bnd,) — mutable copy
+
+    # ── Fringe boundary height anchors (task 658, Sienna) ────────────────────
+    # Exterior OCR markers (numbers printed on the black boundary line outside
+    # the green) set the fringe Z — and the green seam Z — at the nearest
+    # boundary interface point.  Approach A: override `bnd_z` entries before
+    # the per-cell IDW interpolation runs; the existing loop uses `bnd_z` as
+    # its interpolation source, so the anchors propagate automatically.
+    #
+    # The `gbnd` polyline is very dense (~0.2 mm spacing after Catmull-Rom
+    # densification).  A single overridden entry is diluted to near zero in
+    # K=24 IDW (the other 23 entries in the nearest-K set stay at natural Z).
+    # Fix: override the K_BND_IDW nearest gbnd points to the anchor location.
+    # When a fringe cell queries its K=24 nearest boundary points, all K of
+    # them are now anchored → the IDW returns exactly anchor_Z.
+    #
+    # Multiple anchors: each anchor owns the K_BND_IDW nearest gbnd indices
+    # from its own projection.  If two anchors overlap, the later one wins
+    # (harmless — OCR values in the same region should agree to within 0.5mm).
+    #
+    # Green-side continuity: `bnd_z` drives the fringe IDW, and the seam-reseat
+    # section below uses `g_bdry_arr` (green top-boundary ring Z) as a separate
+    # KD-tree source.  Both are overridden independently with the same anchor Z
+    # so fringe Z == green seam Z at the interface.
+    _raw_fbh = egm_data.get("fringeBoundaryHeights") or []
+    _fbh_anchor_count = 0
+    if _raw_fbh:
+        gbnd_kd_anchors = cKDTree(gbnd)   # (N_bnd, 2) — reused in seam section
+        _k_override = K_BND_IDW          # override this many consecutive boundary pts
+        for _fbh in _raw_fbh:
+            try:
+                _ax_px = float(_fbh["x"])
+                _ay_px = float(_fbh["y"])
+                _av_mm = float(_fbh["value"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if not (0.0 < _av_mm <= OCR_SPIKE_MAX_MM):
+                continue   # reject out-of-range values (matches _OCR_SPIKE_MAX_MM)
+            # Convert pixel coords to mm-space using the same transform as polygons
+            _a_mm = _px_to_mm_2d(
+                np.array([[_ax_px, _ay_px]], dtype=np.float64), scale, centroid_px
+            )[0]
+            # Find K_BND_IDW nearest gbnd points; override all of them so that
+            # any fringe cell whose IDW set includes the anchor area returns
+            # anchor_Z as the dominant value.
+            _k = min(_k_override, len(gbnd))
+            _adists, _aidxs = gbnd_kd_anchors.query(_a_mm[:2], k=_k)
+            _aidxs = np.atleast_1d(_aidxs)
+            _adists = np.atleast_1d(_adists)
+            _nearest_dist = float(_adists[0]) if len(_adists) > 0 else 0.0
+            # Clamp to sane elevation range (honours user grid cells above Poisson range)
+            _z_anchor = max(BASE_THICKNESS_MM,
+                            min(_av_mm, _effective_z_ceiling_mm))
+            for _ai in _aidxs:
+                bnd_z[int(_ai)] = _z_anchor
+            _fbh_anchor_count += 1
+            print(
+                f"  FringeBoundaryAnchor: px=({_ax_px:.1f},{_ay_px:.1f}) "
+                f"→ mm=({_a_mm[0]:+.2f},{_a_mm[1]:+.2f}) "
+                f"→ nearest gbnd=({gbnd[int(_aidxs[0]),0]:+.2f},{gbnd[int(_aidxs[0]),1]:+.2f}) "
+                f"value={_av_mm:.3f} mm "
+                f"(override {len(_aidxs)} pts, nearest dist={_nearest_dist:.2f} mm)"
+            )
+        if _fbh_anchor_count:
+            print(f"  Fringe boundary anchors: {_fbh_anchor_count} anchor(s) "
+                  f"injected into bnd_z ({_k_override} pts each, Approach A)")
+    return bnd_z
+
+
+def _fringe_z_ceiling_mm(egm_data: dict, egm_fringe: dict) -> float:
+    """Effective fringe Z ceiling (mm): the scaled Poisson maximum OR the highest user grid cell
+    (grid-cell deltas are literal mm, not scaled).  ``egm_fringe`` is egm_data with bunker-owned cells
+    removed.  Extracted from build_fringe_mesh (v6.34), shared with the live 3D preview."""
+    elevation_range_mm = float(egm_data.get(EGM_KEY_ELEVATION_RANGE) or ELEVATION_RANGE_MM)
+    # zScale applied in the main pipeline -- ceiling must account for vertical stretch.
+    z_scale_raw = (egm_data or {}).get(EGM_KEY_Z_SCALE)
     try:
-        _z_scale_fringe = max(Z_SCALE_MIN, min(Z_SCALE_MAX, float(_z_scale_raw_fringe))) if _z_scale_raw_fringe is not None else 1.0
+        z_scale = max(Z_SCALE_MIN, min(Z_SCALE_MAX, float(z_scale_raw))) if z_scale_raw is not None else 1.0
     except (TypeError, ValueError):
-        _z_scale_fringe = 1.0
+        z_scale = 1.0
+    grid_heights = (egm_fringe or {}).get(EGM_KEY_GRID_CELL_HEIGHTS) or {}
+    max_positive_delta = 0.0
+    if grid_heights:
+        try:
+            max_positive_delta = max(0.0, max(float(v) for v in grid_heights.values()))
+        except (TypeError, ValueError):
+            max_positive_delta = 0.0
+    user_cell_max_mm = (BASE_THICKNESS_MM + elevation_range_mm) + max_positive_delta
+    return max(BASE_THICKNESS_MM + elevation_range_mm * z_scale, user_cell_max_mm)
 
-    # Effective Z ceiling for mesh clamps: honour user-set grid cells that
-    # push above the Poisson-driven elevation range.  gridCellHeights values
-    # are now ADDITIVE OFFSETS, not absolute Z values, so we cannot use the
-    # raw values as a ceiling.  Overshoot is harmless — the ceiling only
-    # prevents false clipping; a too-high ceiling costs nothing.
-    # v5.82: cells fully inside a bunker belong to that bunker, not the fringe --
-    # the fringe topology (TPS, ceilings) is computed from every set cell EXCEPT those.
+
+def _fringe_tps_surface(egm_fringe, green_bnd_mm, bnd_z, grid_x, grid_y, bnd_kd=None, default_memo=None) -> np.ndarray:
+    """Fringe TPS height field on (grid_x, grid_y): the cell-driven TPS, then the cosine blend toward the
+    green rim.  Extracted from build_fringe_mesh (v6.34), shared with the live 3D preview (which passes a
+    cached boundary KD-tree and default-height memo; the result is identical without them)."""
+    z_tps = _build_tps_grid_height_field(
+        egm_data=egm_fringe, green_bnd_mm=green_bnd_mm, bnd_z=bnd_z, grid_x=grid_x, grid_y=grid_y,
+        default_memo=default_memo)
+    return _normalize_green_fringe_interface(
+        z_tps=z_tps, grid_x=grid_x, grid_y=grid_y, green_bnd_mm=green_bnd_mm, bnd_z=bnd_z, bnd_kd=bnd_kd)
+
+
+def _fringe_clamp_z(green_edge_h, r, c, fringe_grid_res: int, effective_z_ceiling_mm: float):
+    """Final per-cell fringe clamp: printability floor (+ the tiny anti-plateau tilt) and the ceiling.
+    Works on scalars and on numpy arrays (r, c broadcast).  Extracted from build_fringe_mesh (v6.34)."""
+    tilt = FRINGE_PLATEAU_TILT_MM * (r + c) / (2 * (fringe_grid_res - 1))
+    floor = FRINGE_MIN_THICKNESS_MM + tilt   # v6.20: printability floor, not BASE
+    return np.maximum(floor, np.minimum(green_edge_h, effective_z_ceiling_mm))
+
+
+def _fringe_egm_data(egm_data: dict, green_boundary_px: np.ndarray, holes):
+    """(egm_fringe, bunker_owned): egm_data with every bunker-owned grid cell removed from gridCellHeights
+    (v5.82: those cells shape the bunker, not the fringe TPS).  Extracted from build_fringe_mesh (v6.34)."""
     _hole_pipe_circle = None
     if holes:
         from shapely.geometry import Point as _ShapelyPointOwn
@@ -4335,46 +4475,24 @@ def build_fringe_mesh(
             egm_data, green_boundary_px, _hole_pipe_circle, owned=_bunker_owned)
         print(f"  [bunker-cells] {sum(len(c) for _f, c in _bunker_owned.values())} set cell(s) fully "
               f"inside {len(_bunker_owned)} bunker(s) excluded from the fringe TPS")
-    _grid_heights = (_egm_fringe or {}).get(EGM_KEY_GRID_CELL_HEIGHTS) or {}
-    _max_positive_delta = 0.0
-    if _grid_heights:
-        try:
-            _max_positive_delta = max(0.0, max(float(v) for v in _grid_heights.values()))
-        except (TypeError, ValueError):
-            _max_positive_delta = 0.0
-    _user_cell_max_mm = (BASE_THICKNESS_MM + _elevation_range_mm) + _max_positive_delta
-    # Ceiling = scaled Poisson max OR user-cell max (grid-cell deltas are literal mm, not scaled).
-    _effective_z_ceiling_mm = max(
-        BASE_THICKNESS_MM + _elevation_range_mm * _z_scale_fringe,
-        _user_cell_max_mm,
-    )
+    return _egm_fringe, _bunker_owned
 
-    scale, centroid_px = _compute_px_to_mm(green_boundary_px, egm_data)
 
-    # mm coords of the green grid (used for Z lookups)
-    xs_mm_green = (xs_grid - centroid_px[0]) * scale        # shape (grid_res,)
-    ys_mm_green = -(ys_grid - centroid_px[1]) * scale       # shape (grid_res,), Y flipped
+class FringeCarve(NamedTuple):
+    """What carves the fringe: every trap / water / boulders-annulus shape (world mm)."""
+    trap_polys_mm: list
+    trap_shapely: list
+    water_polys_mm: list
+    water_shapely: list
+    boulders_annulus_shapely: list
+    trap_carve: list
+    water_carve: list
+    traps_union: object   # Shapely geometry or None
 
-    half = FRINGE_HALF_MM  # ±89.625 mm + signed offset per edge
 
-    # --- Build a grid covering the FULL print rectangle in mm coords ---
-    xs_mm = np.linspace(-half, half, fringe_grid_res)
-    ys_mm = np.linspace(-half, half, fringe_grid_res)
-
-    # --- Convert green boundary to mm for inside/outside tests ---
-    green_bnd_mm = _px_to_mm_2d(green_boundary_px.copy(), scale, centroid_px)
-    _green_bnd_mm_closed = np.vstack([green_bnd_mm, green_bnd_mm[0:1]])  # for polyline dist
-
-    # --- Collect trap + water polygons in mm coords ---
-    # Water polygons get the same fringe carve-out treatment as sand traps so
-    # their inset slabs (export_water_meshes) sit in a real void rather than on
-    # top of an unbroken fringe — overlapping slabs were the source of the
-    # 1,129 non-manifold edges Thomas reported on PGA West-Arnold Palmer #5.
-    #
-    # #347: subtract the mount-pipe footprint from each trap/water shapely
-    # polygon BEFORE the union → traps_union. Otherwise the fringe carve-out
-    # would remove material under the pipe where there's no longer any
-    # trap/water material to host the slab — the pipe would sit on a hole.
+def _fringe_carve_shapes(egm_data: dict, scale: float, centroid_px: np.ndarray, holes) -> FringeCarve:
+    """Collect the trap / water / boulders-annulus shapes that are carved out of the fringe, plus their
+    union.  Extracted verbatim from build_fringe_mesh (v6.34) so the live 3D preview carves the same holes."""
     trap_polys_mm: list[np.ndarray] = []
     trap_shapely: list[ShapelyPolygon] = []
     water_polys_mm: list[np.ndarray] = []
@@ -4482,31 +4600,6 @@ def build_fringe_mesh(
             except Exception as _exc_ba:
                 print(f"  WARNING: fringe boulders-annulus carve failed: {_exc_ba}")
 
-    # --- Build Shapely green polygon for point-in-polygon tests ---
-    print(f"  {LOG_TAG_GREEN_CARVE} building green ShapelyPolygon from {len(green_bnd_mm)} boundary pts")
-    green_shapely = ShapelyPolygon(green_bnd_mm)
-    if not green_shapely.is_valid:
-        print(f"  {LOG_TAG_GREEN_CARVE} green polygon invalid → buffer(0) repair")
-        green_shapely = green_shapely.buffer(0)
-    print(f"  {LOG_TAG_GREEN_CARVE} green area={green_shapely.area:.2f} mm² valid={green_shapely.is_valid}")
-
-    # Task 677 (Topo, 2026-08-28): expand the green polygon by GREEN_FRINGE_GAP_MM
-    # for the fringe-exclusion test ONLY. This carves a deterministic slit
-    # between the green outer edge and the fringe inner edge so the printed
-    # pieces slide together instead of interfering at the seam. `green_shapely`
-    # itself is left unmodified because downstream code (seam-Z sampling,
-    # bnd_z lookups) needs the exact green edge to preserve seam-match Z.
-    if GREEN_FRINGE_GAP_MM > 0:
-        print(f"  {LOG_TAG_GREEN_CARVE} buffering green by +{GREEN_FRINGE_GAP_MM} mm for exclusion")
-        green_shapely_exclusion = green_shapely.buffer(+GREEN_FRINGE_GAP_MM)
-        if not green_shapely_exclusion.is_valid:
-            print(f"  {LOG_TAG_GREEN_CARVE} exclusion polygon invalid → buffer(0) repair")
-            green_shapely_exclusion = green_shapely_exclusion.buffer(0)
-    else:
-        print(f"  {LOG_TAG_GREEN_CARVE} GREEN_FRINGE_GAP_MM == 0 → exclusion polygon == green polygon (identity)")
-        green_shapely_exclusion = green_shapely
-    print(f"  {LOG_TAG_GREEN_CARVE} exclusion ready: area={green_shapely_exclusion.area:.2f} mm² empty={green_shapely_exclusion.is_empty}")
-
     # Union all traps + water + boulders-annuli polygons.  They share the same
     # carve-out role: any fringe cell falling inside any of these shapes is
     # excluded so the corresponding slab can drop into a real recess.
@@ -4558,6 +4651,118 @@ def build_fringe_mesh(
     else:
         traps_union = None
 
+    return FringeCarve(trap_polys_mm, trap_shapely, water_polys_mm, water_shapely,
+                       boulders_annulus_shapely, _trap_carve, _water_carve, traps_union)
+
+
+def _green_exclusion_polygons(green_bnd_mm: np.ndarray):
+    """(green_shapely, green_shapely_exclusion): the green and the GREEN_FRINGE_GAP_MM-buffered copy used
+    to exclude fringe cells.  Extracted verbatim from build_fringe_mesh (v6.34)."""
+    # --- Build Shapely green polygon for point-in-polygon tests ---
+    print(f"  {LOG_TAG_GREEN_CARVE} building green ShapelyPolygon from {len(green_bnd_mm)} boundary pts")
+    green_shapely = ShapelyPolygon(green_bnd_mm)
+    if not green_shapely.is_valid:
+        print(f"  {LOG_TAG_GREEN_CARVE} green polygon invalid → buffer(0) repair")
+        green_shapely = green_shapely.buffer(0)
+    print(f"  {LOG_TAG_GREEN_CARVE} green area={green_shapely.area:.2f} mm² valid={green_shapely.is_valid}")
+
+    # Task 677 (Topo, 2026-08-28): expand the green polygon by GREEN_FRINGE_GAP_MM
+    # for the fringe-exclusion test ONLY. This carves a deterministic slit
+    # between the green outer edge and the fringe inner edge so the printed
+    # pieces slide together instead of interfering at the seam. `green_shapely`
+    # itself is left unmodified because downstream code (seam-Z sampling,
+    # bnd_z lookups) needs the exact green edge to preserve seam-match Z.
+    if GREEN_FRINGE_GAP_MM > 0:
+        print(f"  {LOG_TAG_GREEN_CARVE} buffering green by +{GREEN_FRINGE_GAP_MM} mm for exclusion")
+        green_shapely_exclusion = green_shapely.buffer(+GREEN_FRINGE_GAP_MM)
+        if not green_shapely_exclusion.is_valid:
+            print(f"  {LOG_TAG_GREEN_CARVE} exclusion polygon invalid → buffer(0) repair")
+            green_shapely_exclusion = green_shapely_exclusion.buffer(0)
+    else:
+        print(f"  {LOG_TAG_GREEN_CARVE} GREEN_FRINGE_GAP_MM == 0 → exclusion polygon == green polygon (identity)")
+        green_shapely_exclusion = green_shapely
+    print(f"  {LOG_TAG_GREEN_CARVE} exclusion ready: area={green_shapely_exclusion.area:.2f} mm² empty={green_shapely_exclusion.is_empty}")
+    return green_shapely, green_shapely_exclusion
+
+
+def build_fringe_mesh(
+    Z_mm: np.ndarray,
+    xs_grid: np.ndarray,
+    ys_grid: np.ndarray,
+    inside_mask: np.ndarray,
+    green_boundary_px: np.ndarray,
+    egm_data: dict,
+    fringe_grid_res: int = FRINGE_GRID_RES,
+    holes: list | None = None,
+) -> trimesh.Trimesh:
+    """
+    Build a tapered fringe mesh that:
+    - Surrounds the green polygon
+    - Is bounded by the PRINT_SIZE_MM square centred at origin (mm coords)
+    - Excludes sand trap and water polygons (so their inset slabs sit in a
+      true recess in the fringe rather than overlapping a flush surface)
+    - Holds green-edge Z flat all the way to the frame — no ramp toward
+      the rectangle boundary (task 483). Prior implementation tapered from
+      green-edge height to a per-hole rectangle-edge target.
+
+    Parameters
+    ----------
+    holes : list of (cx, cy, radius) tuples in mm coords.
+        Each hole will be baked into the mesh as a clean cylindrical cutout
+        with vertical walls connecting the top surface to z=0.
+
+    Returns a closed trimesh.Trimesh in mm coords.
+    """
+    from scipy.spatial import cKDTree
+    from collections import defaultdict
+
+    _elevation_range_mm = float(egm_data.get(EGM_KEY_ELEVATION_RANGE) or ELEVATION_RANGE_MM)
+
+    # Effective Z ceiling for mesh clamps: honour user-set grid cells that
+    # push above the Poisson-driven elevation range.  gridCellHeights values
+    # are now ADDITIVE OFFSETS, not absolute Z values, so we cannot use the
+    # raw values as a ceiling.  Overshoot is harmless — the ceiling only
+    # prevents false clipping; a too-high ceiling costs nothing.
+    # v5.82: cells fully inside a bunker belong to that bunker, not the fringe --
+    # the fringe topology (TPS, ceilings) is computed from every set cell EXCEPT those.
+    _egm_fringe, _bunker_owned = _fringe_egm_data(egm_data, green_boundary_px, holes)
+    _effective_z_ceiling_mm = _fringe_z_ceiling_mm(egm_data, _egm_fringe)
+
+    scale, centroid_px = _compute_px_to_mm(green_boundary_px, egm_data)
+
+    # mm coords of the green grid (used for Z lookups)
+    xs_mm_green = (xs_grid - centroid_px[0]) * scale        # shape (grid_res,)
+    ys_mm_green = -(ys_grid - centroid_px[1]) * scale       # shape (grid_res,), Y flipped
+
+    half = FRINGE_HALF_MM  # ±89.625 mm + signed offset per edge
+
+    # --- Build a grid covering the FULL print rectangle in mm coords ---
+    xs_mm = np.linspace(-half, half, fringe_grid_res)
+    ys_mm = np.linspace(-half, half, fringe_grid_res)
+
+    # --- Convert green boundary to mm for inside/outside tests ---
+    green_bnd_mm = _px_to_mm_2d(green_boundary_px.copy(), scale, centroid_px)
+    _green_bnd_mm_closed = np.vstack([green_bnd_mm, green_bnd_mm[0:1]])  # for polyline dist
+
+    # --- Collect trap + water polygons in mm coords ---
+    # Water polygons get the same fringe carve-out treatment as sand traps so
+    # their inset slabs (export_water_meshes) sit in a real void rather than on
+    # top of an unbroken fringe — overlapping slabs were the source of the
+    # 1,129 non-manifold edges Thomas reported on PGA West-Arnold Palmer #5.
+    #
+    # #347: subtract the mount-pipe footprint from each trap/water shapely
+    # polygon BEFORE the union → traps_union. Otherwise the fringe carve-out
+    # would remove material under the pipe where there's no longer any
+    # trap/water material to host the slab — the pipe would sit on a hole.
+    # v6.34: the carve shapes and the green exclusion polygon are built by shared helpers
+    # (_fringe_carve_shapes / _green_exclusion_polygons) that the live 3D preview also calls.
+    _carve = _fringe_carve_shapes(egm_data, scale, centroid_px, holes)
+    trap_polys_mm, trap_shapely = _carve.trap_polys_mm, _carve.trap_shapely
+    water_polys_mm, water_shapely = _carve.water_polys_mm, _carve.water_shapely
+    boulders_annulus_shapely = _carve.boulders_annulus_shapely
+    _trap_carve, _water_carve, traps_union = _carve.trap_carve, _carve.water_carve, _carve.traps_union
+    green_shapely, green_shapely_exclusion = _green_exclusion_polygons(green_bnd_mm)
+
     print(f"  Fringe grid: {fringe_grid_res}x{fringe_grid_res} over ±{half:.2f} mm")
     print(f"  Green boundary: {len(green_bnd_mm)} mm-space points")
     print(f"  Trap polygons: {len(trap_polys_mm)}")
@@ -4571,138 +4776,16 @@ def build_fringe_mesh(
     fringe_mask = np.zeros((fringe_grid_res, fringe_grid_res), dtype=bool)
     Z_fringe = np.full((fringe_grid_res, fringe_grid_res), np.nan)
 
-    # Pre-build KD-tree of valid green grid cells for fast Z lookups.
-    # Fringe always samples the raw smooth Z_mm — never the terraced
-    # quantization — so the fringe surface prints smooth regardless of the
-    # green's style. Seam-reseat below uses the same smooth source, so the
-    # inner-boundary snap stays continuous with the fringe interior.
-    _Z_lerp_src = Z_mm
-
-    # Apply perimeter median filter to the lerp source so it matches the
-    # filtered Z_for_seam below (built with the same recipe + filter). This
-    # keeps the lerp baseline at the green edge and the seam-reseat snap
-    # targets in lockstep — no step at the seam between the lerp source and
-    # the seam vertices.
-    _Z_lerp_src = _perimeter_median_filter(_Z_lerp_src, inside_mask, window=PERIMETER_MEDIAN_WINDOW_PX)
-
-    valid_rows_g, valid_cols_g = np.where(inside_mask)
-    green_cell_xy = np.column_stack([xs_mm_green[valid_cols_g], ys_mm_green[valid_rows_g]])
-    green_cell_z  = _Z_lerp_src[valid_rows_g, valid_cols_g]
-    green_kd = cKDTree(green_cell_xy)
-
     # Pre-build array of green boundary points in mm for vectorised dist
     gbnd = green_bnd_mm  # (N, 2)
-
-    # Task #509 (Michelbook H12 [102] concave-polygon flip cliffs, Topo):
-    #
-    # The original design sampled `green_edge_h` by projecting the fringe cell
-    # to the SINGLE nearest boundary point, then IDW-averaging Z from the
-    # K=4 green cells adjacent to that projection. On a concave green polygon
-    # this creates a **hard cliff** in the fringe Z field: as a fringe cell
-    # crosses the medial axis of the concave region, its nearest-boundary
-    # projection jumps from one edge segment to a DIFFERENT edge segment
-    # (potentially on the opposite side of the polygon, at a very different
-    # Z). IDW around that projection point can't smooth the flip because the
-    # 4 sampled cells all sit at the new projection — the *entire* sampled
-    # neighbourhood snaps at once.
-    #
-    # Fix: sample `green_edge_h` as a spatially-smooth field over the fringe
-    # cell's own XY. For each fringe cell, take the K_BND_IDW nearest
-    # **boundary polyline points** (from the cell itself, not the projection)
-    # and IDW-blend their Z. Each boundary polyline point contributes its
-    # closest-green-cell Z. The set of top-K boundary points varies
-    # continuously with (x, y), so the sampled field varies continuously too.
-    #
-    # At the boundary itself (d_to_green → 0) the nearest boundary point has
-    # weight → ∞ and its Z dominates, so the seam-match property (task #483:
-    # fringe Z equals green Z at the shared boundary) is preserved exactly.
-    #
-    # Far from the boundary (into the interior of a concave notch), the K
-    # boundary points span both competing edge segments, so the sampled Z
-    # is a smooth blend of both — no discontinuity.
-    #
-    # K=24 chosen empirically: at ~2 mm boundary-point spacing (typical on a
-    # 300 mm-perimeter green with 176 densified points), 24 pts cover ~50 mm
-    # of arc, wide enough to bridge the concave flip on H12 but narrow enough
-    # to preserve local Z structure on convex greens.
     K_BND_IDW = min(BOUNDARY_IDW_NEIGHBOURS, len(gbnd))
-
-    # Pre-compute boundary-point Z by looking up the nearest green cell Z for
-    # each boundary point. This is O(N_bnd) and only runs once per hole.
-    _bnd_nearest_dists, _bnd_nearest_idxs = green_kd.query(gbnd, k=1)
-    bnd_z = green_cell_z[_bnd_nearest_idxs].copy()  # shape (N_bnd,) — mutable copy
-
-    # ── Fringe boundary height anchors (task 658, Sienna) ────────────────────
-    # Exterior OCR markers (numbers printed on the black boundary line outside
-    # the green) set the fringe Z — and the green seam Z — at the nearest
-    # boundary interface point.  Approach A: override `bnd_z` entries before
-    # the per-cell IDW interpolation runs; the existing loop uses `bnd_z` as
-    # its interpolation source, so the anchors propagate automatically.
-    #
-    # The `gbnd` polyline is very dense (~0.2 mm spacing after Catmull-Rom
-    # densification).  A single overridden entry is diluted to near zero in
-    # K=24 IDW (the other 23 entries in the nearest-K set stay at natural Z).
-    # Fix: override the K_BND_IDW nearest gbnd points to the anchor location.
-    # When a fringe cell queries its K=24 nearest boundary points, all K of
-    # them are now anchored → the IDW returns exactly anchor_Z.
-    #
-    # Multiple anchors: each anchor owns the K_BND_IDW nearest gbnd indices
-    # from its own projection.  If two anchors overlap, the later one wins
-    # (harmless — OCR values in the same region should agree to within 0.5mm).
-    #
-    # Green-side continuity: `bnd_z` drives the fringe IDW, and the seam-reseat
-    # section below uses `g_bdry_arr` (green top-boundary ring Z) as a separate
-    # KD-tree source.  Both are overridden independently with the same anchor Z
-    # so fringe Z == green seam Z at the interface.
     _raw_fbh = egm_data.get("fringeBoundaryHeights") or []
-    _fbh_anchor_count = 0
-    if _raw_fbh:
-        gbnd_kd_anchors = cKDTree(gbnd)   # (N_bnd, 2) — reused in seam section
-        _k_override = K_BND_IDW          # override this many consecutive boundary pts
-        for _fbh in _raw_fbh:
-            try:
-                _ax_px = float(_fbh["x"])
-                _ay_px = float(_fbh["y"])
-                _av_mm = float(_fbh["value"])
-            except (KeyError, TypeError, ValueError):
-                continue
-            if not (0.0 < _av_mm <= OCR_SPIKE_MAX_MM):
-                continue   # reject out-of-range values (matches _OCR_SPIKE_MAX_MM)
-            # Convert pixel coords to mm-space using the same transform as polygons
-            _a_mm = _px_to_mm_2d(
-                np.array([[_ax_px, _ay_px]], dtype=np.float64), scale, centroid_px
-            )[0]
-            # Find K_BND_IDW nearest gbnd points; override all of them so that
-            # any fringe cell whose IDW set includes the anchor area returns
-            # anchor_Z as the dominant value.
-            _k = min(_k_override, len(gbnd))
-            _adists, _aidxs = gbnd_kd_anchors.query(_a_mm[:2], k=_k)
-            _aidxs = np.atleast_1d(_aidxs)
-            _adists = np.atleast_1d(_adists)
-            _nearest_dist = float(_adists[0]) if len(_adists) > 0 else 0.0
-            # Clamp to sane elevation range (honours user grid cells above Poisson range)
-            _z_anchor = max(BASE_THICKNESS_MM,
-                            min(_av_mm, _effective_z_ceiling_mm))
-            for _ai in _aidxs:
-                bnd_z[int(_ai)] = _z_anchor
-            _fbh_anchor_count += 1
-            print(
-                f"  FringeBoundaryAnchor: px=({_ax_px:.1f},{_ay_px:.1f}) "
-                f"→ mm=({_a_mm[0]:+.2f},{_a_mm[1]:+.2f}) "
-                f"→ nearest gbnd=({gbnd[int(_aidxs[0]),0]:+.2f},{gbnd[int(_aidxs[0]),1]:+.2f}) "
-                f"value={_av_mm:.3f} mm "
-                f"(override {len(_aidxs)} pts, nearest dist={_nearest_dist:.2f} mm)"
-            )
-        if _fbh_anchor_count:
-            print(f"  Fringe boundary anchors: {_fbh_anchor_count} anchor(s) "
-                  f"injected into bnd_z ({_k_override} pts each, Approach A)")
+    # v6.34: the rim-height block lives in _fringe_boundary_z (shared with the live 3D preview).
+    # Fringe always samples the raw smooth Z_mm -- never the terraced quantization.
+    bnd_z = _fringe_boundary_z(Z_mm, inside_mask, xs_mm_green, ys_mm_green, gbnd, egm_data,
+                               scale, centroid_px, _effective_z_ceiling_mm)
 
     gbnd_kd_lerp = cKDTree(gbnd)
-
-    # Kept for the pre-#509 sanity check / rollback (K=4 green-cell IDW at
-    # the projection). Not used on the fix path but preserved for diagnostic
-    # scripts that want to inspect the old behaviour.
-    K_LERP_NEIGHBOURS = min(IDW_NEIGHBOURS, len(green_cell_z))
 
     # ── TPS grid-cell height field (task 704, Topo 2026-10-04) ─────────────────
     # Phase 2 of the 20×20 grid-cell elevation mechanism.  Replaces the task-700
@@ -4727,32 +4810,15 @@ def build_fringe_mesh(
 
     # Call the 400-cell TPS builder.  It reads bnd_z for Poisson defaults and
     # egm_data["gridCellHeights"] for user overrides.
-    _z_tps_grid = _build_tps_grid_height_field(
-        egm_data=_egm_fringe,
-        green_bnd_mm=gbnd,
-        bnd_z=bnd_z,
-        grid_x=GX_fringe,
-        grid_y=GY_fringe,
-    )  # (R, C)
+    # Task 780 (Sienna, 2026-10-13): after the TPS the surface is pulled toward the green boundary Z in
+    # a cosine-weighted band of FRINGE_BLEND_CELLS cells (grid-cell overrides are already baked in).
+    # v6.34: both steps are _fringe_tps_surface, shared with the live 3D preview.
+    _z_tps_grid = _fringe_tps_surface(_egm_fringe, gbnd, bnd_z, GX_fringe, GY_fringe)  # (R, C)
 
     print(f"  [fringe TPS-grid] Z range: "
           f"[{float(_z_tps_grid.min()):.3f}, {float(_z_tps_grid.max()):.3f}] mm "
           f"({len(gbnd)} boundary vertices, bnd_z range "
           f"[{float(bnd_z.min()):.3f}, {float(bnd_z.max()):.3f}] mm)")
-
-    # Task 780 (Sienna, 2026-10-13): normalise the green/fringe interface.
-    # Pull the TPS surface toward the green boundary Z in a cosine-weighted band
-    # of FRINGE_BLEND_CELLS cells.  Grid-cell overrides are already baked into
-    # _z_tps_grid (via _build_tps_grid_height_field), so this step blends both
-    # Poisson defaults and user overrides toward the boundary — no separate
-    # treatment needed.  Beyond the band, values are untouched.
-    _z_tps_grid = _normalize_green_fringe_interface(
-        z_tps=_z_tps_grid,
-        grid_x=GX_fringe,
-        grid_y=GY_fringe,
-        green_bnd_mm=gbnd,
-        bnd_z=bnd_z,
-    )
 
     # Task 726 (Topo, 2026-09-04): compute fringe cell half-step for footprint
     # overlap tests below.  The grid is uniform (linspace), so the step is
@@ -4793,19 +4859,19 @@ def build_fringe_mesh(
                 green_edge_h = float(np.dot(w, bnd_z[idxs_b]))
 
         # Task #506: plateau-taper. When green_edge_h exceeds the boundary
-        # cap, project a decaying blend of green_edge_h → BOUNDARY_HEIGHT_CAP_MM
+        # cap, project a decaying blend of green_edge_h → FRINGE_GREEN_EDGE_TAPER_FLOOR_MM
         # over FRINGE_GREEN_EDGE_TAPER_MM of XY distance from the green
         # boundary. Weight is 0 at the boundary (seam matches green exactly)
         # and 1 once we are FRINGE_GREEN_EDGE_TAPER_MM or more away. For
         # gentle greens (green_edge_h <= cap) the target equals the source,
         # so this reduces to the pre-#506 behaviour: no change.
         # v5.17 clipping fix: when the user has explicitly set a grid cell
-        # above BOUNDARY_HEIGHT_CAP_MM (9 mm), the taper must not pull that
+        # above FRINGE_GREEN_EDGE_TAPER_FLOOR_MM, the taper must not pull that
         # TPS-propagated peak back down toward the cap as d_to_green grows.
         # Raise the effective cap to the user's own ceiling; natural low
         # fringe (green_edge_h <= 9) is unaffected because the branch is
         # gated on green_edge_h > _cap_target.
-        _effective_boundary_cap_mm = max(BOUNDARY_HEIGHT_CAP_MM, _effective_z_ceiling_mm)
+        _effective_boundary_cap_mm = max(FRINGE_GREEN_EDGE_TAPER_FLOOR_MM, _effective_z_ceiling_mm)
         _cap_target = min(green_edge_h, _effective_boundary_cap_mm)
         if FRINGE_GREEN_EDGE_TAPER_MM > 0 and green_edge_h > _cap_target:
             _weight = min(1.0, max(0.0, d_to_green / FRINGE_GREEN_EDGE_TAPER_MM))
@@ -4833,10 +4899,8 @@ def build_fringe_mesh(
         # (correct, matches z=0.5 baseline), overlap with green = 0.00
         # (was 5036 mm² at [208]).  Cell counts, top-surface topology,
         # seam-match, and trap/water cutouts all unchanged.
-        _tilt = FRINGE_PLATEAU_TILT_MM * (r + c) / (2 * (fringe_grid_res - 1))
-        _floor = FRINGE_MIN_THICKNESS_MM + _tilt   # v6.20: printability floor, not BASE
-        z_fringe = max(_floor, min(green_edge_h, _effective_z_ceiling_mm))
-        return z_fringe
+        # v6.34: floor + tilt + ceiling live in _fringe_clamp_z (shared with the live 3D preview).
+        return float(_fringe_clamp_z(green_edge_h, r, c, fringe_grid_res, _effective_z_ceiling_mm))
 
     # v5.82: fringe Z at carve-out cells (bunker areas), so bunkers can be carved from
     # the finished fringe 'as if it continued there'.  Only computed when a bunker owns cells.
@@ -6598,43 +6662,27 @@ def _polygon_touches_frame_boundary(
 def _apply_lift_and_cap(
     mesh: "trimesh.Trimesh",
     lift_mm: float,
-    cap_mm: float | None,
-    cap_mode: str = BOUNDARY_HEIGHT_CAP_MODE,
     label: str = "",
 ) -> dict:
     """
-    Lift the *top-surface* vertices of ``mesh`` by ``lift_mm`` mm and
-    optionally cap them at ``cap_mm`` mm.
+    Lift the *top-surface* vertices of ``mesh`` by ``lift_mm`` mm.
 
     "Top-surface vertex" = any vertex with z > 0 in the input mesh. Bottom
     vertices (z == 0) stay pinned to z=0 so the wall stretches by ``lift_mm``,
     materialising the new 2 mm base. Mesh topology and watertight-ness are
     unchanged because the wall stitch is preserved.
 
-    Cap modes (only applied when ``cap_mm`` is not None):
-      - "hard"     : per-vertex EDGE-BAND cap. Only top-surface vertices within
-        BOUNDARY_CAP_BAND_MM (XY distance) of the plaque frame perimeter and
-        whose z exceeds cap_mm are clipped to cap_mm. Interior vertices keep
-        their natural relief regardless of height. (Topo, 2026-05-05.)
-      - "compress" : top z values are linearly squashed so max(z) == cap_mm.
-        Whole-element behaviour preserved here (no homeowner request to revisit).
-        If max(z) <= cap_mm, no compression is applied.
+    (The name is historical: the frame-edge height cap was removed in v7.1.)
 
-    Returns a small stats dict: {applied, cap_triggered, vertices_clipped,
-    max_clip_mm, z_top_before, z_top_after, band_verts, uncapped_above_cap}.
+    Returns a small stats dict: {applied, z_top_before, z_top_after}.
     """
     verts = mesh.vertices  # live reference
     top_mask = verts[:, 2] > EPS_LINEAR
     if not top_mask.any():
         return {
             "applied": False,
-            "cap_triggered": False,
-            "vertices_clipped": 0,
-            "max_clip_mm": 0.0,
             "z_top_before": (0.0, 0.0),
             "z_top_after":  (0.0, 0.0),
-            "band_verts": 0,
-            "uncapped_above_cap": 0,
         }
 
     z_before_min = float(verts[top_mask, 2].min())
@@ -6644,104 +6692,26 @@ def _apply_lift_and_cap(
     if lift_mm:
         verts[top_mask, 2] += lift_mm
 
-    cap_triggered = False
-    n_clipped = 0
-    max_clip = 0.0
-    band_verts = 0
-    uncapped_above_cap = 0
-    # Task #606: BOUNDARY_HEIGHT_CAP_ENABLED=False suspends the cap step.
-    # The lift above still applies (water-hole raise); only the height ceiling
-    # is bypassed.  Callers that pass cap_mm=None are already a no-op; this
-    # gate makes cap_mm values irrelevant when the toggle is off.
-    if cap_mm is not None and BOUNDARY_HEIGHT_CAP_ENABLED:
-        z_top = verts[top_mask, 2]
-        if cap_mode == "hard":
-            # Per-vertex edge-band cap (Topo, 2026-05-05, tapered 2026-07-11).
-            # Compute each top vertex's XY distance to the nearest edge of
-            # the plaque frame rectangle (axis-aligned, centred at origin,
-            # ±_half per axis). For an interior point: dist = min(x - x_min,
-            # x_max - x, y - y_min, y_max - y).
-            #
-            # Cap strength is a piecewise-linear function of dist_to_edge:
-            #   * d ≤ BAND         → strength = 1.0 (hard cap: Z clipped to cap_mm)
-            #   * BAND < d < TOTAL → strength linearly ramps 1.0 → 0.0
-            #   * d ≥ TOTAL        → strength = 0.0 (untouched)
-            # where TOTAL = BAND + TAPER. The tapered clip is applied as
-            #   Z_new = Z - strength * max(Z - cap_mm, 0)
-            # so cells at Z ≤ cap_mm are never touched, and cells with Z > cap_mm
-            # have their EXCESS above the cap scaled by `strength`. This avoids
-            # the hard cliff that showed up when a water/trap polygon reached
-            # the outer edge (task #488).
-            _half = FRINGE_HALF_MM
-            xy_top = verts[top_mask, :2]
-            dx = np.minimum(xy_top[:, 0] - (-_half), _half - xy_top[:, 0])
-            dy = np.minimum(xy_top[:, 1] - (-_half), _half - xy_top[:, 1])
-            dist_to_edge = np.minimum(dx, dy)
-            total_mm = BOUNDARY_CAP_BAND_MM + BOUNDARY_CAP_TAPER_MM
-            if BOUNDARY_CAP_TAPER_MM > 0:
-                strength = np.clip(
-                    (total_mm - dist_to_edge) / BOUNDARY_CAP_TAPER_MM,
-                    0.0, 1.0,
-                )
-            else:
-                strength = (dist_to_edge <= BOUNDARY_CAP_BAND_MM).astype(np.float64)
-            above_cap = z_top > cap_mm
-            excess = np.maximum(z_top - cap_mm, 0.0)
-            band_verts = int((dist_to_edge <= BOUNDARY_CAP_BAND_MM).sum())
-            uncapped_above_cap = int(
-                (above_cap & (dist_to_edge > total_mm)).sum()
-            )
-            affected = above_cap & (strength > 0.0)
-            n_clipped = int(affected.sum())
-            if n_clipped:
-                cap_triggered = True
-                z_top_new = z_top - strength * excess
-                clip_amounts = (z_top - z_top_new)[affected]
-                max_clip = float(clip_amounts.max()) if clip_amounts.size else 0.0
-                verts[top_mask, 2] = z_top_new
-        elif cap_mode == "compress":
-            zmax = float(z_top.max())
-            if zmax > cap_mm:
-                cap_triggered = True
-                # Compress around the bottom (z=0): scale top z's by cap/zmax.
-                scale = cap_mm / zmax
-                # "Vertices clipped" here = vertices whose z was lowered.
-                lowered = z_top * scale
-                n_clipped = int((z_top - lowered > EPS_LINEAR).sum())
-                max_clip = float((z_top - lowered).max())
-                verts[top_mask, 2] = lowered
-        else:
-            raise ValueError(
-                f"BOUNDARY_HEIGHT_CAP_MODE={cap_mode!r} not in {{'hard','compress'}}"
-            )
-
     z_after_min = float(verts[top_mask, 2].min())
     z_after_max = float(verts[top_mask, 2].max())
 
     if label:
-        extra = ""
-        if cap_mm is not None and cap_mode == "hard":
-            n_top = int(top_mask.sum())
-            extra = (f", band_verts={band_verts}/{n_top} "
-                     f"(band={BOUNDARY_CAP_BAND_MM:.2f}mm, "
-                     f"taper={BOUNDARY_CAP_TAPER_MM:.2f}mm), "
-                     f"uncapped_above_cap={uncapped_above_cap}")
-        print(f"    lift+cap [{label}]: lift={lift_mm:.2f} mm, "
-              f"cap={'-' if cap_mm is None else f'{cap_mm:.1f} mm ({cap_mode})'}, "
+        print(f"    lift [{label}]: lift={lift_mm:.2f} mm, "
               f"z_top {z_before_min:.2f}-{z_before_max:.2f} → "
-              f"{z_after_min:.2f}-{z_after_max:.2f}, "
-              f"clipped {n_clipped} vert(s), max_clip {max_clip:.2f} mm" + extra)
+              f"{z_after_min:.2f}-{z_after_max:.2f}")
 
     return {
         "applied": True,
-        "cap_triggered": cap_triggered,
-        "vertices_clipped": n_clipped,
-        "max_clip_mm": max_clip,
         "z_top_before": (z_before_min, z_before_max),
         "z_top_after":  (z_after_min, z_after_max),
-        "band_verts": band_verts,
-        "uncapped_above_cap": uncapped_above_cap,
     }
+
+
+def flat_fallback_z_mm(egm_data: dict) -> float:
+    """No-arrows fallback height: FLAT_FALLBACK_Z_WATER_MM on a water hole else FLAT_FALLBACK_Z_MM,
+    floored at BASE_THICKNESS_MM (printability).  Shared by run_pipeline and the live 3D preview."""
+    raw = FLAT_FALLBACK_Z_WATER_MM if _hole_has_water(egm_data) else FLAT_FALLBACK_Z_MM
+    return max(raw, BASE_THICKNESS_MM)
 
 
 def _normalize_grid_resolution(value) -> int:
@@ -6767,9 +6737,10 @@ def _trap_inside_cells(trap_poly_mm, grid_cell_heights, cell_side, half, grid_si
     the trap footprint (Shapely ``covers``; v5.13 -- was centre-in-polygon).
     Half-in/half-out cells are ignored (they belong to the fringe).  Single source
     of the 'fully inside the bunker' ownership test (v5.82): used to exclude those
-    cells from the fringe TPS and to drive the bunker floor."""
-    from shapely.geometry import box as _box
-    out = []
+    cells from the fringe TPS and to drive the bunker floor.
+    v6.34: the covers test is one vectorised Shapely call (same booleans, same order, ~30x faster)."""
+    import shapely
+    keys, vals = [], []
     for k, mm in (grid_cell_heights or {}).items():
         try:
             ci = int(k); v = float(mm)
@@ -6777,11 +6748,16 @@ def _trap_inside_cells(trap_poly_mm, grid_cell_heights, cell_side, half, grid_si
             continue
         if ci < 0 or ci >= grid_size * grid_size:   # key present = set cell; an explicit 0 counts (editor v5.80)
             continue
-        r, c = divmod(ci, grid_size)
-        x0 = -half + c * cell_side; y0 = -half + r * cell_side
-        if trap_poly_mm.covers(_box(x0, y0, x0 + cell_side, y0 + cell_side)):
-            out.append((ci, v))
-    return out
+        keys.append(ci); vals.append(v)
+    if not keys:
+        return []
+    idx = np.asarray(keys, dtype=np.int64)
+    rows, cols = idx // grid_size, idx % grid_size
+    x0 = -half + cols * cell_side
+    y0 = -half + rows * cell_side
+    shapely.prepare(trap_poly_mm)
+    inside = np.asarray(shapely.covers(trap_poly_mm, shapely.box(x0, y0, x0 + cell_side, y0 + cell_side)))
+    return [(keys[j], vals[j]) for j in range(len(keys)) if inside[j]]
 
 
 def _build_trap_footprint(trap_poly, scale, centroid_px, pipe_circle, label="Trap"):
@@ -7414,6 +7390,68 @@ def _texture_trap_or_fallback(slab, trap_index, base_z_map, fallback_slab_fn=Non
     return fallback_slab_fn() if fallback_slab_fn is not None else slab
 
 
+def _resolve_bunker_floor(shapely_trap, egm_data: dict, fringe_field, label: str = "Trap"):
+    """Pick and build the bunker floor function exactly as export_trap_stls always did.
+
+    ``fringe_field`` is ``(xs_mm, ys_mm, Z)`` (build_fringe_mesh's ``bunker_fringe_field``) or None.
+    Returns ``(floor_fn | None, binfo, cells_info, ruled_info, grid_mode)``: floor_fn(xy)->mean floor Z;
+    ``cells_info`` / ``ruled_info`` are set when the CELLS / RULED body was used, ``binfo`` is the info dict of
+    whichever body won (legacy sloped, cells or ruled).  Extracted verbatim from export_trap_stls (v6.34)."""
+    _bunker_floor_fn = None
+    _binfo = None
+    _grid_mode_t = _normalize_grid_mode(egm_data.get(EGM_KEY_GRID_MODE))
+    _gch = egm_data.get(EGM_KEY_GRID_CELL_HEIGHTS) or {}
+    i = label
+    if not TRAP_SURFACE_CURVED and _gch and _grid_mode_t != GRID_MODE_OFF:
+        _grid_half = FRINGE_HALF_MM
+        _grid_n = _normalize_grid_resolution(egm_data.get(EGM_KEY_GRID_RESOLUTION))
+        _grid_cell_side = (2.0 * _grid_half) / _grid_n
+        _owned = _trap_inside_cells(shapely_trap, _gch, _grid_cell_side, _grid_half, _grid_n)
+        _field = fringe_field
+        if _owned and _field is None:
+            print(f"  {i}: {len(_owned)} owned grid cell(s) but no fringe field "
+                  f"available — staying flat")
+        elif _owned:
+            try:
+                _bunker_floor_fn, _binfo = _build_bunker_floor_fn(
+                    shapely_trap, _owned, _grid_mode_t,
+                    _make_fringe_field_sampler(_field),
+                    _grid_cell_side, _grid_half, _grid_n,
+                )
+            except Exception as _exc_floor:
+                _bunker_floor_fn = None
+                print(f"  {i}: sloped floor failed ({_exc_floor}) — staying flat")
+    _cells_info = None
+    if (BUNKER_BODY_MODE == BUNKER_BODY_MODE_CELLS and not TRAP_SURFACE_CURVED
+            and _gch and _grid_mode_t != GRID_MODE_OFF
+            and fringe_field is not None):
+        # v5.98: body follows the owned cells' Z values (no crest clamp), rim pinned to fringe - drop.
+        try:
+            _cells_owned = _trap_inside_cells(shapely_trap, _gch, _grid_cell_side, _grid_half, _grid_n)
+            if _cells_owned:
+                _bunker_floor_fn, _cells_info = _build_bunker_cells_floor_fn(
+                    shapely_trap, _cells_owned, _grid_mode_t,
+                    _make_fringe_field_sampler(fringe_field),
+                    _grid_cell_side, _grid_half, _grid_n)
+                _binfo = _cells_info
+        except Exception as _exc_cells:
+            _bunker_floor_fn = None
+            _cells_info = None
+            print(f"  {i}: cells floor failed ({_exc_cells}) -- using ruled body")
+    _ruled_info = None
+    if (BUNKER_BODY_MODE in (BUNKER_BODY_MODE_RULED, BUNKER_BODY_MODE_CELLS) and _cells_info is None
+            and not TRAP_SURFACE_CURVED
+            and fringe_field is not None):
+        # v5.84: ruled body replaces the cell-driven floor; grid cells never warp it.
+        try:
+            _bunker_floor_fn, _ruled_info = _build_bunker_ruled_floor_fn(
+                shapely_trap, _make_fringe_field_sampler(fringe_field))
+            _binfo = _ruled_info
+        except Exception as _exc_ruled:
+            print(f"  {i}: ruled floor failed ({_exc_ruled}) -- using previous path")
+    return _bunker_floor_fn, _binfo, _cells_info, _ruled_info, _grid_mode_t
+
+
 def export_trap_stls(
     egm_data: dict,
     green_boundary_px: np.ndarray,
@@ -7422,7 +7460,6 @@ def export_trap_stls(
     stl_dir: str | None = None,
     write_stls: bool = True,
     pipe_circle: "ShapelyPolygon | None" = None,
-    apply_fringe_frame_cap: bool = True,
 ) -> list:
     """
     For every polygon of type 'trap' in egm_data, build a flat inset slab.
@@ -7448,19 +7485,6 @@ def export_trap_stls(
       samples fringe Z within TRAP_FRINGE_BOUNDARY_BAND_MM of the trap
       perimeter and subtracts TRAP_FRINGE_OFFSET_MM (2 mm), placing the trap
       top 2 mm below the adjoining fringe rim.
-
-    * Frame-edge cap: ``_apply_lift_and_cap`` is now called unconditionally
-      (not only on water holes), gated by ``apply_fringe_frame_cap``.  When
-      True, top-surface vertices within BOUNDARY_CAP_BAND_MM of the plaque
-      frame are clipped to BOUNDARY_HEIGHT_CAP_MM with a BOUNDARY_CAP_TAPER_MM
-      taper — exactly matching fringe behaviour.  When False, no cap is applied
-      (mirrors ``applyFringeFrameCap=False`` on fringe).
-
-    Parameters
-    ----------
-    apply_fringe_frame_cap : bool
-        Mirror of the EGM-level applyFringeFrameCap flag.  Default True.
-        When False, the boundary-band cap is skipped for traps (same as fringe).
     """
     from shapely.geometry import Point as ShapelyPoint
 
@@ -7485,16 +7509,6 @@ def export_trap_stls(
     _hole_water = WATER_HOLE_LIFT_ENABLED and _hole_has_water(egm_data)
     if _hole_water:
         print(f"  Water-hole rule active: lift={WATER_HOLE_LIFT_MM} mm")
-
-    # Task #604: frame-edge cap is now applied unconditionally (not only on
-    # water holes), mirroring fringe behaviour and gated by apply_fringe_frame_cap.
-    _trap_cap_mm = BOUNDARY_HEIGHT_CAP_MM if apply_fringe_frame_cap else None
-    if apply_fringe_frame_cap:
-        print(f"  Trap frame cap: {BOUNDARY_HEIGHT_CAP_MM} mm "
-              f"(band={BOUNDARY_CAP_BAND_MM} mm, taper={BOUNDARY_CAP_TAPER_MM} mm, "
-              f"mode={BOUNDARY_HEIGHT_CAP_MODE})")
-    else:
-        print("  Trap frame cap: DISABLED (apply_fringe_frame_cap=False)")
 
     results: list = []
     for i, trap_poly in enumerate(trap_polygons, start=1):
@@ -7568,65 +7582,11 @@ def export_trap_stls(
                 else:
                     print(f"  Trap {i}: no fringe mesh — using fixed height {trap_height:.2f} mm")
 
-            # v5.82 (Topo, 2026-10-26): cell-owned, fringe-carved bunker floor.
-            # Set cells fully inside this bunker belong to it ONLY (the fringe was
-            # built without them).  The floor is the finished fringe surface at each
-            # XY minus BUNKER_DROP_BELOW_FRINGE_MM, plus a TPS offset field from
-            # the owned cells that returns to 0 at the rim (see _build_bunker_floor_fn).
-            # A bunker with NO owned cell keeps the flat height computed above.
-            # Replaces the v5.12-v5.81 "highest inside cell sets the flat slab" rule.
-            _bunker_floor_fn = None
-            _grid_mode_t = _normalize_grid_mode(egm_data.get(EGM_KEY_GRID_MODE))
-            _gch = egm_data.get(EGM_KEY_GRID_CELL_HEIGHTS) or {}
-            if not TRAP_SURFACE_CURVED and _gch and _grid_mode_t != GRID_MODE_OFF:
-                _grid_half = FRINGE_HALF_MM
-                _grid_n = _normalize_grid_resolution(egm_data.get(EGM_KEY_GRID_RESOLUTION))
-                _grid_cell_side = (2.0 * _grid_half) / _grid_n
-                _owned = _trap_inside_cells(shapely_trap, _gch, _grid_cell_side, _grid_half, _grid_n)
-                _field = getattr(fringe_mesh, "bunker_fringe_field", None) if fringe_mesh is not None else None
-                if _owned and _field is None:
-                    print(f"  Trap {i}: {len(_owned)} owned grid cell(s) but no fringe field "
-                          f"available — staying flat")
-                elif _owned:
-                    try:
-                        _bunker_floor_fn, _binfo = _build_bunker_floor_fn(
-                            shapely_trap, _owned, _grid_mode_t,
-                            _make_fringe_field_sampler(_field),
-                            _grid_cell_side, _grid_half, _grid_n,
-                        )
-                    except Exception as _exc_floor:
-                        _bunker_floor_fn = None
-                        print(f"  Trap {i}: sloped floor failed ({_exc_floor}) — staying flat")
-            _cells_info = None
-            if (BUNKER_BODY_MODE == BUNKER_BODY_MODE_CELLS and not TRAP_SURFACE_CURVED
-                    and _gch and _grid_mode_t != GRID_MODE_OFF
-                    and fringe_mesh is not None
-                    and getattr(fringe_mesh, "bunker_fringe_field", None) is not None):
-                # v5.98: body follows the owned cells' Z values (no crest clamp), rim pinned to fringe - drop.
-                try:
-                    _cells_owned = _trap_inside_cells(shapely_trap, _gch, _grid_cell_side, _grid_half, _grid_n)
-                    if _cells_owned:
-                        _bunker_floor_fn, _cells_info = _build_bunker_cells_floor_fn(
-                            shapely_trap, _cells_owned, _grid_mode_t,
-                            _make_fringe_field_sampler(fringe_mesh.bunker_fringe_field),
-                            _grid_cell_side, _grid_half, _grid_n)
-                        _binfo = _cells_info
-                except Exception as _exc_cells:
-                    _bunker_floor_fn = None
-                    _cells_info = None
-                    print(f"  Trap {i}: cells floor failed ({_exc_cells}) -- using ruled body")
-            _ruled_info = None
-            if (BUNKER_BODY_MODE in (BUNKER_BODY_MODE_RULED, BUNKER_BODY_MODE_CELLS) and _cells_info is None
-                    and not TRAP_SURFACE_CURVED
-                    and fringe_mesh is not None
-                    and getattr(fringe_mesh, "bunker_fringe_field", None) is not None):
-                # v5.84: ruled body replaces the cell-driven floor; grid cells never warp it.
-                try:
-                    _bunker_floor_fn, _ruled_info = _build_bunker_ruled_floor_fn(
-                        shapely_trap, _make_fringe_field_sampler(fringe_mesh.bunker_fringe_field))
-                    _binfo = _ruled_info
-                except Exception as _exc_ruled:
-                    print(f"  Trap {i}: ruled floor failed ({_exc_ruled}) -- using previous path")
+            # v5.82 / v5.84 / v5.98: cell-owned, fringe-carved bunker floor (see _resolve_bunker_floor,
+            # extracted in v6.34 so the live 3D preview selects the floor the same way).
+            _field = getattr(fringe_mesh, "bunker_fringe_field", None) if fringe_mesh is not None else None
+            _bunker_floor_fn, _binfo, _cells_info, _ruled_info, _grid_mode_t = _resolve_bunker_floor(
+                shapely_trap, egm_data, _field, label=f"Trap {i}")
             _flat_height = trap_height   # v6.01: rim-safe flat height for the plain-slab fallback
             if _bunker_floor_fn is not None:
                 _ins = contains_xy_poly(shapely_inset, _grid_xy)
@@ -7677,20 +7637,12 @@ def export_trap_stls(
             # _build_slab_from_shapely and the rake amplitude is small (SAND_RAKE_AMPLITUDE_MM)
             # relative to the slab height (~9 mm), so no height-guardrail is needed.
 
-            # Task #604 (Topo, 2026-09-26): frame-edge cap is applied
-            # UNCONDITIONALLY (not only on water holes), matching fringe behaviour.
-            # _apply_lift_and_cap with cap_mm=None is a no-op for the cap logic
-            # but still applies the water-hole lift when _hole_water is True.
-            # Per-vertex: only verts within BOUNDARY_CAP_BAND_MM of the frame are
-            # clipped, so interior-only traps are unaffected by the cap.
+            # Water-hole lift (no-op, lift 0, when the hole has no water).
             touches = _polygon_touches_frame_boundary(shapely_inset)
             _apply_lift_and_cap(
                 mesh,
                 lift_mm=WATER_HOLE_LIFT_MM if _hole_water else 0.0,
-                cap_mm=_trap_cap_mm,
-                label=(f"trap_{i}"
-                       + (" (boundary)" if touches else "")
-                       + (" cap=disabled" if _trap_cap_mm is None else "")),
+                label=f"trap_{i}" + (" (boundary)" if touches else ""),
             )
 
             bb = mesh.bounds
@@ -7716,6 +7668,90 @@ def export_trap_stls(
                 f"Sand trap {i} FAILED to build and is MISSING from the 3MF: {exc}")
 
     return results
+
+
+def _water_inset_footprint(water_poly, scale, centroid_px, pipe_circle, label):
+    """Water slab footprint (Shapely, world mm, PRINT_TOLERANCE_MM inset) exactly as export_water_meshes
+    builds it: dense px -> mm, mount-pipe subtract (#347), fringe-rect clip (#343), validity fix, inset.
+    Returns None when nothing remains.  Extracted from export_water_meshes (v6.34) for the live 3D preview."""
+    pts_px = _poly_to_dense_px(water_poly)
+    pts_mm = _px_to_mm_2d(pts_px, scale, centroid_px)
+    shapely_water = ShapelyPolygon(pts_mm)
+    if pipe_circle is not None:
+        shapely_water = _subtract_pipe_from_polygon(shapely_water, pipe_circle, label)
+        if shapely_water is None:
+            return None
+    shapely_water = _clip_polygon_to_fringe_rect(shapely_water, label)
+    if shapely_water is None:
+        return None
+    if not shapely_water.is_valid:
+        shapely_water = shapely_water.buffer(0)
+    shapely_inset = shapely_water.buffer(-PRINT_TOLERANCE_MM)
+    if shapely_inset.is_empty:
+        print(f"  {label}: inset produced empty polygon — skipping.")
+        return None
+    return shapely_inset
+
+
+def _boulders_inset_footprint(boulders_poly, water_shapely_mm, scale, centroid_px, pipe_circle, label):
+    """Boulders slab footprint exactly as export_boulders_meshes builds it (annulus mode when the polygon
+    covers a water polygon, else on-top slab).  Returns ``(shapely_inset | None, annulus_mode)``.
+    Extracted from export_boulders_meshes (v6.34) for the live 3D preview."""
+    from shapely.ops import unary_union as _unary_union
+    pts_px = _poly_to_dense_px(boulders_poly)
+    pts_mm = _px_to_mm_2d(pts_px, scale, centroid_px)
+    shapely_boulders = ShapelyPolygon(pts_mm)
+    if not shapely_boulders.is_valid:
+        shapely_boulders = shapely_boulders.buffer(0)
+    # Full-ring containment (`covers`, never `contains`, task #466) of a water polygon => annulus mode.
+    shapely_boulders_padded = shapely_boulders.buffer(BOUNDARY_REGION_COVERS_TOL_MM)
+    enclosed_water = [wsp for wsp in water_shapely_mm if shapely_boulders_padded.covers(wsp)]
+    annulus_mode = len(enclosed_water) > 0
+    if annulus_mode:
+        water_union = _unary_union(enclosed_water)
+        shapely_boulders = shapely_boulders.difference(water_union)
+        if not shapely_boulders.is_valid:
+            shapely_boulders = shapely_boulders.buffer(0)
+        print(f"  {label}: ANNULUS mode — {len(enclosed_water)} enclosed water polygon(s) subtracted.")
+    else:
+        print(f"  {label}: ON-TOP mode — no enclosed water polygon found.")
+    if pipe_circle is not None:
+        shapely_boulders = _subtract_pipe_from_polygon(shapely_boulders, pipe_circle, label)
+        if shapely_boulders is None:
+            return None, annulus_mode
+    shapely_boulders = _clip_polygon_to_fringe_rect(shapely_boulders, label)
+    if shapely_boulders is None:
+        return None, annulus_mode
+    if not shapely_boulders.is_valid:
+        shapely_boulders = shapely_boulders.buffer(0)
+    shapely_inset = shapely_boulders.buffer(-PRINT_TOLERANCE_MM)
+    if shapely_inset.is_empty:
+        print(f"  {label}: inset produced empty polygon — skipping.")
+        return None, annulus_mode
+    return shapely_inset, annulus_mode
+
+
+def _min_fringe_z_over_footprint(shapely_inset, fringe_kd, fringe_verts_top) -> "tuple[float, int]":
+    """Flat slab height for water / boulders: the minimum nearest-fringe-vertex Z over an
+    FRINGE_SAMPLE_GRID_N x N sample grid inside the footprint.  Returns (height_mm, n_samples).
+    Extracted from export_water_meshes / export_boulders_meshes (v6.34)."""
+    from shapely.geometry import Point as ShapelyPoint
+    minx, miny, maxx, maxy = shapely_inset.bounds
+    n_sample = FRINGE_SAMPLE_GRID_N
+    xs_s = np.linspace(minx, maxx, n_sample)
+    ys_s = np.linspace(miny, maxy, n_sample)
+    sample_pts = []
+    for sx in xs_s:
+        for sy in ys_s:
+            if shapely_inset.contains(ShapelyPoint(sx, sy)):
+                sample_pts.append([sx, sy])
+    cx, cy = shapely_inset.centroid.x, shapely_inset.centroid.y
+    if not sample_pts:
+        sample_pts = [[cx, cy]]
+    sample_pts = np.array(sample_pts)
+    _, idxs = fringe_kd.query(sample_pts)
+    sampled_z = fringe_verts_top[idxs, 2]
+    return float(sampled_z.min()), len(sample_pts)
 
 
 def export_water_meshes(
@@ -7774,56 +7810,15 @@ def export_water_meshes(
     results: list = []
     for i, water_poly in enumerate(water_polygons, start=1):
         try:
-            pts_px = _poly_to_dense_px(water_poly)
-            pts_mm = _px_to_mm_2d(pts_px, scale, centroid_px)
-
-            shapely_water = ShapelyPolygon(pts_mm)
-
-            # #347: subtract the mount-pipe footprint BEFORE the fringe-rect
-            # clip so the rectangle clip sees the post-subtraction shape and
-            # the water mesh doesn't overlap the pipe column. PGA West-Arnold
-            # Palmer #5 — water polygon spans the upper-left fringe corner.
-            if pipe_circle is not None:
-                shapely_water = _subtract_pipe_from_polygon(
-                    shapely_water, pipe_circle, f"Water {i}"
-                )
-                if shapely_water is None:
-                    continue
-
-            # Clip to fringe rectangle (#343) — water hazards on hole 5 of
-            # PGA West-Arnold Palmer were leaking past the frame edge.
-            shapely_water = _clip_polygon_to_fringe_rect(shapely_water, f"Water {i}")
-            if shapely_water is None:
-                continue
-
-            if not shapely_water.is_valid:
-                shapely_water = shapely_water.buffer(0)
-            shapely_inset = shapely_water.buffer(-PRINT_TOLERANCE_MM)
-
-            if shapely_inset.is_empty:
-                print(f"  Water {i}: inset produced empty polygon — skipping.")
+            shapely_inset = _water_inset_footprint(water_poly, scale, centroid_px, pipe_circle, f"Water {i}")
+            if shapely_inset is None:
                 continue
 
             # Sample fringe Z over the water footprint, take the minimum so the
             # slab never pokes above the surrounding surface.
             if fringe_kd is not None:
-                minx, miny, maxx, maxy = shapely_inset.bounds
-                n_sample = FRINGE_SAMPLE_GRID_N
-                xs_s = np.linspace(minx, maxx, n_sample)
-                ys_s = np.linspace(miny, maxy, n_sample)
-                sample_pts = []
-                for sx in xs_s:
-                    for sy in ys_s:
-                        if shapely_inset.contains(ShapelyPoint(sx, sy)):
-                            sample_pts.append([sx, sy])
-                cx, cy = shapely_inset.centroid.x, shapely_inset.centroid.y
-                if not sample_pts:
-                    sample_pts = [[cx, cy]]
-                sample_pts = np.array(sample_pts)
-                _, idxs = fringe_kd.query(sample_pts)
-                sampled_z = fringe_verts_top[idxs, 2]
-                water_height = float(sampled_z.min())
-                print(f"  Water {i}: fringe Z min over {len(sample_pts)} samples = {water_height:.2f} mm")
+                water_height, _n_samples = _min_fringe_z_over_footprint(shapely_inset, fringe_kd, fringe_verts_top)
+                print(f"  Water {i}: fringe Z min over {_n_samples} samples = {water_height:.2f} mm")
             else:
                 water_height = TRAP_THICKNESS_MM
                 print(f"  Water {i}: no fringe mesh — using fixed height {water_height} mm")
@@ -7966,80 +7961,15 @@ def export_boulders_meshes(
     results: list = []
     for i, boulders_poly in enumerate(boulders_polygons, start=1):
         try:
-            pts_px = _poly_to_dense_px(boulders_poly)
-            pts_mm = _px_to_mm_2d(pts_px, scale, centroid_px)
-
-            shapely_boulders = ShapelyPolygon(pts_mm)
-            if not shapely_boulders.is_valid:
-                shapely_boulders = shapely_boulders.buffer(0)
-
-            # --- Determine mode: annulus or on-top slab ---
-            # Full-ring containment: water polygon counts as enclosed when
-            # boulders_sp.covers(water_sp) is True — the entire water ring
-            # must lie inside the boulders polygon, not just its centroid.
-            # `covers` is used instead of `contains` (task #466) so that
-            # water polygons sharing frame-edge boundary with the boulders
-            # polygon (the normal case after the boundary-region derivation
-            # in task #463) still register as enclosed and trigger annulus
-            # mode. `contains` would return False on boundary-touching pairs
-            # and fall back to the on-top slab path, placing the boulders
-            # ribbon in the fringe area instead of inside the water.
-            shapely_boulders_padded = shapely_boulders.buffer(
-                BOUNDARY_REGION_COVERS_TOL_MM
-            )
-            enclosed_water = [wsp for wsp in water_shapely_mm
-                              if shapely_boulders_padded.covers(wsp)]
-            annulus_mode = len(enclosed_water) > 0
-            if annulus_mode:
-                water_union = _unary_union(enclosed_water)
-                shapely_boulders = shapely_boulders.difference(water_union)
-                if not shapely_boulders.is_valid:
-                    shapely_boulders = shapely_boulders.buffer(0)
-                print(f"  Boulders {i}: ANNULUS mode — {len(enclosed_water)} enclosed water polygon(s) subtracted.")
-            else:
-                print(f"  Boulders {i}: ON-TOP mode — no enclosed water polygon found.")
-
-            if pipe_circle is not None:
-                shapely_boulders = _subtract_pipe_from_polygon(
-                    shapely_boulders, pipe_circle, f"Boulders {i}"
-                )
-                if shapely_boulders is None:
-                    continue
-
-            if annulus_mode:
-                shapely_boulders = _clip_polygon_to_fringe_rect(shapely_boulders, f"Boulders {i}")
-            else:
-                shapely_boulders = _clip_polygon_to_fringe_rect(shapely_boulders, f"Boulders {i}")
-            if shapely_boulders is None:
-                continue
-
-            if not shapely_boulders.is_valid:
-                shapely_boulders = shapely_boulders.buffer(0)
-            shapely_inset = shapely_boulders.buffer(-PRINT_TOLERANCE_MM)
-
-            if shapely_inset.is_empty:
-                print(f"  Boulders {i}: inset produced empty polygon — skipping.")
+            shapely_inset, annulus_mode = _boulders_inset_footprint(
+                boulders_poly, water_shapely_mm, scale, centroid_px, pipe_circle, f"Boulders {i}")
+            if shapely_inset is None:
                 continue
 
             # Sample fringe Z over the boulders footprint (same recipe as water).
             if fringe_kd is not None:
-                minx, miny, maxx, maxy = shapely_inset.bounds
-                n_sample = FRINGE_SAMPLE_GRID_N
-                xs_s = np.linspace(minx, maxx, n_sample)
-                ys_s = np.linspace(miny, maxy, n_sample)
-                sample_pts = []
-                for sx in xs_s:
-                    for sy in ys_s:
-                        if shapely_inset.contains(ShapelyPoint(sx, sy)):
-                            sample_pts.append([sx, sy])
-                cx, cy = shapely_inset.centroid.x, shapely_inset.centroid.y
-                if not sample_pts:
-                    sample_pts = [[cx, cy]]
-                sample_pts = np.array(sample_pts)
-                _, idxs = fringe_kd.query(sample_pts)
-                sampled_z = fringe_verts_top[idxs, 2]
-                boulders_height = float(sampled_z.min())
-                print(f"  Boulders {i}: fringe Z min over {len(sample_pts)} samples = {boulders_height:.2f} mm")
+                boulders_height, _n_samples = _min_fringe_z_over_footprint(shapely_inset, fringe_kd, fringe_verts_top)
+                print(f"  Boulders {i}: fringe Z min over {_n_samples} samples = {boulders_height:.2f} mm")
             else:
                 boulders_height = TRAP_THICKNESS_MM
                 print(f"  Boulders {i}: no fringe mesh — using fixed height {boulders_height} mm")
@@ -11047,7 +10977,6 @@ def _build_pipe_circle(cx: float, cy: float) -> ShapelyPolygon:
 def run_pipeline(
     egm_path: str,
     include_boundary_region: bool | None = None,
-    apply_fringe_frame_cap: bool | None = None,
     include_fringe_without_grass: bool | None = None,
     generation_id: str | None = None,
 ) -> str:
@@ -11063,14 +10992,6 @@ def run_pipeline(
         meshes inward by 5 mm to create the gap the ring fills. When False,
         skip the derivation. When None (default), fall back to the
         ``includeBoundaryRegion`` flag persisted inside the EGM file.
-    apply_fringe_frame_cap : bool | None, optional
-        When True (default), the water-hole rule clips fringe top vertices
-        within BOUNDARY_CAP_BAND_MM of the plaque frame perimeter to
-        BOUNDARY_HEIGHT_CAP_MM (preserves legacy behavior). When False, the
-        fringe cap is skipped and the fringe rises to its natural height even
-        where it exceeds the frame. Green/trap/water caps are unaffected.
-        When None, fall back to the ``applyFringeFrameCap`` flag persisted
-        inside the EGM file (missing → True).
     include_fringe_without_grass : bool | None, optional
         When True, a second plate is generated holding a smooth (grass-less)
         fringe sample named "fringe_no_grass_sample".  Plate 1 ALWAYS has
@@ -11153,15 +11074,6 @@ def run_pipeline(
     if include_boundary_region:
         _apply_boundary_region_derivation(_egm_data, green_boundary_px)
 
-    # Resolve applyFringeFrameCap (task 669). Default True on missing key
-    # preserves the legacy always-cap behavior; explicit False from either
-    # the caller or the EGM disables the fringe cap in step 7c.
-    if apply_fringe_frame_cap is None:
-        apply_fringe_frame_cap = bool(_egm_data.get("applyFringeFrameCap", True))
-    else:
-        _egm_data["applyFringeFrameCap"] = bool(apply_fringe_frame_cap)
-    print(f"    Apply fringe frame cap: {apply_fringe_frame_cap}")
-
     # Resolve includeFringeWithoutGrass (task 724). Default False on missing key
     # preserves the legacy single-plate behavior. When True, a second plate is
     # generated holding a smooth (grass-less) fringe sample. Plate 1 is always
@@ -11212,7 +11124,7 @@ def run_pipeline(
         # See project_golf_render_rules.md → "No-arrows fallback (topology)"
         # → "Printability floor".
         _fallback_z_raw = fallback_z
-        fallback_z = max(fallback_z, BASE_THICKNESS_MM)
+        fallback_z = flat_fallback_z_mm(_egm_data)
         _floor_applied = fallback_z != _fallback_z_raw
 
         if _has_water:
@@ -11381,27 +11293,16 @@ def run_pipeline(
     # ── 7. Build fringe mesh ────────────────────────────────────────────────
     print("\n[7] Building fringe mesh…")
     scale_f, centroid_f = _compute_px_to_mm(green_boundary_px, _egm_data)
-    _elevation_range_for_fringe = float(_egm_data.get(EGM_KEY_ELEVATION_RANGE) or ELEVATION_RANGE_MM)
-    Z_mm_for_fringe = _height_to_mm(Z, inside_mask, elevation_range_mm=_elevation_range_for_fringe)
-    # Apply the same slope limit used inside save_stl_meshes so the fringe
-    # seam heights track the (limited) green surface instead of the original
-    # spike. Keeping these two calls in lockstep is what makes the fringe
-    # "follow" the green after the peak has been smashed down.
-    _fringe_valid = Z_mm_for_fringe[inside_mask]
-    _fringe_range_mm = float(_fringe_valid.max() - _fringe_valid.min()) if _fringe_valid.size else 0.0
-    if _fringe_range_mm > 0:
-        Z_mm_for_fringe, _fringe_slope_stats = limit_max_slope(
-            Z_mm_for_fringe, inside_mask, elevation_range_mm=_fringe_range_mm,
-        )
+    # Same transform the green gets (shared helper): rescale -> slope limit -> zScale.  The fringe seam
+    # heights follow the (limited, scaled) green; traps and water sample fringe_mesh_flat, so they follow
+    # automatically (their floors stay flat -- only their height moves).
+    Z_mm_for_fringe, _fringe_tail = finish_green_heights_mm(Z, inside_mask, _egm_data)
+    if _fringe_tail["slope_stats"] is not None:
         print(
-            f"    limit_max_slope (fringe Z_mm): iters={_fringe_slope_stats['iters']}, "
-            f"cells reduced={_fringe_slope_stats['cells_reduced']}"
+            f"    limit_max_slope (fringe Z_mm): iters={_fringe_tail['slope_stats']['iters']}, "
+            f"cells reduced={_fringe_tail['slope_stats']['cells_reduced']}"
         )
-    # zScale: same transform the green gets (after the slope limiter). Traps and
-    # water sample fringe_mesh_flat, so they follow automatically; their floors
-    # stay flat (flat-min rule) -- only their height moves.
-    Z_mm_for_fringe, _fringe_zs = apply_z_scale(Z_mm_for_fringe, inside_mask, _egm_data)
-    print(f"    fringe zScale: {_fringe_zs:.2f}")
+    print(f"    fringe zScale: {_fringe_tail['z_scale']:.2f}")
     fringe_mesh = None
     fringe_mesh_flat = None   # kept for trap height sampling (no texture perturbation)
 
@@ -11674,17 +11575,12 @@ def run_pipeline(
         print(f"  ERROR building fringe mesh: {exc}")
         import traceback; traceback.print_exc()
 
-    # ── 7c. Water-hole rule: lift green + fringe (+ optional cap) ───────────
+    # ── 7c. Water-hole rule: lift green + fringe ────────────────────────────
     #
     # When the EGM contains any water polygon, lift green and fringe by
-    # WATER_HOLE_LIFT_MM so a 2 mm filament base sits underneath. The fringe
-    # gets the per-vertex edge-band cap (Topo 2026-05-05): only fringe top
-    # vertices within BOUNDARY_CAP_BAND_MM of the plaque frame perimeter are
-    # clipped to BOUNDARY_HEIGHT_CAP_MM; interior fringe relief is preserved
-    # regardless of height. The green is *explicitly* skipped — even if a
-    # course's green were ever drawn touching the frame, it should never be
-    # capped per homeowner spec. Traps and water are handled inside their
-    # export_* functions (see export_trap_stls / export_water_meshes).
+    # WATER_HOLE_LIFT_MM so a 2 mm filament base sits underneath. Traps and
+    # water are handled inside their export_* functions (see export_trap_stls /
+    # export_water_meshes).
     #
     # Sampling note: trap and water heights were computed earlier from
     # `fringe_mesh_flat` (an unlifted reference). After we lift `fringe_mesh`
@@ -11694,49 +11590,22 @@ def run_pipeline(
     # every printable piece in the assembly.
     _hole_water_active = WATER_HOLE_LIFT_ENABLED and _hole_has_water(_egm_data)
     if _hole_water_active:
-        print(f"\n[7c] Water-hole rule: lift={WATER_HOLE_LIFT_MM} mm, "
-              f"boundary cap={BOUNDARY_HEIGHT_CAP_MM} mm "
-              f"(mode={BOUNDARY_HEIGHT_CAP_MODE})")
-        # Green: smooth + stepped variants — never touches the frame, so no cap.
+        print(f"\n[7c] Water-hole rule: lift={WATER_HOLE_LIFT_MM} mm")
+        # Green: smooth + stepped variants.
         if isinstance(smooth_mesh_flat, trimesh.Trimesh):
             _apply_lift_and_cap(
                 smooth_mesh_flat, lift_mm=WATER_HOLE_LIFT_MM,
-                cap_mm=None, label="green_smooth",
+                label="green_smooth",
             )
         if isinstance(stepped_mesh, trimesh.Trimesh):
             _apply_lift_and_cap(
                 stepped_mesh, lift_mm=WATER_HOLE_LIFT_MM,
-                cap_mm=None, label="green_stepped",
+                label="green_stepped",
             )
-        # Fringe: ALWAYS touches the frame by construction → lift + cap
-        # (cap gated by applyFringeFrameCap — task 669). When the cap is
-        # disabled, we still apply the water-hole lift so the fringe sits on
-        # the 2 mm base slab; only the per-vertex boundary-band clip is
-        # skipped, allowing fringe verts near the frame to keep their
-        # natural terrain height.
+        # Fringe: lift so it sits on the 2 mm base slab.
         if isinstance(fringe_mesh, trimesh.Trimesh):
-            # v5.17 clipping fix: honour user-set grid cells above
-            # BOUNDARY_HEIGHT_CAP_MM. Otherwise the per-vertex edge-band cap in
-            # _apply_lift_and_cap silently clips a 20 mm user cell within
-            # BAND+TAPER of the frame back to 9 mm, flattening the TPS peak.
-            # The cap still protects natural fringe near the frame (vertices
-            # with z <= effective cap are never touched by the above_cap gate).
-            _user_grid_max_mm = 0.0
-            # v5.82: bunker-owned cells do not count toward the fringe cap ceiling.
-            _user_grid_heights = fringe_grid_cell_heights(
-                _egm_data, green_boundary_px,
-                pipe_circle)
-            if _user_grid_heights:
-                try:
-                    _user_grid_max_mm = max(float(v) for v in _user_grid_heights.values())
-                except (TypeError, ValueError):
-                    _user_grid_max_mm = 0.0
-            _effective_fringe_cap_mm = max(BOUNDARY_HEIGHT_CAP_MM, _user_grid_max_mm)
-            _fringe_cap = _effective_fringe_cap_mm if apply_fringe_frame_cap else None
-            _fringe_label = "fringe" if apply_fringe_frame_cap else "fringe (cap disabled)"
             _apply_lift_and_cap(
-                fringe_mesh, lift_mm=WATER_HOLE_LIFT_MM,
-                cap_mm=_fringe_cap, label=_fringe_label,
+                fringe_mesh, lift_mm=WATER_HOLE_LIFT_MM, label="fringe",
             )
     else:
         print("\n[7c] Water-hole rule: SKIPPED (no water polygons in EGM)")
@@ -11793,14 +11662,11 @@ def run_pipeline(
             print(f"\n[7e] Seam polish FAILED (non-fatal): {_exc_seam}")
 
     # ── 8. Build sand trap meshes (in-memory) ───────────────────────────────
-    # Pass apply_fringe_frame_cap so the trap boundary-band cap mirrors the
-    # fringe cap controlled by the same EGM flag (task #604).
     print("\n[8] Building sand trap meshes…")
     trap_meshes = export_trap_stls(_egm_data, green_boundary_px, slug,
                                    fringe_mesh=fringe_mesh_flat,
                                    pipe_circle=pipe_circle,
-                                   write_stls=False,
-                                   apply_fringe_frame_cap=apply_fringe_frame_cap)
+                                   write_stls=False)
     if not trap_meshes:
         print("  (no traps built)")
 

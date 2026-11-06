@@ -14,7 +14,6 @@
   "elevationRange": 25,
   "zScale": 1,
   "greenScale": 1.0065,
-  "fringeEdgeHeight": 20,
   "baseThicknessMm": 10,
   "includeBoundaryRegion": false,
   "applyFringeFrameCap": false,
@@ -233,8 +232,8 @@
     }
   ],
   "tee_hole": {
-    "x_mm": 71.4,
-    "y_mm": 25.5
+    "x_mm": 30.2,
+    "y_mm": 14.5
   },
   "gridCellHeights": {
     "0": 3,
@@ -1319,7 +1318,6 @@
     "1598": -8.6,
     "1599": -9
   },
-  "gridMode": "off",
   "gridResolution": 40,
   "embeddedImage": {
     "filename": "Delaveaga (Hole 11, 55171).png",

@@ -1,7 +1,7 @@
 """v6.33 fixes from Topo's Generate-parameter audit (owner_inbox/generate_parameters_v6.31.md).
 
 1. dead "Fringe edge height" field removed from the editor (old EGM key still tolerated)
-2. "Cap fringe at frame height" checkbox disabled while the cap is switched off in code
+2. (superseded in v7.0: the inert "Cap fringe at frame height" checkbox was removed entirely; see test_editor_cleanup_v70.py)
 3. grass tooltips say the FRINGE is textured, not the green
 4. grass-spacing editor default/min == the pipeline's effective minimum
 5. base thickness is resolved per run (no leak between runs); BUNKER_FLOOR_MIN_MM follows it
@@ -52,18 +52,6 @@ def test_fringe_edge_height_field_removed_from_ui():
 def test_old_egm_with_fringe_edge_key_still_loads_in_pipeline(g):
     # the pipeline never reads the key any more; an old project carrying it must resolve as before
     assert g._resolve_base_thickness({EGM_KEY_FRINGE_EDGE: 9.0}) == g.DEFAULT_BASE_THICKNESS_MM
-
-
-# ── 2. frame-cap checkbox honesty ────────────────────────────────────────────
-def test_frame_cap_editor_constant_mirrors_code_flag(g):
-    assert C.value("FRAME_CAP_ENABLED") == g.BOUNDARY_HEIGHT_CAP_ENABLED
-
-
-def test_frame_cap_checkbox_gated_and_tooltip_honest():
-    blk = _block("{# Cap fringe at frame height")
-    assert ':disabled="!FRAME_CAP_ENABLED"' in blk
-    assert "switched off" in blk
-    assert "water holes only" not in blk and "water holes)" not in blk
 
 
 # ── 3. grass tooltips ────────────────────────────────────────────────────────

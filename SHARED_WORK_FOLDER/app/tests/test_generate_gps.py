@@ -66,7 +66,6 @@ def _gps_egm(gps_file_path, enabled=True, bbox=None):
         "fringeEdgeHeight": 10.0,
         "baseThicknessMm": 1.5,
         "includeBoundaryRegion": False,
-        "applyFringeFrameCap": True,
         "flagOffsetXMm": 0.0,
         "flagOffsetYMm": 0.0,
     }
@@ -100,7 +99,6 @@ def _gradient_egm():
         "fringeEdgeHeight": 10.0,
         "baseThicknessMm": 1.5,
         "includeBoundaryRegion": False,
-        "applyFringeFrameCap": True,
         "flagOffsetXMm": 0.0,
         "flagOffsetYMm": 0.0,
     }
